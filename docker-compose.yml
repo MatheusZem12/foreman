@@ -1,0 +1,55 @@
+# Multica: servidor + Postgres. Suba com:  docker compose up -d --build
+# Login dos agentes (uma vez):            docker compose exec multica claude   (/login)
+#                                          docker compose exec multica codex login --device-auth
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: multica
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-multica}
+      POSTGRES_DB: multica
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U multica"]
+      interval: 5s
+      retries: 20
+
+  multica:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://multica:${POSTGRES_PASSWORD:-multica}@db:5432/multica?sslmode=disable
+      MULTICA_MAX_PARALLEL: ${MULTICA_MAX_PARALLEL:-3}
+      MULTICA_SECURE_COOKIE: ${MULTICA_SECURE_COOKIE:-false}
+    # Chaves opcionais (ANTHROPIC_API_KEY, OPENAI_API_KEY) e git (GIT_*) ficam no .env.
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - data:/data          # clones, worktrees, skills materializadas
+      - home:/home/node     # login do claude/codex, ~/.ssh, ~/.gitconfig
+    ports:
+      # Só localhost por padrão; MULTICA_BIND=0.0.0.0 expõe na rede (use HTTPS/VPN).
+      - "${MULTICA_BIND:-127.0.0.1}:${MULTICA_PORT:-8700}:8700"
+
+  # Acesso direto ao banco pelo navegador (opcional):
+  #   docker compose --profile admin up -d adminer  →  http://localhost:8701
+  adminer:
+    image: adminer:4
+    profiles: ["admin"]
+    restart: unless-stopped
+    depends_on: [db]
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "127.0.0.1:${ADMINER_PORT:-8701}:8080"
+
+volumes:
+  db:
+  data:
+  home:
