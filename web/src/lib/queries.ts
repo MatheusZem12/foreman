@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import type { Agent, Issue, Label, Member, Permission, Repo, Role, Skill, User, Workspace } from './types';
 
-export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => api.get<User>('/me'), retry: false, staleTime: 60_000 });
+// retryOnMount: false — sem login, /me dá 401; outro componente que monte não
+// pode refazer a consulta (o "carregando" de novo desmontava a tela num loop).
+export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => api.get<User>('/me'), retry: false, retryOnMount: false, staleTime: 60_000 });
 // Permissões do perfil do usuário logado ('*' = dono, pode tudo).
 export const can = (u: User | undefined, ...perms: string[]) =>
   !!u && (u.permissions.includes('*') || perms.some((p) => u.permissions.includes(p)));

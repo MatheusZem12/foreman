@@ -67,8 +67,8 @@ function Authed({ children }: { children: React.ReactNode }) {
 
 // "/": quem está logado vai para o board; quem não está vê a landing.
 function Root() {
-  const { data: me, isLoading } = useMe();
-  if (isLoading) return <div className="grid h-full place-items-center"><Spinner /></div>;
+  const { data: me, isPending, isError } = useMe();
+  if (isPending && !isError) return <div className="grid h-full place-items-center"><Spinner /></div>;
   return me ? <Home /> : <Landing />;
 }
 
