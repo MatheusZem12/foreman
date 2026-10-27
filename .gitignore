@@ -1,0 +1,9 @@
+node_modules/
+server/bin/
+server/data/
+server/internal/webui/dist/*
+!server/internal/webui/dist/.gitkeep
+.env
+data/
+bin/
+*.tsbuildinfo
