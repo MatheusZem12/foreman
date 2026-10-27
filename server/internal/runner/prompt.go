@@ -39,8 +39,6 @@ func buildSystem(agent *store.Agent, skills []store.Skill, dirOf func(store.Skil
 type promptRepo struct {
 	Slug, Path, Name, Description, Base string
 	Commits                             string
-	Instructions                        string // inline (issue com um repositório só)
-	InstructionsFile                    string // caminho (issue com vários)
 	Conflicts                           []string
 }
 
@@ -62,15 +60,13 @@ func buildPrompt(in promptInput) string {
 	if d := strings.TrimSpace(is.Description); d != "" {
 		parts = append(parts, d)
 	}
-	rules := "- Não troque de branch e não faça merge, rebase, commit nem push: ao final o Multica commita o que você deixar e publica a branch."
+	rules := "- Não troque de branch e não faça merge, rebase, commit nem push: ao final o Multica commita o que você deixar e publica a branch.\n" +
+		"- O ambiente é isolado: só dá para gravar nesta pasta (e no cache de pacotes, já configurado). Instale dependências e rode testes normalmente."
 	if len(in.Repos) == 1 {
 		rp := in.Repos[0]
 		parts = append(parts, "## Ambiente\n"+
 			fmt.Sprintf("- Você está num git worktree isolado (`%s`) do repositório **%s**, na branch `%s`, criada a partir de `%s`.\n", rp.Path, rp.Name, is.Branch, rp.Base)+
 			"- Trabalhe só aqui.\n"+rules)
-		if rp.Instructions != "" {
-			parts = append(parts, "## Sobre o projeto\n"+rp.Instructions)
-		}
 	} else {
 		var b strings.Builder
 		fmt.Fprintf(&b, "## Ambiente\nA pasta `%s` tem um worktree isolado de cada repositório deste workspace, todos na branch `%s`:\n\n", in.Root, is.Branch)
@@ -80,9 +76,6 @@ func buildPrompt(in promptInput) string {
 				desc = "sem descrição"
 			}
 			fmt.Fprintf(&b, "- `%s/` — **%s**: %s (base `%s`)", rp.Slug, rp.Name, desc, rp.Base)
-			if rp.InstructionsFile != "" {
-				fmt.Fprintf(&b, "; instruções do projeto em `%s`", rp.InstructionsFile)
-			}
 			b.WriteString("\n")
 		}
 		b.WriteString("\n- Identifique pelo pedido quais repositórios precisam mudar e mexa só neles; não explore os demais. " +

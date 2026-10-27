@@ -261,7 +261,7 @@ const FEATURES: [typeof Bot, string, React.ReactNode][] = [
   [ShieldCheck, 'Permissões por perfil', 'O dono monta perfis (criar, editar e excluir issues, agentes, skills, repositórios…) e cada pessoa vê só os workspaces dela.'],
   [Mail, 'Aviso por e-mail', 'Issue nova avisa o workspace inteiro numa conversa só por workspace. O dono liga; quem não quiser desliga no perfil.'],
   [Wallet, 'Custo sob controle', 'Issues resolvidas e custo por mês, tokens, tempo, ranking de agentes e modelos. Teto em US$ por execução no Claude.'],
-  [GitMerge, 'Merge seguro', 'Branches protegidas nunca recebem merge. Vários repositórios: ou todos os merges passam, ou nada é publicado.'],
+  [GitMerge, 'Merge seguro', 'Cada issue numa pasta e numa branch próprias, num sandbox que só grava ali. Vários repositórios: ou todos os merges passam, ou nada é publicado.'],
   [Laptop, 'Celular e tablet', 'Interface responsiva e instalável (PWA). Arraste cartões no toque, acompanhe o log de onde estiver.']
 ];
 

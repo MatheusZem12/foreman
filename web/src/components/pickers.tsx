@@ -109,8 +109,8 @@ export function RepoScopePicker({ ws, value, onChange, variant = 'chip' }: { ws:
 }
 
 export function BranchPicker({
-  repoId, value, onChange, protectedBranches = [], variant = 'chip', placeholder = 'Branch'
-}: { repoId: string | null; value: string; onChange: (b: string) => void; protectedBranches?: string[]; variant?: Variant; placeholder?: string }) {
+  repoId, value, onChange, variant = 'chip', placeholder = 'Branch'
+}: { repoId: string | null; value: string; onChange: (b: string) => void; variant?: Variant; placeholder?: string }) {
   const { data: branches, isLoading, error } = useBranches(repoId);
   const [filter, setFilter] = useState('');
   const list = (branches ?? []).filter((b) => b.toLowerCase().includes(filter.toLowerCase()));
@@ -128,15 +128,11 @@ export function BranchPicker({
           <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrar…" className="field-input mb-1 h-7" />
           {isLoading && <div className="px-2 py-1.5 text-mute">Carregando branches…</div>}
           {error && <div className="px-2 py-1.5 text-red-400">{(error as Error).message}</div>}
-          {list.slice(0, 60).map((b) => {
-            const prot = protectedBranches.includes(b);
-            return (
-              <MenuItem key={b} selected={b === value} onClick={() => { onChange(b); close(); }}>
-                <span className="truncate font-mono text-[12px]">{b}</span>
-                {prot && <span className="ml-auto text-[10px] text-red-400">protegida</span>}
-              </MenuItem>
-            );
-          })}
+          {list.slice(0, 60).map((b) => (
+            <MenuItem key={b} selected={b === value} onClick={() => { onChange(b); close(); }}>
+              <span className="truncate font-mono text-[12px]">{b}</span>
+            </MenuItem>
+          ))}
         </>
       )}
     </Popover>

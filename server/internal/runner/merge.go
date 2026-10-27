@@ -62,9 +62,6 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		if target == "" {
 			target = sc.IssueRepo.TargetBranch
 		}
-		if slices.Contains(sc.ProtectedBranches, target) {
-			return nil, fmt.Errorf("%s: %q é protegida: o Multica não faz merge nela", sc.Name, target)
-		}
 		w := &repoWork{RepoScope: sc, slug: names[i], wt: filepath.Join(r.worktreeDir(issue.ID), names[i])}
 		todo = append(todo, &pendingMerge{w: w, target: target, res: RepoMerge{RepoID: sc.ID, Name: sc.Name, Target: target}})
 	}
@@ -111,7 +108,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		}
 		// Pendências feitas à mão no worktree entram antes do merge.
 		if fileExists(w.wt) {
-			if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (ajustes manuais)", "Multica", envPaths(&w.Repo)); err != nil {
+			if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (ajustes manuais)", "Multica"); err != nil {
 				return nil, fmt.Errorf("%s: %w", w.Name, err)
 			}
 		}
@@ -201,18 +198,6 @@ func (r *Runner) cleanupUnchanged(ctx context.Context, issue *store.Issue) {
 		unlock()
 	}
 	os.RemoveAll(r.worktreeDir(issue.ID))
-	matches, _ := filepath.Glob(filepath.Join(r.issueDir(issue.ID), "setup-ok-*"))
-	for _, m := range matches {
-		os.Remove(m)
-	}
-}
-
-func envPaths(repo *store.Repo) []string {
-	var out []string
-	for _, f := range repo.EnvFiles {
-		out = append(out, strings.TrimPrefix(f.Path, "/"))
-	}
-	return out
 }
 
 // Discard cancela o que estiver rodando e apaga worktrees e branches da issue.
@@ -334,7 +319,7 @@ func (r *Runner) Runtimes(ctx context.Context) []map[string]any {
 	var out []map[string]any
 	for _, rt := range []struct{ name, bin string }{{"claude", r.cfg.ClaudeBin}, {"codex", r.cfg.CodexBin}} {
 		res := runCmd(ctx, rt.bin, "--version")
-		out = append(out, map[string]any{"runtime": rt.name, "bin": rt.bin, "installed": res.ok, "version": firstNonEmpty(res.stdout, res.stderr)})
+		out = append(out, map[string]any{"runtime": rt.name, "bin": rt.bin, "installed": res.ok, "version": firstNonEmpty(res.stdout, res.stderr), "sandbox": r.sandboxed()})
 	}
 	return out
 }

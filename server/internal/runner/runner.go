@@ -10,6 +10,7 @@ package runner
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,6 +40,9 @@ type Runner struct {
 	repoLocks sync.Map // repoID → *sync.Mutex (fetch/worktree/merge no mesmo clone)
 
 	models modelCache
+
+	sandboxOnce sync.Once
+	sandboxOK   bool
 }
 
 type activeRun struct {
@@ -233,21 +237,6 @@ func (r *Runner) materializeSkills(skills []store.Skill) {
 	}
 }
 
-func writeEnvFiles(wt string, files []store.FileEntry) []string {
-	var paths []string
-	for _, f := range files {
-		rel := strings.TrimPrefix(filepath.Clean("/"+f.Path), "/")
-		if rel == "" {
-			continue
-		}
-		p := filepath.Join(wt, rel)
-		os.MkdirAll(filepath.Dir(p), 0o755)
-		os.WriteFile(p, []byte(f.Content), 0o600)
-		paths = append(paths, rel)
-	}
-	return paths
-}
-
 func agentEnv(extra ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -267,10 +256,43 @@ type agentCmd struct {
 	preamble string
 }
 
-func (r *Runner) agentCommand(a *store.Agent, wt, system string, addDirs []string) agentCmd {
+// Isolamento: o agente roda sem pedir aprovação, mas dentro do sandbox do
+// próprio CLI (bubblewrap no Linux). Grava só na pasta da issue e no cache de
+// pacotes do Multica; o resto do disco fica somente leitura. Rede liberada
+// (instalar dependências, consultar documentação).
+func (r *Runner) sandboxed() bool {
+	r.sandboxOnce.Do(func() {
+		r.sandboxOK = runCmd(context.Background(), "bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "true").ok
+	})
+	return r.sandboxOK
+}
+
+func (r *Runner) cacheDir() string {
+	d := r.cfg.Path("cache")
+	os.MkdirAll(d, 0o755)
+	return d
+}
+
+// Caches de gerenciadores de pacote apontam para a pasta de cache do Multica
+// (fora dela o sandbox não deixa gravar).
+func (r *Runner) cacheEnv() []string {
+	c := r.cacheDir()
+	return []string{
+		"XDG_CACHE_HOME=" + c,
+		"npm_config_cache=" + filepath.Join(c, "npm"),
+		"npm_config_store_dir=" + filepath.Join(c, "pnpm"),
+		"YARN_CACHE_FOLDER=" + filepath.Join(c, "yarn"),
+		"PIP_CACHE_DIR=" + filepath.Join(c, "pip"),
+		"GOCACHE=" + filepath.Join(c, "go-build"),
+		"GOMODCACHE=" + filepath.Join(c, "go-mod"),
+	}
+}
+
+func (r *Runner) agentCommand(a *store.Agent, wt, system string, addDirs, writable []string) agentCmd {
+	sandbox := r.sandboxed()
 	if a.Runtime == "codex" {
 		args := []string{"exec", "--json", "--skip-git-repo-check", "-C", wt}
-		for _, d := range addDirs {
+		for _, d := range append(addDirs, writable...) {
 			args = append(args, "--add-dir", d)
 		}
 		if a.Model != "" {
@@ -279,10 +301,10 @@ func (r *Runner) agentCommand(a *store.Agent, wt, system string, addDirs []strin
 		if a.Effort != "" {
 			args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", a.Effort))
 		}
-		if a.Permission == "full" {
-			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		if sandbox {
+			args = append(args, "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true")
 		} else {
-			args = append(args, "-s", "workspace-write")
+			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 		}
 		args = append(append(args, splitArgs(a.ExtraArgs)...), "-")
 		pre := ""
@@ -304,26 +326,20 @@ func (r *Runner) agentCommand(a *store.Agent, wt, system string, addDirs []strin
 	if system != "" {
 		args = append(args, "--append-system-prompt", system)
 	}
-	for _, d := range addDirs {
+	for _, d := range append(addDirs, writable...) {
 		args = append(args, "--add-dir", d)
 	}
-	if a.Permission == "full" {
-		args = append(args, "--dangerously-skip-permissions")
+	if sandbox {
+		settings, _ := json.Marshal(map[string]any{"sandbox": map[string]any{
+			"enabled": true, "autoAllowBashIfSandboxed": true, "allowUnsandboxedCommands": false,
+			"network":    map[string]any{"allowedDomains": []string{"*"}},
+			"filesystem": map[string]any{"allowWrite": writable},
+		}})
+		args = append(args, "--permission-mode", "acceptEdits", "--settings", string(settings))
 	} else {
-		args = append(args, "--permission-mode", "acceptEdits")
+		args = append(args, "--dangerously-skip-permissions")
 	}
 	return agentCmd{bin: r.cfg.ClaudeBin, args: append(args, splitArgs(a.ExtraArgs)...)}
-}
-
-func (r *Runner) runShell(ctx context.Context, run *store.Run, dir, script string) error {
-	cmd := exec.CommandContext(ctx, "bash", "-lc", script)
-	cmd.Dir = dir
-	cmd.Env = agentEnv()
-	out, err := cmd.CombinedOutput()
-	for _, l := range lines(string(out)) {
-		r.logEvent(ctx, run, "out", clip(l, 600))
-	}
-	return err
 }
 
 type outcome struct {
@@ -411,9 +427,8 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 // repoWork é um repositório da issue já preparado no disco.
 type repoWork struct {
 	store.RepoScope
-	slug    string // nome da subpasta no diretório da issue
-	wt      string // worktree
-	exclude []string
+	slug string // nome da subpasta no diretório da issue
+	wt   string // worktree
 }
 
 func (w *repoWork) base() string { return w.IssueRepo.BaseBranch }
@@ -473,7 +488,6 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				return
 			}
 			if created {
-				os.Remove(r.setupMark(issue.ID, w.ID))
 				r.logEvent(ctx, run, "info", fmt.Sprintf("%s/ → branch %s a partir de %s", w.slug, issue.Branch, w.base()))
 			}
 		}(i)
@@ -482,23 +496,7 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	for _, w := range works {
-		w.exclude = writeEnvFiles(w.wt, w.EnvFiles)
-		mark := r.setupMark(issue.ID, w.ID)
-		if script := strings.TrimSpace(w.SetupScript); script != "" && !fileExists(mark) {
-			r.logEvent(ctx, run, "info", fmt.Sprintf("Setup de %s: %s", w.Name, strings.SplitN(script, "\n", 2)[0]))
-			if err := r.runShell(ctx, run, w.wt, script); err != nil {
-				return nil, fmt.Errorf("o script de setup de %s falhou: %w", w.Name, err)
-			}
-			os.MkdirAll(filepath.Dir(mark), 0o755)
-			os.WriteFile(mark, nil, 0o644)
-		}
-	}
 	return works, nil
-}
-
-func (r *Runner) setupMark(issueID, repoID string) string {
-	return filepath.Join(r.issueDir(issueID), "setup-ok-"+repoID)
 }
 
 func (r *Runner) execute(ctx context.Context, run *store.Run) {
@@ -581,7 +579,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 			if mergeInProgress(ctx, w.wt) {
 				r.logEvent(ctx, run, "info", w.slug+": continuando o merge que ficou pela metade")
 			} else {
-				if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (pendências)", author, w.exclude); err != nil {
+				if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (pendências)", author); err != nil {
 					res.Error = w.Name + ": " + err.Error()
 					return
 				}
@@ -629,18 +627,6 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	for _, w := range works {
 		pr := promptRepo{Slug: w.slug, Path: w.wt, Name: w.Name, Description: w.Description, Base: w.base(),
 			Commits: runGit(ctx, w.wt, "log", "-20", "--format=%h %s", "origin/"+w.base()+"..HEAD").stdout, Conflicts: conflicts[w.slug]}
-		// Instruções de cada projeto: inline quando é um repo só; com vários,
-		// vão para um arquivo e o prompt leva só o caminho (a IA lê se for mexer nele).
-		if t := strings.TrimSpace(w.Instructions); t != "" {
-			if len(works) == 1 {
-				pr.Instructions = t
-			} else {
-				f := filepath.Join(idir, "repos", w.slug+".md")
-				os.MkdirAll(filepath.Dir(f), 0o755)
-				os.WriteFile(f, []byte(t), 0o644)
-				pr.InstructionsFile = f
-			}
-		}
 		prs = append(prs, pr)
 	}
 	system := buildSystem(agent, skills, r.skillDir)
@@ -656,17 +642,20 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	for _, s := range skills {
 		addDirs = append(addDirs, r.skillDir(s))
 	}
-	ac := r.agentCommand(agent, cwd, system, addDirs)
+	ac := r.agentCommand(agent, cwd, system, addDirs, []string{idir, r.cacheDir()})
 	desc := agent.Runtime
 	if agent.Model != "" {
 		desc += " " + agent.Model
 	}
 	r.logEvent(ctx, run, "info", fmt.Sprintf("%s · %s · %d skill(s) · %d repositório(s)", agent.Name, desc, len(skills), len(works)))
+	if !r.sandboxed() {
+		r.logEvent(ctx, run, "info", "Sandbox indisponível (bubblewrap): o agente roda sem isolamento de disco. Instale o pacote bubblewrap no servidor.")
+	}
 
-	o := r.spawn(ctx, run, ac, ac.preamble+prompt, cwd, agentEnv(
+	o := r.spawn(ctx, run, ac, ac.preamble+prompt, cwd, agentEnv(append(r.cacheEnv(),
 		"MULTICA_SUMMARY="+summaryPath,
 		"MULTICA_ISSUE="+ref,
-	))
+	)...))
 	if o.result != nil {
 		res.CostUSD, res.InputTokens, res.CachedTokens, res.OutputTokens = o.result.Cost, o.result.In, o.result.Cached, o.result.Out
 	}
@@ -679,7 +668,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	var shas, stats []string
 	var cerr error
 	for _, w := range works {
-		sha, err := commitAll(ctx, w.wt, ref+" "+issue.Title+label, author, w.exclude)
+		sha, err := commitAll(ctx, w.wt, ref+" "+issue.Title+label, author)
 		if err != nil {
 			cerr = errors.Join(cerr, fmt.Errorf("%s: %w", w.Name, err))
 			continue

@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /multica ./cmd/multica
 #    (o Claude Code recusa --dangerously-skip-permissions como root).
 FROM node:22-bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git openssh-client ca-certificates bash curl ripgrep procps \
+ && apt-get install -y --no-install-recommends git openssh-client ca-certificates bash curl ripgrep procps bubblewrap socat \
  && rm -rf /var/lib/apt/lists/*
 ARG CLAUDE_CODE_VERSION=latest
 ARG CODEX_VERSION=latest

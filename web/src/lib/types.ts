@@ -11,12 +11,12 @@ export interface Workspace { id: string; name: string; key: string; createdAt: s
 export interface FileEntry { path: string; content: string }
 export interface Repo {
   id: string; workspaceId: string; name: string; url: string; defaultBranch: string; targetBranch: string;
-  protectedBranches: string[]; setupScript: string; envFiles: FileEntry[]; instructions: string; description: string;
+  description: string;
 }
 export interface Skill { id: string; slug: string; name: string; description: string; content: string; files: FileEntry[]; always: boolean; updatedAt: string }
 export interface Agent {
   id: string; name: string; avatar: string; runtime: 'claude' | 'codex'; model: string; effort: string;
-  maxBudgetUsd: number | null; permission: 'full' | 'edits'; instructions: string; skillIds: string[]; extraArgs: string;
+  maxBudgetUsd: number | null; instructions: string; skillIds: string[]; extraArgs: string;
 }
 export interface Label { id: string; workspaceId: string; name: string; color: string }
 export interface Issue {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { AlertTriangle, Bot, Check, ChevronDown, Copy, Cpu, Gauge, Pencil, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Wallet } from 'lucide-react';
+import { AlertTriangle, Bot, Check, ChevronDown, Copy, Cpu, Gauge, Pencil, Plus, RefreshCw, Sparkles, Trash2, Wallet } from 'lucide-react';
 import { Button, EmptyState, Field, Modal, PageHeader, Popover, useToast } from '../components/ui';
 import { AGENT_COLORS, AGENT_ICONS, AgentIcon, parseAvatar } from '../components/AgentIcon';
 import { api } from '../lib/api';
@@ -27,7 +27,7 @@ export function AgentsPage() {
     toast('success', 'Agente removido');
   };
 
-  const create = () => setEditing({ runtime: 'claude', model: 'sonnet', permission: 'full', avatar: 'bot:violet', skillIds: [] });
+  const create = () => setEditing({ runtime: 'claude', model: 'sonnet', avatar: 'bot:violet', skillIds: [] });
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-6xl p-4 pb-24 md:p-8">
@@ -69,7 +69,6 @@ export function AgentsPage() {
                   <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-dim">
                     {a.effort && <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5"><Gauge className="size-3" /> {a.effort}</span>}
                     {a.maxBudgetUsd ? <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5"><Wallet className="size-3" /> até ${a.maxBudgetUsd}</span> : null}
-                    <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5"><ShieldCheck className="size-3" /> {a.permission === 'full' ? 'total' : 'só edições'}</span>
                   </div>
                   <div className="mt-3 border-t border-line/70 pt-3">
                     <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-mute"><Cpu className="size-3" /> {pack.length} skill(s) no pacote</div>
@@ -154,12 +153,6 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
           <Field label="Teto por execução (US$)" hint="só Claude">
             <input className="field-input" type="number" min="0" step="0.5" disabled={a.runtime !== 'claude'} value={a.maxBudgetUsd ?? ''} onChange={(e) => set({ maxBudgetUsd: e.target.value === '' ? null : Number(e.target.value) })} placeholder="sem teto" />
           </Field>
-          <Field label="Permissões" className="sm:col-span-2">
-            <select className="field-input" value={a.permission} onChange={(e) => set({ permission: e.target.value as Agent['permission'] })}>
-              <option value="full">Total: roda comandos sem pedir (worktree isolado)</option>
-              <option value="edits">Só edições de arquivo</option>
-            </select>
-          </Field>
         </div>
         <Field label="Instruções" hint="papel, estilo e regras; vão como system prompt">
           <textarea className="field-input" rows={6} value={a.instructions ?? ''} onChange={(e) => set({ instructions: e.target.value })} placeholder="Você é um dev sênior. Mudanças pequenas e focadas, siga o estilo do código, rode os testes…" />
@@ -180,9 +173,14 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
             {!skills.length && <span className="text-xs text-mute">Nenhuma skill criada ainda.</span>}
           </div>
         </Field>
-        <Field label="Argumentos extras do CLI" hint="avançado">
-          <input className="field-input font-mono text-xs" value={a.extraArgs ?? ''} onChange={(e) => set({ extraArgs: e.target.value })} />
-        </Field>
+        <details className="group" open={!!a.extraArgs}>
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs text-mute hover:text-dim">
+            <ChevronDown className="size-3.5 -rotate-90 transition group-open:rotate-0" /> Avançado
+          </summary>
+          <Field label="Argumentos extras do CLI" className="mt-3">
+            <input className="field-input font-mono text-xs" value={a.extraArgs ?? ''} onChange={(e) => set({ extraArgs: e.target.value })} />
+          </Field>
+        </details>
       </div>
     </Modal>
   );

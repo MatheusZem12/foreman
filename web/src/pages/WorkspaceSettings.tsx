@@ -6,7 +6,7 @@ import { Avatar, Button, Empty, Field, Modal, PageHeader, useToast } from '../co
 import { api } from '../lib/api';
 import { LABEL_COLORS } from '../lib/constants';
 import { can, useCan, useLabels, useMembers, useRepos, useUsers } from '../lib/queries';
-import type { FileEntry, Label, Repo } from '../lib/types';
+import type { Label, Repo } from '../lib/types';
 
 export function WorkspaceSettings() {
   const { ws } = useWs();
@@ -44,7 +44,7 @@ export function WorkspaceSettings() {
         <section>
           <div className="mb-2 flex items-center">
             <h2 className="font-semibold">Repositórios</h2>
-            {canAddRepo && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({ defaultBranch: 'main', targetBranch: '', protectedBranches: [], envFiles: [] })}><Plus className="size-3.5" /> Adicionar</Button>}
+            {canAddRepo && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({ defaultBranch: 'main', targetBranch: '' })}><Plus className="size-3.5" /> Adicionar</Button>}
           </div>
           <p className="mb-3 text-xs text-mute">
             Um workspace pode ter vários repositórios (front, back, mobile…). Cada issue recebe um worktree de cada um e a IA mexe só nos que o pedido exige;
@@ -59,11 +59,8 @@ export function WorkspaceSettings() {
                   {r.description && <div className="text-xs text-dim">{r.description}</div>}
                   <div className="truncate font-mono text-xs text-mute">{r.url.replace(/\/\/[^@/]+@/, '//***@')}</div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
-                    <span className="rounded bg-hover px-1.5 py-0.5 text-dim">base {r.defaultBranch}</span>
+                    <span className="rounded bg-hover px-1.5 py-0.5 text-dim">desenvolve a partir de {r.defaultBranch}</span>
                     <span className="rounded bg-hover px-1.5 py-0.5 text-dim">merge em {r.targetBranch}</span>
-                    {r.protectedBranches.map((b) => <span key={b} className="rounded bg-red-500/10 px-1.5 py-0.5 text-red-400">🔒 {b}</span>)}
-                    {r.setupScript && <span className="rounded bg-hover px-1.5 py-0.5 text-dim">setup</span>}
-                    {r.envFiles.length > 0 && <span className="rounded bg-hover px-1.5 py-0.5 text-dim">{r.envFiles.length} arquivo(s) de ambiente</span>}
                   </div>
                 </div>
                 {canEditRepo && <button onClick={() => setEditing(r)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
@@ -179,22 +176,17 @@ function LabelsSection({ wsId, labels }: { wsId: string; labels: Label[] }) {
   );
 }
 
-const splitList = (s: string) => s.split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
-
 function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>; onClose: () => void }) {
   const [r, setR] = useState<Partial<Repo>>(repo);
-  const [protectedText, setProtectedText] = useState((repo.protectedBranches ?? []).join(', '));
   const [busy, setBusy] = useState(false);
   const qc = useQueryClient();
   const toast = useToast();
   const set = (p: Partial<Repo>) => setR((x) => ({ ...x, ...p }));
-  const env = r.envFiles ?? [];
-  const setEnv = (i: number, p: Partial<FileEntry>) => set({ envFiles: env.map((f, j) => (j === i ? { ...f, ...p } : f)) });
 
   const save = async () => {
     setBusy(true);
     try {
-      const body = { ...r, protectedBranches: splitList(protectedText) };
+      const body = r;
       const saved = r.id ? await api.put<Repo>(`/repos/${r.id}`, body) : await api.post<Repo>(`/workspaces/${wsId}/repos`, body);
       qc.invalidateQueries({ queryKey: ['repos', wsId] });
       qc.invalidateQueries({ queryKey: ['branches', saved.id] });
@@ -216,40 +208,22 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
   return (
     <Modal open wide onClose={onClose} title={r.id ? `Editar ${repo.name}` : 'Adicionar repositório'} footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} onClick={save}>Salvar e testar</Button></>}>
       <div className="space-y-4">
-        <Field label="URL do git"><input autoFocus className="field-input font-mono text-xs" value={r.url ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder="git@github.com:org/projeto.git" /></Field>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Nome" hint="opcional"><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} /></Field>
-          <Field label="Branch base"><input className="field-input font-mono text-xs" value={r.defaultBranch ?? ''} onChange={(e) => set({ defaultBranch: e.target.value })} placeholder="dev" /></Field>
-          <Field label="Merge padrão em"><input className="field-input font-mono text-xs" value={r.targetBranch ?? ''} onChange={(e) => set({ targetBranch: e.target.value })} placeholder="igual à base" /></Field>
+        <Field label="URL do git" hint="SSH ou HTTPS; o servidor clona com as credenciais git dele">
+          <input autoFocus className="field-input font-mono text-xs" value={r.url ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder="git@github.com:org/projeto.git" />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Desenvolver a partir de" hint="cada issue cria a branch dela daqui">
+            <input className="field-input font-mono text-xs" value={r.defaultBranch ?? ''} onChange={(e) => set({ defaultBranch: e.target.value })} placeholder="dev" />
+          </Field>
+          <Field label="Fazer merge em" hint="dá para trocar em cada issue">
+            <input className="field-input font-mono text-xs" value={r.targetBranch ?? ''} onChange={(e) => set({ targetBranch: e.target.value })} placeholder="igual à de cima" />
+          </Field>
         </div>
-        <Field label="Descrição" hint="1 linha: o que tem neste repositório. A IA usa para decidir onde mexer">
-          <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder="Ex.: API REST em Go (pedidos, pagamentos, autenticação)" />
-        </Field>
-        <Field label="Branches protegidas" hint="o Multica nunca faz merge nelas">
-          <input className="field-input font-mono text-xs" value={protectedText} onChange={(e) => setProtectedText(e.target.value)} placeholder="main, hmg" />
-        </Field>
-        <Field label="Script de setup" hint="roda uma vez em cada worktree novo">
-          <textarea className="field-input font-mono text-xs" rows={2} value={r.setupScript ?? ''} onChange={(e) => set({ setupScript: e.target.value })} placeholder="npm ci" />
-        </Field>
-        <Field label="Instruções do projeto" hint="a IA lê antes de alterar este repositório">
-          <textarea className="field-input" rows={3} value={r.instructions ?? ''} onChange={(e) => set({ instructions: e.target.value })} placeholder="Stack, como rodar os testes, convenções…" />
-        </Field>
-        <div>
-          <div className="mb-1.5 flex items-center text-xs font-medium text-dim">
-            Arquivos de ambiente <span className="ml-1 font-normal text-mute">· escritos no worktree (.env etc.), nunca commitados</span>
-            <button onClick={() => set({ envFiles: [...env, { path: '.env', content: '' }] })} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg"><Plus className="size-3.5" /></button>
-          </div>
-          <div className="space-y-2">
-            {env.map((f, i) => (
-              <div key={i} className="rounded-md border border-line">
-                <div className="flex items-center gap-2 px-2 py-1">
-                  <input value={f.path} onChange={(e) => setEnv(i, { path: e.target.value })} className="flex-1 font-mono text-xs" />
-                  <button onClick={() => set({ envFiles: env.filter((_, j) => j !== i) })} className="text-mute hover:text-red-400"><Trash2 className="size-3.5" /></button>
-                </div>
-                <textarea value={f.content} onChange={(e) => setEnv(i, { content: e.target.value })} rows={4} spellCheck={false} className="w-full border-t border-line bg-bg p-2 font-mono text-[12px]" placeholder="CHAVE=valor" />
-              </div>
-            ))}
-          </div>
+        <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
+          <Field label="Nome" hint="opcional"><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder="do URL" /></Field>
+          <Field label="Descrição" hint="opcional; ajuda a IA a escolher o repositório">
+            <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder="Ex.: API em Go (pedidos, pagamentos)" />
+          </Field>
         </div>
       </div>
     </Modal>

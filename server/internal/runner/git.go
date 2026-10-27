@@ -142,10 +142,9 @@ func lines(s string) []string {
 	return out
 }
 
-// commitAll commita tudo o que ficou no worktree, menos os arquivos de
-// ambiente que o próprio Multica escreveu. Se houver merge em andamento, só
-// conclui quando não sobra marcador de conflito.
-func commitAll(ctx context.Context, dir, message, author string, exclude []string) (string, error) {
+// commitAll commita tudo o que ficou no worktree. Se houver merge em
+// andamento, só conclui quando não sobra marcador de conflito.
+func commitAll(ctx context.Context, dir, message, author string) (string, error) {
 	inMerge := mergeInProgress(ctx, dir)
 	if inMerge {
 		if left := filesWithMarkers(ctx, dir, conflictedFiles(ctx, dir)); len(left) > 0 {
@@ -156,9 +155,6 @@ func commitAll(ctx context.Context, dir, message, author string, exclude []strin
 	}
 	if _, err := mustGit(ctx, dir, "add", "-A"); err != nil {
 		return "", err
-	}
-	if len(exclude) > 0 {
-		runGit(ctx, dir, append([]string{"reset", "-q", "--"}, exclude...)...)
 	}
 	if !inMerge && runGit(ctx, dir, "diff", "--cached", "--quiet").ok {
 		return "", nil

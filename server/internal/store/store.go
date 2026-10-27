@@ -59,18 +59,14 @@ type FileEntry struct {
 }
 
 type Repo struct {
-	ID                string      `db:"id" json:"id"`
-	WorkspaceID       string      `db:"workspace_id" json:"workspaceId"`
-	Name              string      `db:"name" json:"name"`
-	URL               string      `db:"url" json:"url"`
-	DefaultBranch     string      `db:"default_branch" json:"defaultBranch"`
-	TargetBranch      string      `db:"target_branch" json:"targetBranch"`
-	ProtectedBranches []string    `db:"protected_branches" json:"protectedBranches"`
-	SetupScript       string      `db:"setup_script" json:"setupScript"`
-	EnvFiles          []FileEntry `db:"env_files" json:"envFiles"`
-	Instructions      string      `db:"instructions" json:"instructions"`
-	CreatedAt         time.Time   `db:"created_at" json:"createdAt"`
-	Description       string      `db:"description" json:"description"`
+	ID            string    `db:"id" json:"id"`
+	WorkspaceID   string    `db:"workspace_id" json:"workspaceId"`
+	Name          string    `db:"name" json:"name"`
+	URL           string    `db:"url" json:"url"`
+	DefaultBranch string    `db:"default_branch" json:"defaultBranch"`
+	TargetBranch  string    `db:"target_branch" json:"targetBranch"`
+	CreatedAt     time.Time `db:"created_at" json:"createdAt"`
+	Description   string    `db:"description" json:"description"`
 }
 
 type Skill struct {
@@ -92,7 +88,6 @@ type Agent struct {
 	Model        string    `db:"model" json:"model"`
 	Effort       string    `db:"effort" json:"effort"`
 	MaxBudgetUSD *float64  `db:"max_budget_usd" json:"maxBudgetUsd"`
-	Permission   string    `db:"permission" json:"permission"`
 	Instructions string    `db:"instructions" json:"instructions"`
 	SkillIDs     []string  `db:"skill_ids" json:"skillIds"`
 	ExtraArgs    string    `db:"extra_args" json:"extraArgs"`
@@ -314,13 +309,13 @@ func (s *Store) Repo(ctx context.Context, id string) (*Repo, error) {
 
 func (s *Store) SaveRepo(ctx context.Context, r Repo) (*Repo, error) {
 	if r.ID == "" {
-		return one[Repo](ctx, s, `insert into repos(workspace_id, name, url, default_branch, target_branch, protected_branches, setup_script, env_files, instructions, description)
-			values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
-			r.WorkspaceID, r.Name, r.URL, r.DefaultBranch, r.TargetBranch, nz(r.ProtectedBranches), r.SetupScript, nzf(r.EnvFiles), r.Instructions, r.Description)
+		return one[Repo](ctx, s, `insert into repos(workspace_id, name, url, default_branch, target_branch, description)
+			values($1,$2,$3,$4,$5,$6) returning *`,
+			r.WorkspaceID, r.Name, r.URL, r.DefaultBranch, r.TargetBranch, r.Description)
 	}
-	return one[Repo](ctx, s, `update repos set name=$2, url=$3, default_branch=$4, target_branch=$5, protected_branches=$6, setup_script=$7, env_files=$8, instructions=$9, description=$10
+	return one[Repo](ctx, s, `update repos set name=$2, url=$3, default_branch=$4, target_branch=$5, description=$6
 		where id = $1 returning *`,
-		r.ID, r.Name, r.URL, r.DefaultBranch, r.TargetBranch, nz(r.ProtectedBranches), r.SetupScript, nzf(r.EnvFiles), r.Instructions, r.Description)
+		r.ID, r.Name, r.URL, r.DefaultBranch, r.TargetBranch, r.Description)
 }
 
 func (s *Store) DeleteRepo(ctx context.Context, id string) error {
@@ -369,13 +364,13 @@ func (s *Store) Agent(ctx context.Context, id string) (*Agent, error) {
 
 func (s *Store) SaveAgent(ctx context.Context, a Agent) (*Agent, error) {
 	if a.ID == "" {
-		return one[Agent](ctx, s, `insert into agents(name, avatar, runtime, model, effort, max_budget_usd, permission, instructions, skill_ids, extra_args)
-			values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
-			a.Name, a.Avatar, a.Runtime, a.Model, a.Effort, a.MaxBudgetUSD, a.Permission, a.Instructions, nz(a.SkillIDs), a.ExtraArgs)
+		return one[Agent](ctx, s, `insert into agents(name, avatar, runtime, model, effort, max_budget_usd, instructions, skill_ids, extra_args)
+			values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
+			a.Name, a.Avatar, a.Runtime, a.Model, a.Effort, a.MaxBudgetUSD, a.Instructions, nz(a.SkillIDs), a.ExtraArgs)
 	}
-	return one[Agent](ctx, s, `update agents set name=$2, avatar=$3, runtime=$4, model=$5, effort=$6, max_budget_usd=$7, permission=$8, instructions=$9, skill_ids=$10, extra_args=$11
+	return one[Agent](ctx, s, `update agents set name=$2, avatar=$3, runtime=$4, model=$5, effort=$6, max_budget_usd=$7, instructions=$8, skill_ids=$9, extra_args=$10
 		where id=$1 returning *`,
-		a.ID, a.Name, a.Avatar, a.Runtime, a.Model, a.Effort, a.MaxBudgetUSD, a.Permission, a.Instructions, nz(a.SkillIDs), a.ExtraArgs)
+		a.ID, a.Name, a.Avatar, a.Runtime, a.Model, a.Effort, a.MaxBudgetUSD, a.Instructions, nz(a.SkillIDs), a.ExtraArgs)
 }
 
 // Arquiva em vez de apagar: o histórico de execuções e custos continua apontando para ele.

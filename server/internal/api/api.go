@@ -703,9 +703,6 @@ func (a *API) saveAgent(w http.ResponseWriter, r *http.Request) (any, error) {
 	if in.Runtime != "codex" {
 		in.Runtime = "claude"
 	}
-	if in.Permission != "edits" {
-		in.Permission = "full"
-	}
 	if in.Avatar == "" {
 		in.Avatar = "bot:violet"
 	}

@@ -11,8 +11,8 @@ import { AgentPicker, BranchPicker, LabelPicker, PriorityPicker, RepoScopePicker
 import { api } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
 import { compact, duration, money, runSeconds, timeAgo } from '../lib/format';
-import { useAgents, useCan, useRepos, useUsers } from '../lib/queries';
-import type { Comment, Issue, IssueDetail, IssueRepo, Repo, RepoDiff, RepoMerge, Run, RunEvent } from '../lib/types';
+import { useAgents, useCan, useUsers } from '../lib/queries';
+import type { Comment, Issue, IssueDetail, IssueRepo, RepoDiff, RepoMerge, Run, RunEvent } from '../lib/types';
 import { AgentIcon } from '../components/AgentIcon';
 
 type Tab = 'atividade' | 'resumo' | 'diff' | 'execucoes';
@@ -47,7 +47,6 @@ function IssueView({ detail }: { detail: IssueDetail }) {
   const qc = useQueryClient();
   const toast = useToast();
   const nav = useNavigate();
-  const { data: repos = [] } = useRepos(ws.id);
   const canEdit = useCan('issue.update');
   const canRun = useCan('issue.run');
   const canMerge = useCan('issue.merge');
@@ -105,7 +104,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
         <RepoScopePicker variant="row" ws={ws.id} value={issue.allRepos ? [] : issue.repos.map((r) => r.repoId)}
           onChange={(ids) => saveRepos(!ids.length, ids.map((repoId) => ({ repoId, ...pick(issue.repos.find((r) => r.repoId === repoId)) })))} />
       </PropRow>
-      {issue.repos.map((r) => <IssueRepoRow key={r.repoId} r={r} repo={repos.find((x) => x.id === r.repoId)} locked={!canEdit || issue.status === 'done' || issue.status === 'cancelled'} onChange={(b) => setBranch(r.repoId, b)} />)}
+      {issue.repos.map((r) => <IssueRepoRow key={r.repoId} r={r} locked={!canEdit || issue.status === 'done' || issue.status === 'cancelled'} onChange={(b) => setBranch(r.repoId, b)} />)}
       <div className="space-y-1 px-2 pt-3 text-xs text-mute">
         {issue.branch && <div className="truncate font-mono" title={issue.branch}>{issue.branch}</div>}
         <div>Custo total: <span className="text-dim">{money(issue.costUsd)}</span> · {runs.length} execução(ões)</div>
@@ -188,7 +187,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
         <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-line p-2 lg:block">{properties}</aside>
       </div>
 
-      {merging && <MergeModal issue={issue} repos={repos} onClose={() => setMerging(false)} />}
+      {merging && <MergeModal issue={issue} onClose={() => setMerging(false)} />}
     </div>
   );
 }
@@ -196,7 +195,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 const pick = (r?: IssueRepo) => (r ? { baseBranch: r.baseBranch, targetBranch: r.targetBranch } : {});
 
 // Um repositório da issue: base (fixa depois que a IA mexe) → destino do merge.
-function IssueRepoRow({ r, repo, locked, onChange }: { r: IssueRepo; repo?: Repo; locked: boolean; onChange: (b: { baseBranch?: string; targetBranch?: string }) => void }) {
+function IssueRepoRow({ r, locked, onChange }: { r: IssueRepo; locked: boolean; onChange: (b: { baseBranch?: string; targetBranch?: string }) => void }) {
   const state = r.mergedInto ? ['mesclado', 'text-sky-400'] : r.conflict ? ['conflito', 'text-red-400'] : r.changed ? ['alterado', 'text-emerald-400'] : null;
   return (
     <div className="ml-24 rounded-md border border-line/70 px-2 py-1.5">
@@ -209,7 +208,7 @@ function IssueRepoRow({ r, repo, locked, onChange }: { r: IssueRepo; repo?: Repo
           : <BranchPicker repoId={r.repoId} value={r.baseBranch} onChange={(baseBranch) => onChange({ baseBranch })} />}
         <span className="text-mute">→</span>
         {locked || r.mergedInto ? <span className="px-1 font-mono text-[11px] text-mute">{r.mergedInto || r.targetBranch}</span>
-          : <BranchPicker repoId={r.repoId} value={r.targetBranch} protectedBranches={repo?.protectedBranches} onChange={(targetBranch) => onChange({ targetBranch })} />}
+          : <BranchPicker repoId={r.repoId} value={r.targetBranch} onChange={(targetBranch) => onChange({ targetBranch })} />}
       </div>
     </div>
   );
@@ -559,13 +558,11 @@ function RunsTable({ runs }: { runs: Run[] }) {
   );
 }
 
-function MergeModal({ issue, repos, onClose }: { issue: Issue; repos: Repo[]; onClose: () => void }) {
+function MergeModal({ issue, onClose }: { issue: Issue; onClose: () => void }) {
   const pending = issue.repos.filter((r) => r.changed && !r.mergedInto);
   const [targets, setTargets] = useState<Record<string, string>>(() => Object.fromEntries(pending.map((r) => [r.repoId, r.targetBranch])));
   const [busy, setBusy] = useState(false);
   const toast = useToast();
-  const prot = (r: IssueRepo) => !!repos.find((x) => x.id === r.repoId)?.protectedBranches.includes(targets[r.repoId]);
-  const blocked = pending.some(prot);
   const submit = async () => {
     setBusy(true);
     try {
@@ -585,7 +582,7 @@ function MergeModal({ issue, repos, onClose }: { issue: Issue; repos: Repo[]; on
       open
       onClose={onClose}
       title={pending.length > 1 ? `Fazer merge em ${pending.length} repositórios` : 'Fazer merge'}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="success" loading={busy} disabled={blocked} onClick={submit}><GitMerge className="size-3.5" /> Fazer merge</Button></>}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="success" loading={busy} onClick={submit}><GitMerge className="size-3.5" /> Fazer merge</Button></>}
     >
       <p className="mb-3 text-dim">
         Merge <code className="font-mono text-xs">--no-ff</code> de <code className="font-mono text-xs">{issue.branch}</code> em cada repositório alterado.
@@ -596,9 +593,7 @@ function MergeModal({ issue, repos, onClose }: { issue: Issue; repos: Repo[]; on
           <div key={r.repoId} className="flex flex-wrap items-center gap-2 rounded-lg border border-line p-2">
             <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
             <span className="text-xs text-mute">→</span>
-            <BranchPicker repoId={r.repoId} value={targets[r.repoId]} onChange={(b) => setTargets({ ...targets, [r.repoId]: b })}
-              protectedBranches={repos.find((x) => x.id === r.repoId)?.protectedBranches} />
-            {prot(r) && <span className="w-full text-xs text-red-400">Branch protegida: o Multica não faz merge nela.</span>}
+            <BranchPicker repoId={r.repoId} value={targets[r.repoId]} onChange={(b) => setTargets({ ...targets, [r.repoId]: b })} />
           </div>
         ))}
       </div>
