@@ -13,6 +13,7 @@ import { renderMarkdown } from '../lib/markdown';
 import { compact, duration, money, runSeconds, timeAgo } from '../lib/format';
 import { useAgents, useCan, useRepos, useUsers } from '../lib/queries';
 import type { Comment, Issue, IssueDetail, IssueRepo, Repo, RepoDiff, RepoMerge, Run, RunEvent } from '../lib/types';
+import { AgentIcon } from '../components/AgentIcon';
 
 type Tab = 'atividade' | 'resumo' | 'diff' | 'execucoes';
 
@@ -305,7 +306,7 @@ function CommentItem({ comment }: { comment: Comment }) {
   return (
     <div className={clsx('rounded-xl border p-3.5', comment.kind === 'agent' ? 'border-accent/25 bg-gradient-to-b from-accent/[0.08] to-accent/[0.02]' : 'border-white/[0.07] bg-card/60')}>
       <div className="mb-1.5 flex items-center gap-2 text-xs">
-        {agent ? <Avatar emoji={agent.avatar} /> : <Avatar name={user?.name} />}
+        {agent ? <AgentIcon avatar={agent.avatar} /> : <Avatar name={user?.name} />}
         <span className="font-medium">{agent?.name ?? user?.name ?? 'alguém'}</span>
         <span className="text-mute">{timeAgo(comment.createdAt)}</span>
       </div>

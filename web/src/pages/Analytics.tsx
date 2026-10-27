@@ -13,6 +13,7 @@ import { STATUSES, statusOf } from '../lib/constants';
 import { compact, duration, money } from '../lib/format';
 import { useAgents } from '../lib/queries';
 import type { Agent, Analytics, Totals } from '../lib/types';
+import { AgentIcon } from '../components/AgentIcon';
 
 // Paleta categórica validada (daltonismo + contraste) para a superfície escura.
 const C1 = 'var(--chart-1)';
@@ -318,7 +319,7 @@ function Dashboards({ data, daily, days, metric, setMetric, table, setTable, age
           {data.agents.length ? data.agents.map((a) => (
             <RankRow key={a.agentId ?? a.agentName} share={a.costUsd / maxAgent} value={money(a.costUsd)}
               sub={`${a.runs} exec. · ${a.runs ? Math.round(((a.runs - a.failed) / a.runs) * 100) : 0}% ok`}
-              left={<><Avatar emoji={agents.find((x) => x.id === a.agentId)?.avatar ?? '🤖'} size={20} /><span className="truncate">{a.agentName || 'Removido'}</span></>} />
+              left={<><AgentIcon avatar={agents.find((x) => x.id === a.agentId)?.avatar} size={20} /><span className="truncate">{a.agentName || 'Removido'}</span></>} />
           )) : <p className="py-10 text-center text-mute">Nenhuma execução.</p>}
         </Card>
         <Card title="Modelos" subtitle="Custo e tokens por modelo">

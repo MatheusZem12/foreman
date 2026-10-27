@@ -17,13 +17,13 @@ export function Button({
       {...props}
       disabled={props.disabled || loading}
       className={clsx(
-        'inline-flex select-none items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
-        size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-9 px-3.5',
-        variant === 'primary' && 'bg-gradient-to-b from-accent to-accent/85 text-white shadow-[0_1px_0_0_rgb(255_255_255/0.2)_inset,0_4px_14px_-4px_rgb(var(--accent)/0.6)] hover:brightness-110',
-        variant === 'ghost' && 'text-dim hover:bg-hover hover:text-fg',
-        variant === 'outline' && 'border border-line bg-white/[0.03] text-fg hover:border-white/15 hover:bg-hover',
-        variant === 'danger' && 'border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20',
-        variant === 'success' && 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20',
+        'relative inline-flex select-none items-center justify-center gap-2 rounded-[10px] font-medium whitespace-nowrap transition-all duration-150 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
+        size === 'sm' ? 'h-7 rounded-lg px-2.5 text-xs' : 'h-9 px-4 text-[13px]',
+        variant === 'primary' && 'bg-gradient-to-b from-[#8f80ff] to-accent text-white shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25),0_0_0_1px_rgb(var(--accent)/0.6),0_6px_16px_-6px_rgb(var(--accent)/0.7)] hover:brightness-110 hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.3),0_0_0_1px_rgb(var(--accent)/0.8),0_8px_22px_-6px_rgb(var(--accent)/0.85)]',
+        variant === 'ghost' && 'text-dim hover:bg-white/[0.06] hover:text-fg',
+        variant === 'outline' && 'bg-white/[0.04] text-fg shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05),0_0_0_1px_rgb(255_255_255/0.09)] hover:bg-white/[0.07] hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06),0_0_0_1px_rgb(255_255_255/0.16)]',
+        variant === 'danger' && 'bg-red-500/10 text-red-300 shadow-[0_0_0_1px_rgb(239_68_68/0.3)] hover:bg-red-500/[0.18] hover:text-red-200',
+        variant === 'success' && 'bg-emerald-500/10 text-emerald-300 shadow-[0_0_0_1px_rgb(16_185_129/0.3)] hover:bg-emerald-500/[0.18]',
         className
       )}
     >
@@ -47,8 +47,8 @@ export function Field({ label, hint, children, className }: { label: string; hin
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
     <button type="button" onClick={() => onChange(!checked)} className="inline-flex items-center gap-2 text-left text-dim">
-      <span className={clsx('relative h-4 w-7 shrink-0 rounded-full transition-colors', checked ? 'bg-accent' : 'bg-line')}>
-        <span className={clsx('absolute top-0.5 size-3 rounded-full bg-white transition-all', checked ? 'left-3.5' : 'left-0.5')} />
+      <span className={clsx('relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200', checked ? 'bg-accent shadow-[0_0_12px_-2px_rgb(var(--accent)/0.7)]' : 'bg-white/10 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]')}>
+        <span className={clsx('absolute top-0.5 size-4 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.4)] transition-all duration-200', checked ? 'left-[18px]' : 'left-0.5')} />
       </span>
       {label}
     </button>
@@ -114,15 +114,15 @@ export function Modal({
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex animate-[fade_.15s_ease-out] items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={clsx('flex max-h-[92dvh] w-full animate-[pop_.18s_ease-out] flex-col rounded-t-2xl border border-white/10 bg-panel shadow-pop sm:rounded-2xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
+      <div className={clsx('flex max-h-[92dvh] w-full animate-[pop_.18s_ease-out] flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-panel shadow-pop sm:rounded-2xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
         {title && (
-          <div className="flex items-center justify-between px-5 pb-2 pt-4">
-            <div className="text-[15px] font-semibold tracking-tight">{title}</div>
-            <button onClick={onClose} className="rounded-lg p-1.5 text-mute hover:bg-hover hover:text-fg"><X className="size-4" /></button>
+          <div className="flex items-center justify-between gap-3 px-6 pb-3 pt-5">
+            <div className="text-base font-semibold tracking-tight">{title}</div>
+            <button onClick={onClose} aria-label="Fechar" className="-mr-1.5 grid size-8 place-items-center rounded-lg text-mute transition hover:bg-white/[0.06] hover:text-fg"><X className="size-4" /></button>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto px-5 py-3">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-2 border-t border-line/70 px-5 py-3.5 safe-bottom">{footer}</div>}
+        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">{children}</div>
+        {footer && <div className="flex items-center justify-end gap-2.5 border-t border-white/[0.06] bg-black/20 px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</div>}
       </div>
     </div>,
     document.body

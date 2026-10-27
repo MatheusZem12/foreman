@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Bot, Copy, Cpu, Gauge, Pencil, Plus, ShieldCheck, Trash2, Wallet } from 'lucide-react';
-import { Button, EmptyState, Field, Modal, PageHeader, useToast } from '../components/ui';
+import clsx from 'clsx';
+import { Bot, Check, ChevronDown, Copy, Cpu, Gauge, Pencil, Plus, ShieldCheck, Trash2, Wallet } from 'lucide-react';
+import { Button, EmptyState, Field, Modal, PageHeader, Popover, useToast } from '../components/ui';
+import { AGENT_COLORS, AGENT_ICONS, AgentIcon, parseAvatar } from '../components/AgentIcon';
 import { api } from '../lib/api';
 import { CLAUDE_MODELS, EFFORTS } from '../lib/constants';
 import { useCan, useAgents, useSkills } from '../lib/queries';
 import type { Agent } from '../lib/types';
-
-const EMOJIS = ['🤖', '🦉', '🌙', '🦊', '🐙', '⚡', '🧪', '🛠️', '🎨', '🔍', '🚀', '🧠'];
 
 export function AgentsPage() {
   const { data: agents = [] } = useAgents();
@@ -26,7 +26,7 @@ export function AgentsPage() {
     toast('success', 'Agente removido');
   };
 
-  const create = () => setEditing({ runtime: 'claude', model: 'sonnet', permission: 'full', avatar: '🤖', skillIds: [] });
+  const create = () => setEditing({ runtime: 'claude', model: 'sonnet', permission: 'full', avatar: 'bot:violet', skillIds: [] });
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-6xl p-4 pb-24 md:p-8">
@@ -41,17 +41,17 @@ export function AgentsPage() {
             {agents.map((a) => {
               const pack = skills.filter((s) => s.always || a.skillIds.includes(s.id));
               return (
-                <div key={a.id} className="surface surface-hover group flex flex-col p-4">
+                <div key={a.id} className="surface surface-hover group relative flex flex-col p-4">
                   <div className="flex items-start gap-3">
-                    <div className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-gradient-to-br from-white/10 to-white/[0.02] text-xl">{a.avatar}</div>
+                    <AgentIcon avatar={a.avatar} size={44} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold">{a.name}</div>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-mute">
-                        <span className={a.runtime === 'claude' ? 'text-[#e58f5c]' : 'text-emerald-400'}>{a.runtime === 'claude' ? 'Claude Code' : 'Codex'}</span>
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-mute">
+                        <span className={clsx('shrink-0', a.runtime === 'claude' ? 'text-[#e58f5c]' : 'text-emerald-400')}>{a.runtime === 'claude' ? 'Claude Code' : 'Codex'}</span>
                         <span>·</span><span className="truncate">{a.model || 'modelo padrão'}</span>
                       </div>
                     </div>
-                    <div className="flex gap-0.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+                    <div className="absolute right-3 top-3 flex gap-0.5 rounded-lg bg-panel/90 p-0.5 opacity-100 backdrop-blur transition sm:opacity-0 sm:group-hover:opacity-100">
                       {canCreate && <button title="Duplicar" onClick={() => setEditing({ ...a, id: undefined, name: `${a.name} (cópia)` })} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Copy className="size-4" /></button>}
                       {canUpdate && <button title="Editar" onClick={() => setEditing(a)} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Pencil className="size-4" /></button>}
                       {canDelete && <button title="Remover" onClick={() => remove(a)} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
@@ -112,11 +112,10 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
     <Modal open wide onClose={onClose} title={a.id ? `Editar ${agent.name}` : 'Novo agente'} footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} onClick={save}>Salvar</Button></>}>
       <div className="space-y-4">
         <div className="flex gap-3">
-          <Field label="Ícone">
-            <select value={a.avatar} onChange={(e) => set({ avatar: e.target.value })} className="field-input w-16 text-center text-lg">
-              {EMOJIS.map((e) => <option key={e}>{e}</option>)}
-            </select>
-          </Field>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-dim">Ícone</span>
+            <IconPicker value={a.avatar} onChange={(avatar) => set({ avatar })} />
+          </div>
           <Field label="Nome" className="flex-1"><input autoFocus className="field-input" value={a.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder="Claude Dev, Codex Revisor…" /></Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -155,8 +154,9 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
               return (
                 <button key={s.id} type="button" disabled={s.always} title={s.description}
                   onClick={() => set({ skillIds: on ? skillIds.filter((x) => x !== s.id) : [...skillIds, s.id] })}
-                  className={`rounded-full border px-2.5 py-0.5 text-xs ${on ? 'border-accent/50 bg-accent/15 text-fg' : 'border-line text-dim hover:bg-hover'}`}>
-                  {s.name}{s.always && ' · sempre'}
+                  className={clsx('inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition', on ? 'border-accent/50 bg-accent/15 text-fg' : 'border-line text-dim hover:border-white/15 hover:bg-hover hover:text-fg', s.always && 'cursor-default')}>
+                  {on ? <Check className="size-3 text-accent" /> : <Plus className="size-3" />}
+                  {s.name}{s.always && <span className="text-mute">· sempre</span>}
                 </button>
               );
             })}
@@ -168,5 +168,43 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
         </Field>
       </div>
     </Modal>
+  );
+}
+
+// Escolha do ícone do agente: grade de ícones + cores.
+function IconPicker({ value, onChange }: { value?: string; onChange: (v: string) => void }) {
+  const { icon, color } = parseAvatar(value);
+  return (
+    <Popover
+      className="w-[272px] p-3"
+      trigger={(open) => (
+        <button type="button" className={clsx('flex h-[38px] items-center gap-1.5 rounded-lg border bg-white/[0.02] pl-1.5 pr-2 transition', open ? 'border-accent/70 shadow-[0_0_0_3px_rgb(var(--accent)/0.15)]' : 'border-line hover:border-white/15')}>
+          <AgentIcon avatar={`${icon}:${color}`} size={26} />
+          <ChevronDown className="size-3.5 text-mute" />
+        </button>
+      )}
+    >
+      {() => (
+        <div>
+          <div className="mb-2 text-[11px] font-medium text-mute">Ícone</div>
+          <div className="grid grid-cols-7 gap-1">
+            {Object.entries(AGENT_ICONS).map(([k, I]) => (
+              <button key={k} type="button" title={k} onClick={() => onChange(`${k}:${color}`)}
+                className={clsx('grid size-8 place-items-center rounded-lg transition', k === icon ? 'bg-accent/20 text-fg ring-1 ring-accent/60' : 'text-dim hover:bg-white/[0.07] hover:text-fg')}>
+                <I className="size-4" />
+              </button>
+            ))}
+          </div>
+          <div className="mb-2 mt-3 text-[11px] font-medium text-mute">Cor</div>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(AGENT_COLORS).map(([k, [from, to]]) => (
+              <button key={k} type="button" title={k} onClick={() => onChange(`${icon}:${k}`)}
+                className={clsx('size-6 rounded-full transition hover:scale-110', k === color && 'ring-2 ring-white/80 ring-offset-2 ring-offset-panel')}
+                style={{ background: `linear-gradient(145deg, ${from}, ${to})` }} />
+            ))}
+          </div>
+        </div>
+      )}
+    </Popover>
   );
 }

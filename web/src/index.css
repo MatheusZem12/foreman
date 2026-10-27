@@ -75,7 +75,6 @@ code, kbd, pre { font-variant-ligatures: none; }
 
 @keyframes pulse-soft { 50% { opacity: .45; } }
 .animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 
 @keyframes fade { from { opacity: 0; } }
 @keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.98); } }

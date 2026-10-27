@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Bot, FolderGit2, GitBranch, Plus, Tag } from 'lucide-react';
-import { Avatar, Chip, MenuItem, Popover, PriorityIcon, StatusIcon } from './ui';
+import { Chip, MenuItem, Popover, PriorityIcon, StatusIcon } from './ui';
 import { LABEL_COLORS, PRIORITIES, STATUSES, statusOf } from '../lib/constants';
 import { useAgents, useBranches, useLabels, useRepos } from '../lib/queries';
 import { api } from '../lib/api';
 import type { Label, Status } from '../lib/types';
+import { AgentIcon } from './AgentIcon';
 
 type Variant = 'chip' | 'row';
 
@@ -53,7 +54,7 @@ export function AgentPicker({ value, onChange, variant = 'chip', allowNone = tru
     <Popover
       trigger={() => (
         <Trigger variant={variant}>
-          {current ? <Avatar emoji={current.avatar} /> : <Bot className="size-3.5 text-mute" />}
+          {current ? <AgentIcon avatar={current.avatar} /> : <Bot className="size-3.5 text-mute" />}
           <span className="truncate">{current ? current.name : 'Sem agente'}</span>
         </Trigger>
       )}
@@ -63,7 +64,7 @@ export function AgentPicker({ value, onChange, variant = 'chip', allowNone = tru
           {allowNone && <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><Bot className="size-3.5 text-mute" /> Sem agente</MenuItem>}
           {agents.map((a) => (
             <MenuItem key={a.id} selected={a.id === value} onClick={() => { onChange(a.id); close(); }}>
-              <Avatar emoji={a.avatar} /> <span className="truncate">{a.name}</span>
+              <AgentIcon avatar={a.avatar} /> <span className="truncate">{a.name}</span>
               <span className="ml-auto pl-2 text-xs text-mute">{a.model || a.runtime}</span>
             </MenuItem>
           ))}

@@ -706,7 +706,7 @@ func (a *API) saveAgent(w http.ResponseWriter, r *http.Request) (any, error) {
 		in.Permission = "full"
 	}
 	if in.Avatar == "" {
-		in.Avatar = "🤖"
+		in.Avatar = "bot:violet"
 	}
 	return a.st.SaveAgent(r.Context(), in)
 }

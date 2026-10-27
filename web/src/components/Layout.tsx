@@ -199,7 +199,7 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
         {can(me, 'settings.manage', 'repo.create') && link(`${base}/servidor`, <Server className="size-4" />, 'Servidor')}
       </nav>
 
-      <div className="space-y-0.5 border-t border-line p-2 safe-bottom">
+      <div className="space-y-0.5 border-t border-line px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {link('/sobre', <CircleHelp className="size-4" />, 'Como funciona')}
         {link(`${base}/conta`, <UserRound className="size-4" />, 'Minha conta')}
       </div>

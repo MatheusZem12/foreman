@@ -8,13 +8,14 @@ import {
 import clsx from 'clsx';
 import { Columns3, List, ListFilter, Plus, Search } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Avatar, Chip, MenuItem, Popover, PriorityIcon, Spinner, StatusIcon, useToast } from '../components/ui';
+import { Chip, MenuItem, Popover, PriorityIcon, Spinner, StatusIcon, useToast } from '../components/ui';
 import { LabelDots } from '../components/pickers';
 import { BOARD_STATUSES, STATUSES, statusOf } from '../lib/constants';
 import { useAgents, useIssues, useLabels, useMe } from '../lib/queries';
 import { money, timeAgo } from '../lib/format';
 import { api } from '../lib/api';
 import type { Agent, Issue, Label, Status } from '../lib/types';
+import { AgentIcon } from '../components/AgentIcon';
 
 type Sort = 'manual' | 'priority' | 'updated';
 
@@ -209,13 +210,13 @@ function AgentFilter({ agents, value, onChange }: { agents: Agent[]; value: stri
   return (
     <Popover
       trigger={() => (
-        <button className={clsx('rounded-md px-2.5 py-1 text-xs transition', current ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{current ? `${current.avatar} ${current.name}` : 'Agentes'}</button>
+        <button className={clsx('rounded-md px-2.5 py-1 text-xs transition', current ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{current ? <span className="inline-flex items-center gap-1.5"><AgentIcon avatar={current.avatar} size={14} />{current.name}</span> : 'Agentes'}</button>
       )}
     >
       {(close) =>
         agents.map((a) => (
           <MenuItem key={a.id} selected={a.id === value} onClick={() => { onChange(a.id === value ? 'all' : a.id); close(); }}>
-            <Avatar emoji={a.avatar} /> {a.name}
+            <AgentIcon avatar={a.avatar} /> {a.name}
           </MenuItem>
         ))
       }
@@ -336,7 +337,7 @@ function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[
       <div className="mt-1.5 font-medium leading-snug">{issue.title}</div>
       {issue.labelIds.length > 0 && <div className="mt-1.5"><LabelDots ids={issue.labelIds} labels={labels} /></div>}
       <div className="mt-2 flex items-center gap-1.5 text-[11px] text-mute">
-        {agent ? <><Avatar emoji={agent.avatar} size={16} /><span className="truncate">{agent.name}</span></> : <span>Sem agente</span>}
+        {agent ? <><AgentIcon avatar={agent.avatar} size={16} /><span className="truncate">{agent.name}</span></> : <span>Sem agente</span>}
         {issue.costUsd > 0 && <span>· {money(issue.costUsd)}</span>}
         <span className="ml-auto shrink-0">{timeAgo(issue.updatedAt)}</span>
       </div>
@@ -364,7 +365,7 @@ function ListView({ byStatus, columns, agents, labels }: { byStatus: Record<Stat
                   <span className="min-w-0 flex-1 truncate">{i.title}</span>
                   {i.activeRun && <span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" />}
                   <span className="hidden md:block"><LabelDots ids={i.labelIds} labels={labels} /></span>
-                  {agent && <Avatar emoji={agent.avatar} />}
+                  {agent && <AgentIcon avatar={agent.avatar} />}
                   <span className="hidden w-12 text-right text-xs text-mute sm:block">{timeAgo(i.updatedAt)}</span>
                 </Link>
               );
