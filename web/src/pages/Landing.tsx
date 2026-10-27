@@ -134,6 +134,7 @@ export function Landing() {
             <Shot src="/shots/agents.jpg" alt="Agentes com skills" />
             <Shot src="/shots/permissions.jpg" alt="Perfis de permissão" />
           </div>
+          <Shot src="/shots/analytics.jpg" alt="Analytics: issues por mês, custo, agentes e modelos" className="mt-4" />
         </div>
       </section>
 
