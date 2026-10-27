@@ -395,26 +395,86 @@ type AgentPoint struct {
 	Totals
 }
 
+type MonthPoint struct {
+	Month    string  `json:"month"`
+	Created  int64   `json:"created"`
+	Resolved int64   `json:"resolved"`
+	CostUSD  float64 `json:"costUsd"`
+	Runs     int64   `json:"runs"`
+}
+
+type IssueStats struct {
+	Created         int64   `json:"created"`         // criadas no período
+	Resolved        int64   `json:"resolved"`        // concluídas no período
+	Open            int64   `json:"open"`            // abertas agora
+	AvgResolveHours float64 `json:"avgResolveHours"` // criação → conclusão, das concluídas no período
+}
+
+type StatusCount struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+}
+
+type ModelPoint struct {
+	Runtime string `json:"runtime"`
+	Model   string `json:"model"`
+	Totals
+}
+
+type UserPoint struct {
+	UserID  *string `json:"userId"`
+	Name    string  `json:"name"`
+	Runs    int64   `json:"runs"`
+	CostUSD float64 `json:"costUsd"`
+}
+
+type TopIssue struct {
+	ID      string  `json:"id"`
+	Ref     string  `json:"ref"`
+	Title   string  `json:"title"`
+	Status  string  `json:"status"`
+	CostUSD float64 `json:"costUsd"`
+	Runs    int64   `json:"runs"`
+}
+
 type Analytics struct {
-	Totals Totals       `json:"totals"`
-	Daily  []DayPoint   `json:"daily"`
-	Agents []AgentPoint `json:"agents"`
+	Totals  Totals        `json:"totals"`
+	Issues  IssueStats    `json:"issues"`
+	Daily   []DayPoint    `json:"daily"`
+	Monthly []MonthPoint  `json:"monthly"`
+	Status  []StatusCount `json:"status"`
+	Agents  []AgentPoint  `json:"agents"`
+	Models  []ModelPoint  `json:"models"`
+	Users   []UserPoint   `json:"users"`
+	Top     []TopIssue    `json:"top"`
 }
 
 const totalsCols = `coalesce(sum(cost_usd),0)::float8, coalesce(sum(input_tokens),0)::int8, coalesce(sum(cached_tokens),0)::int8,
 	coalesce(sum(output_tokens),0)::int8, coalesce(sum(extract(epoch from (coalesce(ended_at, now()) - started_at))),0)::float8,
 	count(*), count(*) filter (where status = 'failed')`
 
-// wsIDs nil = todos os workspaces (admin); lista vazia = nenhum.
+// wsIDs nil = todos os workspaces; lista vazia = nenhum.
 func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analytics, error) {
 	since := time.Now().AddDate(0, 0, -days)
 	where := `where created_at >= $1 and started_at is not null and ($2::uuid[] is null or workspace_id = any($2::uuid[]))`
-	out := &Analytics{Daily: []DayPoint{}, Agents: []AgentPoint{}}
+	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
+	out := &Analytics{Daily: []DayPoint{}, Monthly: []MonthPoint{}, Status: []StatusCount{}, Agents: []AgentPoint{},
+		Models: []ModelPoint{}, Users: []UserPoint{}, Top: []TopIssue{}}
 	t := &out.Totals
 	if err := s.DB.QueryRow(ctx, `select `+totalsCols+` from runs `+where, since, wsIDs).
 		Scan(&t.CostUSD, &t.InputTokens, &t.CachedTokens, &t.OutputTokens, &t.Seconds, &t.Runs, &t.Failed); err != nil {
 		return nil, err
 	}
+	is := &out.Issues
+	if err := s.DB.QueryRow(ctx, `select
+			count(*) filter (where i.created_at >= $1),
+			count(*) filter (where i.done_at >= $1),
+			count(*) filter (where i.status not in ('done','cancelled')),
+			coalesce(avg(extract(epoch from (i.done_at - i.created_at)) / 3600) filter (where i.done_at >= $1), 0)::float8
+		from issues i where `+wsOnly, since, wsIDs).Scan(&is.Created, &is.Resolved, &is.Open, &is.AvgResolveHours); err != nil {
+		return nil, err
+	}
+
 	rows, err := s.DB.Query(ctx, `select to_char(date_trunc('day', created_at), 'YYYY-MM-DD'), `+totalsCols+` from runs `+where+` group by 1 order by 1`, since, wsIDs)
 	if err != nil {
 		return nil, err
@@ -428,17 +488,94 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 		out.Daily = append(out.Daily, p)
 	}
 	rows.Close()
+
+	// Últimos 12 meses, sempre (independe do período escolhido).
+	rows, err = s.DB.Query(ctx, `with m as (
+			select generate_series(date_trunc('month', now()) - interval '11 months', date_trunc('month', now()), interval '1 month') as month)
+		select to_char(m.month, 'YYYY-MM'),
+			(select count(*) from issues i where `+wsOnly+` and date_trunc('month', i.created_at) = m.month),
+			(select count(*) from issues i where `+wsOnly+` and date_trunc('month', i.done_at) = m.month),
+			(select coalesce(sum(r.cost_usd),0)::float8 from runs r where ($2::uuid[] is null or r.workspace_id = any($2::uuid[])) and date_trunc('month', r.created_at) = m.month),
+			(select count(*) from runs r where ($2::uuid[] is null or r.workspace_id = any($2::uuid[])) and r.started_at is not null and date_trunc('month', r.created_at) = m.month)
+		from m where $1::timestamptz is not null order by 1`, since, wsIDs)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var p MonthPoint
+		if err := rows.Scan(&p.Month, &p.Created, &p.Resolved, &p.CostUSD, &p.Runs); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out.Monthly = append(out.Monthly, p)
+	}
+	rows.Close()
+
+	rows, err = s.DB.Query(ctx, `select i.status, count(*) from issues i where `+wsOnly+`
+		and (i.status not in ('done','cancelled') or i.updated_at >= $1) group by 1`, since, wsIDs)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var p StatusCount
+		rows.Scan(&p.Status, &p.Count)
+		out.Status = append(out.Status, p)
+	}
+	rows.Close()
+
 	rows, err = s.DB.Query(ctx, `select agent_id::text, max(agent_name), `+totalsCols+` from runs `+where+` group by agent_id order by 3 desc`, since, wsIDs)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var p AgentPoint
+		if err := rows.Scan(&p.AgentID, &p.AgentName, &p.CostUSD, &p.InputTokens, &p.CachedTokens, &p.OutputTokens, &p.Seconds, &p.Runs, &p.Failed); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out.Agents = append(out.Agents, p)
+	}
+	rows.Close()
+
+	rows, err = s.DB.Query(ctx, `select runtime, model, `+totalsCols+` from runs `+where+` group by 1, 2 order by 3 desc`, since, wsIDs)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var p ModelPoint
+		if err := rows.Scan(&p.Runtime, &p.Model, &p.CostUSD, &p.InputTokens, &p.CachedTokens, &p.OutputTokens, &p.Seconds, &p.Runs, &p.Failed); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out.Models = append(out.Models, p)
+	}
+	rows.Close()
+
+	rows, err = s.DB.Query(ctx, `select r.created_by::text, coalesce(max(u.name), 'Sistema'), count(*), coalesce(sum(r.cost_usd),0)::float8
+		from runs r left join users u on u.id = r.created_by
+		where r.created_at >= $1 and r.started_at is not null and ($2::uuid[] is null or r.workspace_id = any($2::uuid[]))
+		group by r.created_by order by 3 desc limit 10`, since, wsIDs)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var p UserPoint
+		rows.Scan(&p.UserID, &p.Name, &p.Runs, &p.CostUSD)
+		out.Users = append(out.Users, p)
+	}
+	rows.Close()
+
+	rows, err = s.DB.Query(ctx, `select i.id::text, w.key || '-' || i.number, i.title, i.status, coalesce(sum(r.cost_usd),0)::float8, count(r.id)
+		from issues i join workspaces w on w.id = i.workspace_id join runs r on r.issue_id = i.id
+		where r.created_at >= $1 and `+wsOnly+` group by i.id, w.key order by 5 desc limit 8`, since, wsIDs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var p AgentPoint
-		if err := rows.Scan(&p.AgentID, &p.AgentName, &p.CostUSD, &p.InputTokens, &p.CachedTokens, &p.OutputTokens, &p.Seconds, &p.Runs, &p.Failed); err != nil {
-			return nil, err
-		}
-		out.Agents = append(out.Agents, p)
+		var p TopIssue
+		rows.Scan(&p.ID, &p.Ref, &p.Title, &p.Status, &p.CostUSD, &p.Runs)
+		out.Top = append(out.Top, p)
 	}
 	return out, rows.Err()
 }

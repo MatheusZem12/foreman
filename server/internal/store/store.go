@@ -108,23 +108,24 @@ type Label struct {
 }
 
 type Issue struct {
-	ID          string    `db:"id" json:"id"`
-	WorkspaceID string    `db:"workspace_id" json:"workspaceId"`
-	Number      int       `db:"number" json:"number"`
-	Title       string    `db:"title" json:"title"`
-	Description string    `db:"description" json:"description"`
-	Status      string    `db:"status" json:"status"`
-	Priority    int16     `db:"priority" json:"priority"`
-	Position    float64   `db:"position" json:"position"`
-	AgentID     *string   `db:"agent_id" json:"agentId"`
-	Branch      string    `db:"branch" json:"branch"`
-	LabelIDs    []string  `db:"label_ids" json:"labelIds"`
-	SkillIDs    []string  `db:"skill_ids" json:"skillIds"`
-	Summary     string    `db:"summary" json:"summary"`
-	CreatedBy   *string   `db:"created_by" json:"createdBy"`
-	CreatedAt   time.Time `db:"created_at" json:"createdAt"`
-	UpdatedAt   time.Time `db:"updated_at" json:"updatedAt"`
-	AllRepos    bool      `db:"all_repos" json:"allRepos"`
+	ID          string     `db:"id" json:"id"`
+	WorkspaceID string     `db:"workspace_id" json:"workspaceId"`
+	Number      int        `db:"number" json:"number"`
+	Title       string     `db:"title" json:"title"`
+	Description string     `db:"description" json:"description"`
+	Status      string     `db:"status" json:"status"`
+	Priority    int16      `db:"priority" json:"priority"`
+	Position    float64    `db:"position" json:"position"`
+	AgentID     *string    `db:"agent_id" json:"agentId"`
+	Branch      string     `db:"branch" json:"branch"`
+	LabelIDs    []string   `db:"label_ids" json:"labelIds"`
+	SkillIDs    []string   `db:"skill_ids" json:"skillIds"`
+	Summary     string     `db:"summary" json:"summary"`
+	CreatedBy   *string    `db:"created_by" json:"createdBy"`
+	CreatedAt   time.Time  `db:"created_at" json:"createdAt"`
+	UpdatedAt   time.Time  `db:"updated_at" json:"updatedAt"`
+	AllRepos    bool       `db:"all_repos" json:"allRepos"`
+	DoneAt      *time.Time `db:"done_at" json:"doneAt"`
 	// Calculados na listagem.
 	Repos     []IssueRepo `db:"repos" json:"repos"`
 	ActiveRun *string     `db:"active_run" json:"activeRun"`
