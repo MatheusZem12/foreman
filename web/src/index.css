@@ -3,32 +3,59 @@
 @tailwind utilities;
 
 :root {
-  --bg: 17 17 19;
-  --panel: 24 24 27;
-  --card: 30 30 34;
-  --hover: 39 39 44;
-  --line: 46 46 52;
-  --fg: 236 236 240;
-  --dim: 168 168 178;
-  --mute: 113 113 122;
-  --accent: 99 102 241;
+  --bg: 11 11 13;
+  --panel: 18 18 21;
+  --card: 24 24 28;
+  --hover: 33 33 38;
+  --line: 39 39 45;
+  --fg: 237 237 241;
+  --dim: 163 163 173;
+  --mute: 110 110 120;
+  --accent: 124 108 255;
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-grid: rgb(255 255 255 / 0.06);
   color-scheme: dark;
 }
 
 html, body, #root { height: 100%; }
 body {
   @apply bg-bg text-fg font-sans antialiased text-[13px];
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
   -webkit-tap-highlight-color: transparent;
 }
 * { scrollbar-width: thin; scrollbar-color: rgb(var(--line)) transparent; }
 ::selection { background: rgb(var(--accent) / 0.35); }
 
-input, textarea, select { @apply bg-transparent outline-none; }
+/* Ícones lucide mais finos e consistentes. */
+.lucide { stroke-width: 1.75; }
+
+/* Sem contorno do navegador: campos "soltos" (título, descrição) não ganham borda
+   ao focar; o foco por teclado em botões e links usa um anel discreto. */
+input, textarea, select { @apply bg-transparent; outline: none !important; }
+:focus { outline: none; }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid rgb(var(--accent) / 0.6) !important;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@layer components {
 .field-input {
-  @apply w-full rounded-md border border-line bg-bg px-2.5 py-1.5 text-fg placeholder:text-mute transition-colors
-    focus:border-accent/60 focus:ring-2 focus:ring-accent/20;
+  @apply w-full rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-fg placeholder:text-mute transition
+    hover:border-white/15 focus:border-accent/70 focus:bg-white/[0.03] focus:shadow-[0_0_0_3px_rgb(var(--accent)/0.15)];
 }
 textarea.field-input { @apply resize-y leading-relaxed; }
+select.field-input { @apply cursor-pointer pr-8; }
+
+/* Superfícies */
+.surface { @apply rounded-xl border border-line bg-panel; box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.5); }
+.surface-hover { @apply transition hover:border-white/15 hover:bg-card; }
+.glow { background: radial-gradient(600px circle at 50% -20%, rgb(var(--accent) / 0.12), transparent 60%); }
+}
 
 .markdown { @apply leading-relaxed break-words; }
 .markdown p { @apply my-1.5; }
@@ -48,3 +75,6 @@ textarea.field-input { @apply resize-y leading-relaxed; }
 @keyframes pulse-soft { 50% { opacity: .45; } }
 .animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+@keyframes fade { from { opacity: 0; } }
+@keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.98); } }

@@ -72,7 +72,7 @@ export function Layout() {
         <div className={clsx('fixed inset-0 z-40 bg-black/50 md:hidden', drawer ? 'block' : 'hidden')} onClick={() => setDrawer(false)} />
         <aside
           className={clsx(
-            'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-line bg-panel transition-transform md:static md:w-56 md:translate-x-0',
+            'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-line/70 bg-panel transition-transform md:static md:w-60 md:translate-x-0',
             drawer ? 'translate-x-0' : '-translate-x-full'
           )}
         >
@@ -93,7 +93,7 @@ export function Layout() {
         {/* Botão flutuante de nova issue no celular (fora da página da issue, onde cobriria o comentário) */}
         {!loc.pathname.includes('/issues/') && <button
           onClick={() => setNewIssue({ status: 'todo' })}
-          className="fixed bottom-5 right-5 z-30 grid size-12 place-items-center rounded-full bg-accent text-white shadow-xl md:hidden"
+          className="fixed bottom-5 right-5 z-30 grid size-14 place-items-center rounded-2xl bg-gradient-to-b from-accent to-accent/80 text-white shadow-[0_10px_30px_-8px_rgb(var(--accent)/0.8)] active:scale-95 md:hidden"
           aria-label="Nova issue"
         >
           <Plus className="size-6" />
@@ -124,7 +124,7 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
     <NavLink
       to={to}
       end={to === base}
-      className={({ isActive }) => clsx('flex h-8 items-center gap-2.5 rounded-md px-2 text-dim hover:bg-hover hover:text-fg', isActive && 'bg-hover text-fg')}
+      className={({ isActive }) => clsx('flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-dim transition-colors hover:bg-white/[0.04] hover:text-fg', isActive && 'bg-white/[0.07] text-fg shadow-[inset_0_1px_0_0_rgb(255_255_255/0.04)]')}
     >
       {icon} <span className="flex-1">{label}</span> {extra}
     </NavLink>
@@ -137,7 +137,7 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
           className="w-60"
           trigger={() => (
             <button className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 hover:bg-hover">
-              <span className="grid size-5 shrink-0 place-items-center rounded bg-accent/20 text-[11px] font-bold text-accent">{ws.name[0]}</span>
+              <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-accent to-accent/60 text-[11px] font-bold text-white shadow-[0_2px_8px_-2px_rgb(var(--accent)/0.6)]">{ws.name[0]}</span>
               <span className="truncate font-semibold">{ws.name}</span>
               <ChevronDown className="ml-auto size-3.5 text-mute" />
             </button>

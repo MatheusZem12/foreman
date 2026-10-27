@@ -17,13 +17,13 @@ export function Button({
       {...props}
       disabled={props.disabled || loading}
       className={clsx(
-        'inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-default',
-        size === 'sm' ? 'h-7 px-2 text-xs' : 'h-8 px-3',
-        variant === 'primary' && 'bg-accent text-white hover:bg-accent/85',
+        'inline-flex select-none items-center justify-center gap-1.5 rounded-lg font-medium whitespace-nowrap transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
+        size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-9 px-3.5',
+        variant === 'primary' && 'bg-gradient-to-b from-accent to-accent/85 text-white shadow-[0_1px_0_0_rgb(255_255_255/0.2)_inset,0_4px_14px_-4px_rgb(var(--accent)/0.6)] hover:brightness-110',
         variant === 'ghost' && 'text-dim hover:bg-hover hover:text-fg',
-        variant === 'outline' && 'border border-line bg-card hover:bg-hover',
-        variant === 'danger' && 'border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20',
-        variant === 'success' && 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20',
+        variant === 'outline' && 'border border-line bg-white/[0.03] text-fg hover:border-white/15 hover:bg-hover',
+        variant === 'danger' && 'border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20',
+        variant === 'success' && 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20',
         className
       )}
     >
@@ -61,6 +61,45 @@ export function Empty({ children, className }: { children: ReactNode; className?
   return <div className={clsx('py-10 text-center text-mute', className)}>{children}</div>;
 }
 
+// Estado vazio com ícone, título, explicação e ação.
+export function EmptyState({ icon: Icon, title, children, action, className }: {
+  icon: React.ComponentType<{ className?: string }>; title: string; children?: ReactNode; action?: ReactNode; className?: string;
+}) {
+  return (
+    <div className={clsx('flex flex-col items-center rounded-2xl border border-dashed border-line px-6 py-14 text-center', className)}>
+      <div className="relative mb-4">
+        <div className="absolute inset-0 rounded-2xl bg-accent/30 blur-xl" />
+        <div className="relative grid size-12 place-items-center rounded-2xl border border-white/10 bg-gradient-to-b from-card to-panel">
+          <Icon className="size-5 text-accent" />
+        </div>
+      </div>
+      <div className="font-medium text-fg">{title}</div>
+      {children && <p className="mt-1 max-w-sm text-sm text-mute">{children}</p>}
+      {action && <div className="mt-5">{action}</div>}
+    </div>
+  );
+}
+
+// Cabeçalho padrão das páginas.
+export function PageHeader({ icon: Icon, title, description, actions }: {
+  icon?: React.ComponentType<{ className?: string }>; title: string; description?: ReactNode; actions?: ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-start gap-3">
+      {Icon && (
+        <div className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-gradient-to-b from-card to-panel">
+          <Icon className="size-[18px] text-accent" />
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+        {description && <p className="mt-0.5 max-w-2xl text-[13px] leading-relaxed text-mute">{description}</p>}
+      </div>
+      {actions && <div className="flex items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
 // ---------- modal ----------
 
 export function Modal({
@@ -74,16 +113,16 @@ export function Modal({
   }, [open, onClose]);
   if (!open) return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={clsx('flex max-h-[92dvh] w-full flex-col rounded-t-xl border border-line bg-panel shadow-2xl sm:rounded-xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
+    <div className="fixed inset-0 z-50 flex animate-[fade_.15s_ease-out] items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={clsx('flex max-h-[92dvh] w-full animate-[pop_.18s_ease-out] flex-col rounded-t-2xl border border-white/10 bg-panel shadow-pop sm:rounded-2xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
         {title && (
-          <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <div className="font-semibold">{title}</div>
-            <button onClick={onClose} className="rounded p-1 text-mute hover:bg-hover hover:text-fg"><X className="size-4" /></button>
+          <div className="flex items-center justify-between px-5 pb-2 pt-4">
+            <div className="text-[15px] font-semibold tracking-tight">{title}</div>
+            <button onClick={onClose} className="rounded-lg p-1.5 text-mute hover:bg-hover hover:text-fg"><X className="size-4" /></button>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto p-4">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3 safe-bottom">{footer}</div>}
+        <div className="flex-1 overflow-y-auto px-5 py-3">{children}</div>
+        {footer && <div className="flex items-center justify-end gap-2 border-t border-line/70 px-5 py-3.5 safe-bottom">{footer}</div>}
       </div>
     </div>,
     document.body
@@ -114,7 +153,7 @@ export function Popover({
       {open && (
         <div
           className={clsx(
-            'z-40 min-w-[200px] rounded-lg border border-line bg-panel p-1 shadow-2xl',
+            'z-40 min-w-[210px] animate-[pop_.12s_ease-out] rounded-xl border border-white/10 bg-panel/95 p-1 shadow-pop backdrop-blur-xl',
             // No celular vira uma "folha" presa embaixo da tela.
             'max-sm:fixed max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[60dvh] max-sm:overflow-y-auto',
             'sm:absolute sm:top-full sm:mt-1 sm:max-h-80 sm:overflow-y-auto',
@@ -134,7 +173,7 @@ export function MenuItem({ children, onClick, selected, danger }: { children: Re
     <button
       type="button"
       onClick={onClick}
-      className={clsx('flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover', danger && 'text-red-400')}
+      className={clsx('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-white/[0.06]', danger && 'text-red-400')}
     >
       <span className="flex min-w-0 flex-1 items-center gap-2">{children}</span>
       {selected && <Check className="size-3.5 text-accent" />}
@@ -147,7 +186,7 @@ export function Chip({ children, className, ...props }: React.ButtonHTMLAttribut
     <button
       type="button"
       {...props}
-      className={clsx('inline-flex h-7 items-center gap-1.5 rounded-md border border-line px-2 text-xs text-dim hover:bg-hover hover:text-fg', className)}
+      className={clsx('inline-flex h-7 items-center gap-1.5 rounded-full border border-line bg-white/[0.02] px-2.5 text-xs text-dim transition hover:border-white/15 hover:bg-hover hover:text-fg', className)}
     >
       {children}
     </button>
@@ -202,7 +241,7 @@ export function PriorityIcon({ priority, className }: { priority: number; classN
 export function Avatar({ name, emoji, size = 18 }: { name?: string; emoji?: string; size?: number }) {
   return (
     <span
-      className="inline-flex shrink-0 items-center justify-center rounded-full bg-hover text-[10px] font-semibold uppercase text-dim"
+      className="inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-white/15 to-white/5 text-[10px] font-semibold uppercase text-fg ring-1 ring-white/10"
       style={{ width: size, height: size, fontSize: emoji ? size * 0.62 : size * 0.48 }}
     >
       {emoji || (name || '?').slice(0, 1)}
@@ -231,11 +270,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             className={clsx(
-              'pointer-events-auto max-w-sm rounded-lg border bg-panel px-3.5 py-2.5 shadow-2xl',
-              t.kind === 'error' ? 'border-red-500/40 text-red-300' : t.kind === 'success' ? 'border-emerald-500/40' : 'border-line'
+              'pointer-events-auto flex max-w-sm animate-[pop_.18s_ease-out] items-start gap-2.5 rounded-xl border border-white/10 bg-panel/95 px-3.5 py-2.5 shadow-pop backdrop-blur-xl'
             )}
           >
-            {t.text}
+            <span className={clsx('mt-1 size-2 shrink-0 rounded-full', t.kind === 'error' ? 'bg-red-400' : t.kind === 'success' ? 'bg-emerald-400' : 'bg-accent')} />
+            <span className={t.kind === 'error' ? 'text-red-200' : ''}>{t.text}</span>
           </div>
         ))}
       </div>
