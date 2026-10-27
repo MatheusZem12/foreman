@@ -28,17 +28,20 @@ Abra `http://localhost:8700`. Na primeira vez o script compila o front (npm) e o
 |---|---|
 | **Agentes como presets** | Você cria uma vez (runtime, modelo, esforço, teto de US$, instruções e um pacote de skills indexadas) e eles valem para todos os workspaces. Dá para ter vários com o mesmo modelo e papéis diferentes. Em cada issue ou ajuste você escolhe (e troca) o agente. |
 | **Vários repositórios** | Um workspace tem quantos repositórios quiser. Cada issue recebe um worktree de cada um (ou só dos escolhidos) e a IA mexe só nos que o pedido exige, guiada pela **descrição** de cada repositório. Só os alterados ganham branch, push e merge. |
-| **Chat limpo + resumo** | Toda execução começa do zero. A continuidade vem do **resumo** que o agente reescreve ao terminar (objetivo, o que foi feito, arquivos, decisões, pendências) e do log de commits da branch. O contexto fica pequeno e o custo baixo. Se o agente não escrever o resumo, o servidor gera um automático. |
+| **Chat limpo + README** | Todo pedido abre um chat novo. A continuidade vem do **README da issue**, que o agente reescreve ao terminar (objetivo, o que foi feito por pedido, arquivos, decisões, como testar, pendências), do **histórico de pedidos** que o Multica registra (quando, agente, pedido, resultado, commits) e do log de commits. Os dois vão como anexo para o próximo chat e ficam na aba README da issue. Se o agente não escrever o README, o servidor gera um automático. |
+| **Resultado declarado** | Ao terminar, a IA escreve em `$MULTICA_STATUS` se ficou `concluido`, `aguardando: <o que precisa>` ou `incompleto: <por quê>`. Concluído vai para *Em revisão*; os outros vão para *Aguardando você*, com a pergunta como comentário e uma caixa para responder direto ao agente. |
+| **Etapas e automações** | Em *Fluxo e automações*, cada workspace cria etapas próprias (ex.: "Revisão por IA", "QA") e regras que disparam ao entrar numa etapa: notificar por e-mail, webhook (Slack, Discord, n8n), mover para outra etapa, rodar um agente com um pedido, abrir PR (GitHub, via `gh`), fazer merge ou rodar um script bash com variáveis `MULTICA_*`. Cada ação fica registrada como comentário na issue; regras em loop param sozinhas. Workspaces nascem com duas regras: *Concluída → merge* e *Aguardando você → avisar quem pediu*. |
 | **Skills compartilhadas** | Guias em markdown, com scripts opcionais, guardados no banco. Você indexa as skills nos agentes: chamou o agente, vai o pacote dele. Agente e issue guardam só a referência: editou uma vez, vale para todos. `Anexar a todas` inclui a skill em toda execução. No prompt vai só o índice (nome, descrição e caminho); o agente lê a skill inteira quando precisa. |
 | **Ajuste por comentário** | Comentário com "Enviar para o agente" vira uma nova execução (pode ser outro agente) no mesmo worktree, recebendo o resumo e o pedido. |
 | **Merge seguro** | `--no-ff` num worktree temporário, seguido de push, com destino escolhido por repositório. Com vários repositórios, todos os merges são feitos localmente antes: se um der conflito, **nenhum** é publicado. A issue vai para *Bloqueada* e o botão **Resolver conflito com IA** traz o destino para a branch da issue e pede ao agente para resolver. O merge é recusado enquanto houver marcador de conflito. |
 | **Tempo real** | Log do agente ao vivo, quadro e comentários atualizam via SSE para todo mundo que está olhando. |
 | **Analytics** | Custo, tokens (entrada, cache, saída), tempo e execuções por dia e por agente. |
 
-Gatilhos do quadro:
-- criar uma issue em **A fazer** com agente, ou movê-la para lá, coloca a issue na fila;
-- uma issue em **Backlog** não roda;
-- mover para **Backlog** ou **Cancelada** interrompe a execução.
+Caminho de uma issue:
+- criar em **A fazer** com agente, ou mover para lá, coloca na fila; todo pedido novo (issue, ajuste, resposta, regra) leva a issue para **Em andamento** na hora;
+- a IA terminou → **Em revisão**; precisa de alguém ou não terminou → **Aguardando você**; falhou ou deu conflito → **Bloqueada**;
+- em **Em revisão**, o botão **✓ Aprovar** leva para **Concluída**, onde por padrão a regra faz o merge (troque por "Abrir PR" se preferir);
+- uma issue em **Backlog** não roda; mover para **Backlog** ou **Cancelada** interrompe a execução.
 
 ## Usuários e permissões
 
