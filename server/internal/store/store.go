@@ -13,7 +13,11 @@ import (
 
 var ErrNotFound = errors.New("não encontrado")
 
-type Store struct{ DB *pgxpool.Pool }
+type Store struct {
+	DB *pgxpool.Pool
+	// OnStatusChange é chamado a cada mudança de etapa de uma issue (motor de automações).
+	OnStatusChange func(StatusChange)
+}
 
 func New(pool *pgxpool.Pool) *Store { return &Store{DB: pool} }
 
@@ -148,6 +152,8 @@ type Run struct {
 	CreatedAt    time.Time  `db:"created_at" json:"createdAt"`
 	StartedAt    *time.Time `db:"started_at" json:"startedAt"`
 	EndedAt      *time.Time `db:"ended_at" json:"endedAt"`
+	Outcome      string     `db:"outcome" json:"outcome"`
+	OutcomeNote  string     `db:"outcome_note" json:"outcomeNote"`
 }
 
 type RunEvent struct {
@@ -285,7 +291,11 @@ func (s *Store) Workspace(ctx context.Context, id string) (*Workspace, error) {
 }
 
 func (s *Store) CreateWorkspace(ctx context.Context, name, key string) (*Workspace, error) {
-	return one[Workspace](ctx, s, `insert into workspaces(name, key) values($1, upper($2)) returning *`, name, key)
+	ws, err := one[Workspace](ctx, s, `insert into workspaces(name, key) values($1, upper($2)) returning *`, name, key)
+	if err == nil {
+		s.seedRules(ctx, ws.ID)
+	}
+	return ws, err
 }
 
 func (s *Store) UpdateWorkspace(ctx context.Context, id, name string) (*Workspace, error) {

@@ -51,6 +51,8 @@ type promptInput struct {
 	Request     string
 	Requester   *store.User
 	SummaryPath string
+	StatusPath  string
+	History     string // execuções anteriores (gerado pelo Multica)
 }
 
 func buildPrompt(in promptInput) string {
@@ -86,8 +88,11 @@ func buildPrompt(in promptInput) string {
 	if in.Requester != nil && strings.TrimSpace(in.Requester.About) != "" {
 		parts = append(parts, fmt.Sprintf("## Quem pediu\n%s — %s", in.Requester.Name, strings.TrimSpace(in.Requester.About)))
 	}
-	if s := strings.TrimSpace(is.Summary); s != "" {
-		block := "## O que já foi feito nesta issue\nVocê começa sem o histórico das conversas anteriores; este resumo é o contexto.\n\n" + s
+	if s := strings.TrimSpace(is.Summary); s != "" || in.History != "" {
+		block := "## O que já foi feito nesta issue\nVocê começa sem o histórico das conversas anteriores; o README da issue e o histórico abaixo são o contexto.\n\n" + s
+		if in.History != "" {
+			block += "\n\n### Histórico de pedidos (registrado pelo Multica)\n" + in.History
+		}
 		var commits []string
 		for _, rp := range in.Repos {
 			if rp.Commits != "" {
@@ -123,13 +128,19 @@ func buildPrompt(in promptInput) string {
 		}
 	}
 	parts = append(parts, "## Ao terminar\n"+
-		fmt.Sprintf("Atualize o arquivo de resumo `%s`, sobrescrevendo com a versão completa e cumulativa (em português, até ~40 linhas):\n", in.SummaryPath)+
-		"- **Objetivo** — 1 linha\n"+
-		"- **O que foi feito** — por execução, da mais antiga para a mais nova\n"+
-		"- **Repositórios e arquivos principais**\n"+
-		"- **Decisões e motivos**\n"+
-		"- **Pendências / como testar**\n\n"+
-		"Esse resumo é o único contexto que a próxima execução terá. Termine com uma resposta curta dizendo o que mudou.")
+		fmt.Sprintf("1. Atualize o README da issue `%s`, sobrescrevendo com a versão completa e cumulativa (em português, até ~60 linhas):\n", in.SummaryPath)+
+		"   - **Objetivo** — 1 linha\n"+
+		"   - **O que foi feito** — por pedido, do mais antigo para o mais novo\n"+
+		"   - **Repositórios e arquivos principais**\n"+
+		"   - **Decisões e motivos**\n"+
+		"   - **Como testar** e **pendências**\n"+
+		"   É o registro que as pessoas leem e o único contexto que a próxima execução (um chat novo) terá.\n"+
+		fmt.Sprintf("2. Escreva em `%s` uma única linha dizendo como terminou:\n", in.StatusPath)+
+		"   - `concluido` — o pedido foi atendido por completo;\n"+
+		"   - `aguardando: <o que você precisa da pessoa>` — falta uma decisão, acesso, dado ou confirmação de alguém;\n"+
+		"   - `incompleto: <o que faltou e por quê>` — não deu para terminar.\n"+
+		"   Na dúvida entre concluir com suposições arriscadas e perguntar, pergunte (`aguardando`).\n"+
+		"3. Termine com uma resposta curta dizendo o que mudou.")
 	return strings.Join(parts, "\n\n")
 }
 

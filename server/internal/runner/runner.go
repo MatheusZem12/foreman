@@ -178,7 +178,10 @@ func (r *Runner) Enqueue(ctx context.Context, issue *store.Issue, agentID, kind,
 	if err != nil {
 		return nil, err
 	}
+	// Todo pedido novo (issue criada, ajuste, regra) entra em "Em andamento" na hora.
+	r.st.SetIssueStatus(ctx, issue.ID, "in_progress")
 	r.publishRun(run)
+	r.PublishIssue(ctx, issue.ID)
 	r.poke()
 	return run, nil
 }
@@ -510,6 +513,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	r.PublishIssue(ctx, issue.ID)
 
 	var works []*repoWork
+	var outcome runOutcome
 	res := store.RunResult{Status: "failed"}
 	defer func() {
 		if r.isCancelled(run.ID) {
@@ -522,7 +526,11 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		next := "blocked"
 		switch res.Status {
 		case "succeeded":
+			// A IA declara se terminou; sem declaração, vale como concluído.
 			next = "in_review"
+			if outcome.Kind == "waiting" || outcome.Kind == "incomplete" {
+				next = "waiting"
+			}
 		case "cancelled":
 			next = "backlog"
 			for _, w := range works {
@@ -616,8 +624,14 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	r.materializeSkills(skills)
 	idir := r.issueDir(issue.ID)
 	os.MkdirAll(idir, 0o755)
-	summaryPath := filepath.Join(idir, "RESUMO.md")
+	summaryPath := filepath.Join(idir, "README.md")
 	os.WriteFile(summaryPath, []byte(issue.Summary), 0o644)
+	statusPath := filepath.Join(idir, "STATUS")
+	os.Remove(statusPath)
+	history := ""
+	if past, err := r.st.ListRuns(ctx, issue.ID); err == nil {
+		history = runHistory(past, run.ID)
+	}
 
 	cwd := r.worktreeDir(issue.ID)
 	if len(works) == 1 {
@@ -632,7 +646,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	system := buildSystem(agent, skills, r.skillDir)
 	prompt := buildPrompt(promptInput{
 		Key: ws.Key, Issue: issue, Repos: prs, Root: cwd, Kind: run.Kind, Request: run.Request, Requester: requester,
-		SummaryPath: summaryPath,
+		SummaryPath: summaryPath, StatusPath: statusPath, History: history,
 	})
 	r.logEvent(ctx, run, "prompt", "<!-- system -->\n"+system+"\n\n<!-- prompt -->\n"+prompt)
 	addDirs := []string{idir}
@@ -654,6 +668,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 
 	o := r.spawn(ctx, run, ac, ac.preamble+prompt, cwd, agentEnv(append(r.cacheEnv(),
 		"MULTICA_SUMMARY="+summaryPath,
+		"MULTICA_STATUS="+statusPath,
 		"MULTICA_ISSUE="+ref,
 	)...))
 	if o.result != nil {
@@ -698,6 +713,16 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	} else if !r.isCancelled(run.ID) {
 		r.st.SetIssueSummary(ctx, issue.ID, fallbackSummary(issue, run, firstNonEmpty(finalText(o), o.lastText), strings.Join(stats, "\n\n")))
 		r.logEvent(ctx, run, "info", "O agente não atualizou o resumo; registrei um resumo automático.")
+	}
+
+	// --- o que a IA declarou: concluído, aguardando alguém ou incompleto ---
+	outcome = readOutcome(statusPath)
+	if outcome.Kind != "" {
+		r.st.SetRunOutcome(ctx, run.ID, outcome.Kind, outcome.Note)
+	}
+	if outcome.Kind == "waiting" || outcome.Kind == "incomplete" {
+		label := map[string]string{"waiting": "A IA precisa de você", "incomplete": "A IA não conseguiu terminar"}[outcome.Kind]
+		r.systemComment(ctx, issue, &run.ID, fmt.Sprintf("**%s:** %s\n\nResponda com um comentário enviado ao agente para continuar.", label, firstNonEmpty(outcome.Note, "sem detalhes")))
 	}
 
 	// --- resposta do agente vira comentário na issue ---
@@ -768,4 +793,61 @@ func fallbackSummary(issue *store.Issue, run *store.Run, text, stat string) stri
 		b.WriteString("**Arquivos:**\n```\n" + stat + "\n```\n")
 	}
 	return b.String()
+}
+
+// ---------- resultado declarado e histórico ----------
+
+type runOutcome struct{ Kind, Note string }
+
+// readOutcome lê a linha que a IA escreveu em STATUS: "concluido",
+// "aguardando: …" ou "incompleto: …".
+func readOutcome(path string) runOutcome {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return runOutcome{}
+	}
+	line := strings.TrimSpace(strings.SplitN(strings.TrimSpace(string(b)), "\n", 2)[0])
+	head, note, _ := strings.Cut(line, ":")
+	note = strings.TrimSpace(note)
+	switch strings.ToLower(strings.Trim(strings.TrimSpace(head), "`*")) {
+	case "concluido", "concluído", "done":
+		return runOutcome{"done", note}
+	case "aguardando", "waiting":
+		return runOutcome{"waiting", note}
+	case "incompleto", "incomplete":
+		return runOutcome{"incomplete", note}
+	}
+	return runOutcome{}
+}
+
+// runHistory resume as execuções anteriores da issue para o próximo chat.
+func runHistory(runs []store.Run, current string) string {
+	kinds := map[string]string{"initial": "pedido inicial", "followup": "ajuste", "conflict": "resolver conflito"}
+	outcomes := map[string]string{"done": "concluído", "waiting": "aguardando alguém", "incomplete": "incompleto"}
+	var lines []string
+	for _, r := range runs {
+		if r.ID == current || r.Status == "queued" || r.Status == "running" {
+			continue
+		}
+		line := fmt.Sprintf("- %s · %s · %s", r.CreatedAt.Format("2006-01-02 15:04"), r.AgentName, kinds[r.Kind])
+		if req := strings.TrimSpace(r.Request); req != "" {
+			line += fmt.Sprintf(": %q", clip(strings.ReplaceAll(req, "\n", " "), 160))
+		}
+		result := map[string]string{"succeeded": "ok", "failed": "falhou", "cancelled": "cancelada"}[r.Status]
+		if o := outcomes[r.Outcome]; o != "" {
+			result = o
+		}
+		if r.OutcomeNote != "" {
+			result += " — " + clip(r.OutcomeNote, 160)
+		}
+		line += " → " + result
+		if r.CommitSHA != "" {
+			line += " (" + r.CommitSHA + ")"
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) > 15 {
+		lines = append([]string{fmt.Sprintf("- … %d execuções mais antigas", len(lines)-15)}, lines[len(lines)-15:]...)
+	}
+	return strings.Join(lines, "\n")
 }

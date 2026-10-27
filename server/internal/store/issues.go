@@ -146,15 +146,29 @@ func (s *Store) PatchIssue(ctx context.Context, id string, patch map[string]any)
 		args = append(args, v)
 		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
 	}
+	var from string
+	if _, ok := patch["status"]; ok {
+		s.DB.QueryRow(ctx, `select status from issues where id = $1`, id).Scan(&from)
+	}
 	if _, err := s.DB.Exec(ctx, `update issues set `+strings.Join(sets, ", ")+` where id = $1`, args...); err != nil {
 		return nil, err
 	}
-	return s.Issue(ctx, id)
+	is, err := s.Issue(ctx, id)
+	if err == nil && from != "" {
+		s.statusChanged(ctx, id, from, is.Status)
+	}
+	return is, err
 }
 
 // SetIssueFields é usado pelo runner (status, resumo, merge) sem passar pelo filtro de campos editáveis.
 func (s *Store) SetIssueStatus(ctx context.Context, id, status string) error {
-	_, err := s.DB.Exec(ctx, `update issues set status = $2, updated_at = now() where id = $1`, id, status)
+	var from string
+	err := s.DB.QueryRow(ctx, `update issues i set status = $2, updated_at = now()
+		from (select status from issues where id = $1 for update) old
+		where i.id = $1 returning old.status`, id, status).Scan(&from)
+	if err == nil {
+		s.statusChanged(ctx, id, from, status)
+	}
 	return err
 }
 

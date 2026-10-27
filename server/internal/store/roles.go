@@ -33,6 +33,7 @@ var Permissions = []Permission{
 	{"user.create", "Usuários", "Criar usuários"},
 	{"user.update", "Usuários", "Editar usuários, senhas e perfis"},
 	{"user.delete", "Usuários", "Remover usuários"},
+	{"workflow.manage", "Fluxo", "Configurar etapas e automações (inclui scripts)"},
 	{"settings.manage", "Servidor", "Configurar e-mail e servidor"},
 }
 

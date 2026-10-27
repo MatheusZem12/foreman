@@ -97,7 +97,15 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 				r.Get("/issues", a.h(a.listIssues))
 				r.With(a.can("issue.create")).Post("/issues", a.h(a.createIssue))
 				r.Get("/events", a.events)
+				r.Get("/stages", a.h(a.listStages))
+				r.With(a.can("workflow.manage")).Post("/stages", a.h(a.saveStage))
+				r.Get("/rules", a.h(a.listRules))
+				r.With(a.can("workflow.manage")).Post("/rules", a.h(a.saveRule))
 			})
+			r.With(a.can("workflow.manage")).Put("/stages/{id}", a.h(a.saveStage))
+			r.With(a.can("workflow.manage")).Delete("/stages/{id}", a.h(a.deleteStage))
+			r.With(a.can("workflow.manage")).Put("/rules/{id}", a.h(a.saveRule))
+			r.With(a.can("workflow.manage")).Delete("/rules/{id}", a.h(a.deleteRule))
 			r.With(a.can("repo.update")).Put("/repos/{id}", a.h(a.saveRepo))
 			r.With(a.can("repo.delete")).Delete("/repos/{id}", a.h(a.deleteRepo))
 			r.Get("/repos/{id}/branches", a.h(a.repoBranches))
@@ -116,6 +124,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 
 			r.Get("/issues/{id}", a.h(a.getIssue))
 			r.With(a.can("issue.update")).Patch("/issues/{id}", a.h(a.patchIssue))
+			r.With(a.can("issue.merge")).Post("/issues/{id}/approve", a.h(a.approveIssue))
 			r.With(a.can("issue.update")).Put("/issues/{id}/repos", a.h(a.setIssueRepos))
 			r.With(a.can("issue.delete")).Delete("/issues/{id}", a.h(a.deleteIssue))
 			r.With(a.can("issue.run")).Post("/issues/{id}/run", a.h(a.runIssue))
@@ -737,8 +746,6 @@ func (a *API) deleteSkill(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- issues ----------
 
-var statuses = map[string]bool{"backlog": true, "todo": true, "in_progress": true, "in_review": true, "blocked": true, "done": true, "cancelled": true}
-
 func (a *API) listIssues(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.ListIssues(r.Context(), chi.URLParam(r, "ws"))
 }
@@ -759,10 +766,10 @@ func (a *API) createIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	if in.Status == "" {
 		in.Status = "backlog"
 	}
-	if !statuses[in.Status] {
-		return nil, bad("status inválido")
-	}
 	wsID := chi.URLParam(r, "ws")
+	if !a.st.ValidStage(r.Context(), wsID, in.Status) {
+		return nil, bad("etapa inválida")
+	}
 	if in.AgentID != nil && *in.AgentID == "" {
 		in.AgentID = nil
 	}
@@ -851,13 +858,13 @@ func (a *API) patchIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err := decode(r, &patch); err != nil {
 		return nil, err
 	}
-	if s, ok := patch["status"].(string); ok && !statuses[s] {
-		return nil, bad("status inválido")
+	if s, ok := patch["status"].(string); ok && !a.st.ValidStage(r.Context(), before.WorkspaceID, s) {
+		return nil, bad("etapa inválida")
 	}
 	if t, ok := patch["title"].(string); ok && strings.TrimSpace(t) == "" {
 		return nil, bad("o título não pode ficar vazio")
 	}
-	is, err := a.st.PatchIssue(r.Context(), before.ID, patch)
+	is, err := a.st.PatchIssue(store.WithActor(r.Context(), userOf(r).ID), before.ID, patch)
 	if err != nil {
 		return nil, err
 	}

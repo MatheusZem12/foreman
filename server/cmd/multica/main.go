@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"multica/internal/api"
+	"multica/internal/automation"
 	"multica/internal/config"
 	"multica/internal/db"
 	"multica/internal/hub"
@@ -40,11 +41,13 @@ func main() {
 	st := store.New(pool)
 	h := hub.New()
 	rn := runner.New(cfg, st, h)
+	ntf := notify.New(st)
+	automation.New(st, rn, ntf) // regras do fluxo: escuta as mudanças de etapa
 	rn.Start(ctx)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.Router(cfg, st, h, rn, notify.New(st), webui.Handler()),
+		Handler:           api.Router(cfg, st, h, rn, ntf, webui.Handler()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {

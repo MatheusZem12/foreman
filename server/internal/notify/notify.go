@@ -155,6 +155,56 @@ func (n *Notifier) IssueCreated(is *store.Issue, author *store.User, origin stri
 	}()
 }
 
+var ErrDisabled = errors.New("o envio de e-mail está desligado (Servidor → E-mail)")
+
+// StageEmail avisa as pessoas de uma mudança de etapa (regra "Notificar").
+// Usa o mesmo assunto do workspace, para cair na mesma conversa.
+func (n *Notifier) StageEmail(ctx context.Context, is *store.Issue, to []string, headline, note string) error {
+	c, err := n.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	if !c.Enabled {
+		return ErrDisabled
+	}
+	if len(to) == 0 {
+		return errors.New("ninguém para avisar")
+	}
+	ws, err := n.st.Workspace(ctx, is.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	ref := fmt.Sprintf("%s-%d", ws.Key, is.Number)
+	base := strings.TrimRight(c.AppURL, "/")
+	link := ""
+	if base != "" {
+		link = fmt.Sprintf("%s/w/%s/issues/%s", base, ws.Key, ref)
+	}
+	text := fmt.Sprintf("%s\n\n%s · %s", headline, ref, is.Title)
+	if note != "" {
+		text += "\n\n" + note
+	}
+	if link != "" {
+		text += "\n\nAbrir: " + link
+	}
+	e := html.EscapeString
+	var b strings.Builder
+	b.WriteString(`<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;color:#222;max-width:640px">`)
+	fmt.Fprintf(&b, `<div style="color:#777;font-size:12px;margin-bottom:6px">%s</div>`, e(ws.Name))
+	fmt.Fprintf(&b, `<div style="font-size:16px;font-weight:600;margin-bottom:8px">%s</div>`, e(headline))
+	fmt.Fprintf(&b, `<div style="margin-bottom:12px">%s</div>`, e(ref+" · "+is.Title))
+	if note != "" {
+		fmt.Fprintf(&b, `<div style="white-space:pre-wrap;border-left:3px solid #ddd;padding-left:10px;color:#333">%s</div>`, e(note))
+	}
+	if link != "" {
+		fmt.Fprintf(&b, `<p style="margin-top:16px"><a href="%s" style="background:#5e6ad2;color:#fff;padding:7px 14px;border-radius:6px;text-decoration:none">Abrir issue</a></p>`, e(link))
+	}
+	b.WriteString(`</div>`)
+	err = n.send(ctx, c, to, message{threadID: "ws-" + ws.ID, subject: "[Multica] " + ws.Name, text: text, html: b.String()})
+	n.record(err)
+	return err
+}
+
 // Test envia um e-mail de teste com a configuração informada (ainda não salva).
 func (n *Notifier) Test(ctx context.Context, c Settings, to string) error {
 	m := message{
@@ -179,7 +229,7 @@ type message struct {
 
 var statusLabel = map[string]string{
 	"backlog": "Backlog", "todo": "A fazer", "in_progress": "Em andamento", "in_review": "Em revisão",
-	"blocked": "Bloqueada", "done": "Concluída", "cancelled": "Cancelada",
+	"blocked": "Bloqueada", "done": "Concluída", "cancelled": "Cancelada", "waiting": "Aguardando você",
 }
 var priorityLabel = []string{"Sem prioridade", "Urgente", "Alta", "Média", "Baixa"}
 
