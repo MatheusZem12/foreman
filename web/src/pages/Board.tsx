@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -196,7 +196,7 @@ export function Board() {
             ))}
           </div>
           <DragOverlay dropAnimation={null}>
-            {dragging && <Card issue={dragging} agents={agents} labels={labels} overlay />}
+            {dragging && <Tilt><Card issue={dragging} agents={agents} labels={labels} overlay /></Tilt>}
           </DragOverlay>
         </DndContext>
       )}
@@ -267,6 +267,44 @@ function Column({ status, issues, agents, labels, onAdd }: { status: Status; iss
   );
 }
 
+// Inclina o cartão arrastado na direção do movimento, proporcional à velocidade,
+// e volta a ficar reto quando o ponteiro para.
+function Tilt({ children }: { children: React.ReactNode }) {
+  const el = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    let lastX: number | null = null;
+    let lastT = 0;
+    let vx = 0;
+    let angle = 0;
+    let frame = 0;
+    const track = (x: number) => {
+      const now = performance.now();
+      if (lastX !== null && now > lastT) vx = vx * 0.6 + ((x - lastX) / (now - lastT)) * 0.4;
+      lastX = x;
+      lastT = now;
+    };
+    const onMove = (e: PointerEvent) => track(e.clientX);
+    const onTouch = (e: TouchEvent) => e.touches[0] && track(e.touches[0].clientX);
+    const tick = () => {
+      if (performance.now() - lastT > 60) vx *= 0.85;
+      const target = Math.max(-10, Math.min(10, vx * 6));
+      angle += (target - angle) * 0.18;
+      if (el.current) el.current.style.transform = `rotate(${angle.toFixed(2)}deg) scale(1.03)`;
+      frame = requestAnimationFrame(tick);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('touchmove', onTouch, { passive: true });
+    frame = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('touchmove', onTouch);
+      cancelAnimationFrame(frame);
+    };
+  }, []);
+  return <div ref={el} className="origin-top will-change-transform" style={{ transform: 'scale(1.03)' }}>{children}</div>;
+}
+
 function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[]; labels: Label[]; overlay?: boolean }) {
   const { ws } = useWs();
   const drag = useDraggable({ id: issue.id, disabled: overlay });
@@ -287,7 +325,7 @@ function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[
         'block select-none rounded-xl border bg-gradient-to-b from-card to-panel p-3 shadow-[0_1px_0_0_rgb(255_255_255/0.04)_inset,0_2px_8px_-4px_rgb(0_0_0/0.6)] transition hover:-translate-y-px hover:border-white/15',
         drop.isOver ? 'border-accent/60' : 'border-white/[0.07]',
         drag.isDragging && 'opacity-30',
-        overlay && 'rotate-2 shadow-pop'
+        overlay && 'shadow-pop'
       )}
     >
       <div className="flex items-center gap-1.5 text-[11px] text-mute">
