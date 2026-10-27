@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 17 17 19;
+  --panel: 24 24 27;
+  --card: 30 30 34;
+  --hover: 39 39 44;
+  --line: 46 46 52;
+  --fg: 236 236 240;
+  --dim: 168 168 178;
+  --mute: 113 113 122;
+  --accent: 99 102 241;
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply bg-bg text-fg font-sans antialiased text-[13px];
+  -webkit-tap-highlight-color: transparent;
+}
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--line)) transparent; }
+::selection { background: rgb(var(--accent) / 0.35); }
+
+input, textarea, select { @apply bg-transparent outline-none; }
+.field-input {
+  @apply w-full rounded-md border border-line bg-bg px-2.5 py-1.5 text-fg placeholder:text-mute transition-colors
+    focus:border-accent/60 focus:ring-2 focus:ring-accent/20;
+}
+textarea.field-input { @apply resize-y leading-relaxed; }
+
+.markdown { @apply leading-relaxed break-words; }
+.markdown p { @apply my-1.5; }
+.markdown ul { @apply list-disc pl-5 my-1.5; }
+.markdown ol { @apply list-decimal pl-5 my-1.5; }
+.markdown h1, .markdown h2, .markdown h3 { @apply font-semibold mt-3 mb-1; }
+.markdown h1 { @apply text-base; }
+.markdown h2 { @apply text-[14px]; }
+.markdown code { @apply font-mono text-[12px] bg-hover rounded px-1 py-px; }
+.markdown pre { @apply bg-bg border border-line rounded-md p-2.5 my-2 overflow-x-auto; }
+.markdown pre code { @apply bg-transparent p-0; }
+.markdown a { @apply text-accent underline-offset-2 hover:underline; }
+.markdown blockquote { @apply border-l-2 border-line pl-3 text-dim; }
+.markdown table { @apply border-collapse my-2; }
+.markdown td, .markdown th { @apply border border-line px-2 py-1; }
+
+@keyframes pulse-soft { 50% { opacity: .45; } }
+.animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }

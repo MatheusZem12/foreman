@@ -1,0 +1,131 @@
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { Maximize2, Minimize2, X } from 'lucide-react';
+import clsx from 'clsx';
+import { createPortal } from 'react-dom';
+import { Button, Toggle, useToast } from './ui';
+import { AgentPicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from './pickers';
+import { useWs } from './Layout';
+import { useAgents, useCan, useRepos } from '../lib/queries';
+import { api } from '../lib/api';
+import { LAST_AGENT } from '../lib/constants';
+import type { Issue, Status } from '../lib/types';
+
+function readLastAgent() {
+  try {
+    return localStorage.getItem(LAST_AGENT);
+  } catch {
+    return null;
+  }
+}
+
+export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Status; onClose: () => void }) {
+  const { ws } = useWs();
+  const { data: agents = [] } = useAgents();
+  const { data: repos = [] } = useRepos(ws.id);
+  const canRepos = useCan('repo.create');
+  const canRun = useCan('issue.run');
+  const qc = useQueryClient();
+  const toast = useToast();
+  const nav = useNavigate();
+  const titleRef = useRef<HTMLInputElement>(null);
+  const [big, setBig] = useState(false);
+  const [another, setAnother] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    title: '', description: '', status: initialStatus, priority: 0,
+    agentId: null as string | null, repoIds: [] as string[], labelIds: [] as string[]
+  });
+  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+
+  // Padrão: último agente usado.
+  useEffect(() => {
+    if (!form.agentId && agents.length) {
+      const last = readLastAgent();
+      set({ agentId: agents.find((a) => a.id === last)?.id ?? agents[0].id });
+    }
+  }, [agents]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const willStart = !!form.agentId && form.status === 'todo' && canRun;
+
+  const submit = async () => {
+    if (!form.title.trim()) return titleRef.current?.focus();
+    setBusy(true);
+    try {
+      const res = await api.post<{ issue: Issue; warning?: string }>(`/workspaces/${ws.id}/issues`, form);
+      qc.setQueryData<Issue[]>(['issues', ws.id], (l) => (l && !l.some((i) => i.id === res.issue.id) ? [...l, res.issue] : l));
+      if (form.agentId) {
+        try {
+          localStorage.setItem(LAST_AGENT, form.agentId);
+        } catch {
+          /* sem storage */
+        }
+      }
+      if (res.warning) toast('error', `Criada, mas não iniciou: ${res.warning}`);
+      else toast('success', `${ws.key}-${res.issue.number} criada${willStart ? ' e na fila do agente' : ''}`);
+      if (another) {
+        set({ title: '', description: '' });
+        titleRef.current?.focus();
+      } else {
+        onClose();
+        if (big) nav(`/w/${ws.key}/issues/${ws.key}-${res.issue.number}`);
+      }
+    } catch (err) {
+      toast('error', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-start sm:p-6 sm:pt-[12vh]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form
+        onSubmit={(e) => { e.preventDefault(); submit(); }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); } }}
+        className={clsx('flex max-h-[95dvh] w-full flex-col rounded-t-xl border border-line bg-panel shadow-2xl sm:rounded-xl', big ? 'sm:h-[80vh] sm:max-w-4xl' : 'sm:max-w-2xl')}
+      >
+        <div className="flex items-center gap-2 px-4 pt-3 text-xs text-mute">
+          <span>{ws.name}</span><span>›</span><span className="text-dim">Nova issue</span>
+          <button type="button" onClick={() => setBig(!big)} className="ml-auto hidden rounded p-1 hover:bg-hover sm:block">{big ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}</button>
+          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-hover"><X className="size-4" /></button>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col px-4 pt-2">
+          <input ref={titleRef} autoFocus value={form.title} onChange={(e) => set({ title: e.target.value })} placeholder="Título da issue" className="text-lg font-semibold placeholder:text-mute" />
+          <textarea
+            value={form.description}
+            onChange={(e) => set({ description: e.target.value })}
+            placeholder="Descrição: o que fazer, critérios de aceite, links… (markdown)"
+            className={clsx('mt-2 flex-1 resize-none leading-relaxed placeholder:text-mute', big ? 'min-h-[40vh]' : 'min-h-[120px]')}
+          />
+        </div>
+        <div className="px-4 pb-1 text-xs text-mute">
+          {form.agentId
+            ? willStart ? 'Atribuída: o agente começa assim que você criar.' : 'Atribuída: só começa quando for para "A fazer".'
+            : 'Sem agente: fica como tarefa manual.'}
+          {repos.length > 1 && !form.repoIds.length && ' A IA recebe todos os repositórios e mexe só nos necessários.'}
+          {!repos.length && <span className="text-amber-400"> · {canRepos ? 'Cadastre um repositório em Workspace para o agente poder trabalhar.' : 'Este workspace ainda não tem repositório; peça ao administrador.'}</span>}
+        </div>
+        <div className="flex flex-wrap gap-1.5 px-4 pb-3">
+          <StatusPicker value={form.status} onChange={(status) => set({ status })} />
+          <PriorityPicker value={form.priority} onChange={(priority) => set({ priority })} />
+          <AgentPicker value={form.agentId} onChange={(agentId) => set({ agentId })} />
+          <LabelPicker ws={ws.id} value={form.labelIds} onChange={(labelIds) => set({ labelIds })} />
+          {repos.length > 1 && <RepoScopePicker ws={ws.id} value={form.repoIds} onChange={(repoIds) => set({ repoIds })} />}
+        </div>
+        <div className="flex items-center gap-3 border-t border-line px-4 py-3 safe-bottom">
+          <Toggle checked={another} onChange={setAnother} label="Criar outra" />
+          <Button variant="primary" type="submit" loading={busy} className="ml-auto">
+            Criar issue <kbd className="hidden rounded bg-white/15 px-1 text-[10px] sm:inline">Ctrl ↵</kbd>
+          </Button>
+        </div>
+      </form>
+    </div>,
+    document.body
+  );
+}
