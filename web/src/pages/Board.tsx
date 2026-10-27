@@ -136,24 +136,24 @@ export function Board() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 md:px-4">
-        <h1 className="mr-1 hidden font-semibold md:block">Issues</h1>
-        <div className="flex rounded-md border border-line p-0.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line/70 bg-panel/40 px-3 py-2.5 backdrop-blur md:px-5">
+        <h1 className="mr-2 hidden text-[15px] font-semibold tracking-tight md:block">Issues</h1>
+        <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
           {[
             ['all', 'Todas'],
             ['mine', 'Minhas']
           ].map(([id, label]) => (
-            <button key={id} onClick={() => setWho(id)} className={clsx('rounded px-2 py-0.5 text-xs', who === id ? 'bg-hover text-fg' : 'text-dim')}>{label}</button>
+            <button key={id} onClick={() => setWho(id)} className={clsx('rounded-md px-2.5 py-1 text-xs transition', who === id ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{label}</button>
           ))}
           <AgentFilter agents={agents} value={who} onChange={setWho} />
         </div>
         <div className="relative hidden sm:block">
-          <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Filtrar…" className="field-input h-7 w-44 pl-7" />
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Filtrar…" className="field-input h-8 w-52 py-1 pl-8" />
         </div>
         <LabelFilter labels={labels} value={labelFilter} onChange={setLabelFilter} />
         <div className="ml-auto flex items-center gap-1.5">
-          <span className={clsx('hidden items-center gap-1.5 rounded-md border border-line px-2 py-1 text-xs sm:flex', working ? 'text-amber-400' : 'text-mute')}>
+          <span className={clsx('hidden items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs sm:flex', working ? 'text-amber-400' : 'text-mute')}>
             <span className={clsx('size-1.5 rounded-full', working ? 'animate-pulse-soft bg-amber-400' : 'bg-mute')} /> {working} {working === 1 ? 'agente trabalhando' : 'agentes trabalhando'}
           </span>
           <Popover
@@ -177,9 +177,9 @@ export function Board() {
               </>
             )}
           </Popover>
-          <div className="flex rounded-md border border-line p-0.5">
-            <button onClick={() => { setView('board'); writePref('mx.view', 'board'); }} className={clsx('rounded p-1', view === 'board' ? 'bg-hover text-fg' : 'text-mute')} title="Quadro"><Columns3 className="size-3.5" /></button>
-            <button onClick={() => { setView('list'); writePref('mx.view', 'list'); }} className={clsx('rounded p-1', view === 'list' ? 'bg-hover text-fg' : 'text-mute')} title="Lista"><List className="size-3.5" /></button>
+          <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
+            <button onClick={() => { setView('board'); writePref('mx.view', 'board'); }} className={clsx('rounded-md p-1.5', view === 'board' ? 'bg-white/10 text-fg' : 'text-mute')} title="Quadro"><Columns3 className="size-3.5" /></button>
+            <button onClick={() => { setView('list'); writePref('mx.view', 'list'); }} className={clsx('rounded-md p-1.5', view === 'list' ? 'bg-white/10 text-fg' : 'text-mute')} title="Lista"><List className="size-3.5" /></button>
           </div>
         </div>
       </div>
@@ -209,7 +209,7 @@ function AgentFilter({ agents, value, onChange }: { agents: Agent[]; value: stri
   return (
     <Popover
       trigger={() => (
-        <button className={clsx('rounded px-2 py-0.5 text-xs', current ? 'bg-hover text-fg' : 'text-dim')}>{current ? `${current.avatar} ${current.name}` : 'Agentes'}</button>
+        <button className={clsx('rounded-md px-2.5 py-1 text-xs transition', current ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{current ? `${current.avatar} ${current.name}` : 'Agentes'}</button>
       )}
     >
       {(close) =>
@@ -249,19 +249,19 @@ function Column({ status, issues, agents, labels, onAdd }: { status: Status; iss
     <section
       ref={setNodeRef}
       className={clsx(
-        'flex w-[85vw] shrink-0 snap-center flex-col rounded-xl border bg-panel/60 sm:w-72',
-        isOver ? 'border-accent/50' : 'border-line/70'
+        'flex w-[85vw] shrink-0 snap-center flex-col rounded-2xl border bg-white/[0.015] transition-colors sm:w-[19rem]',
+        isOver ? 'border-accent/50 bg-accent/[0.04]' : 'border-white/[0.06]'
       )}
     >
-      <header className="flex items-center gap-2 px-3 py-2.5">
+      <header className="flex items-center gap-2 px-3.5 py-3">
         <StatusIcon status={status} />
         <span className="font-medium">{s.label}</span>
-        <span className="text-mute">{issues.length}</span>
+        <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute">{issues.length}</span>
         <button onClick={onAdd} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg" title="Nova issue nesta coluna"><Plus className="size-3.5" /></button>
       </header>
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2.5">
         {issues.map((i) => <Card key={i.id} issue={i} agents={agents} labels={labels} />)}
-        {!issues.length && <div className="py-6 text-center text-xs text-mute">Nenhuma issue</div>}
+        {!issues.length && <div className="mx-1 rounded-xl border border-dashed border-white/[0.07] py-8 text-center text-xs text-mute">Arraste uma issue para cá</div>}
       </div>
     </section>
   );
@@ -284,18 +284,18 @@ function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[
       {...drag.attributes}
       onClick={(e) => Date.now() - lastDragEnd < 300 && e.preventDefault()}
       className={clsx(
-        'block select-none rounded-lg border bg-card p-2.5 transition-colors hover:border-line hover:bg-hover',
-        drop.isOver ? 'border-accent/60' : 'border-line/60',
+        'block select-none rounded-xl border bg-gradient-to-b from-card to-panel p-3 shadow-[0_1px_0_0_rgb(255_255_255/0.04)_inset,0_2px_8px_-4px_rgb(0_0_0/0.6)] transition hover:-translate-y-px hover:border-white/15',
+        drop.isOver ? 'border-accent/60' : 'border-white/[0.07]',
         drag.isDragging && 'opacity-30',
-        overlay && 'rotate-1 shadow-2xl'
+        overlay && 'rotate-2 shadow-pop'
       )}
     >
       <div className="flex items-center gap-1.5 text-[11px] text-mute">
         <span className="font-mono">{ws.key}-{issue.number}</span>
-        {running && <span className="flex items-center gap-1 text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> trabalhando</span>}
+        {running && <span className="flex items-center gap-1 rounded-full bg-amber-400/10 px-1.5 text-amber-300"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> trabalhando</span>}
         <span className="ml-auto"><PriorityIcon priority={issue.priority} /></span>
       </div>
-      <div className="mt-1 font-medium leading-snug">{issue.title}</div>
+      <div className="mt-1.5 font-medium leading-snug">{issue.title}</div>
       {issue.labelIds.length > 0 && <div className="mt-1.5"><LabelDots ids={issue.labelIds} labels={labels} /></div>}
       <div className="mt-2 flex items-center gap-1.5 text-[11px] text-mute">
         {agent ? <><Avatar emoji={agent.avatar} size={16} /><span className="truncate">{agent.name}</span></> : <span>Sem agente</span>}

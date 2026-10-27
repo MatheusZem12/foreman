@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react';
-import { Button, Field, useToast } from '../components/ui';
+import { Button, Field, PageHeader, useToast } from '../components/ui';
 import { Page } from './Account';
 import { api } from '../lib/api';
 import { usePermissions, useRoles } from '../lib/queries';
@@ -19,14 +19,8 @@ export function RolesPage() {
   const current = selected === 'new' ? null : roles.find((r) => r.id === selected) ?? null;
   return (
     <Page>
-      <div>
-        <div className="mb-1 flex items-center gap-2">
-          <ShieldCheck className="size-5 text-accent" />
-          <h1 className="text-lg font-semibold">Permissões</h1>
-          <Button size="sm" variant="primary" className="ml-auto" onClick={() => setSelected('new')}><Plus className="size-3.5" /> Novo perfil</Button>
-        </div>
-        <p className="text-xs text-mute">Só você, dono do Multica, vê esta tela. Monte perfis com o que cada grupo pode fazer e atribua em Usuários. O dono sempre pode tudo.</p>
-      </div>
+      <PageHeader icon={ShieldCheck} title="Permissões" description="Só você, dono do Multica, vê esta tela. Monte perfis com o que cada grupo pode fazer e atribua em Usuários. O dono sempre pode tudo."
+        actions={<Button variant="primary" onClick={() => setSelected('new')}><Plus className="size-4" /> Novo perfil</Button>} />
       <div className="flex gap-1.5 overflow-x-auto pb-1">
         {roles.map((r) => (
           <button key={r.id} onClick={() => setSelected(r.id)}
@@ -89,7 +83,7 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
           const items = perms.filter((p) => p.group === g);
           const all = items.every((p) => on.includes(p.id));
           return (
-            <div key={g} className="rounded-xl border border-line bg-panel p-3">
+            <div key={g} className="surface p-3">
               <div className="mb-2 flex items-center">
                 <span className="font-medium">{g}</span>
                 <button onClick={() => toggleGroup(g)} className="ml-auto text-[11px] text-mute hover:text-fg">{all ? 'nenhuma' : 'todas'}</button>

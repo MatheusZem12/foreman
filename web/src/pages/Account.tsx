@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Mail, Pencil, Plus, Send, Trash2, XCircle } from 'lucide-react';
-import { Avatar, Button, Field, Modal, Toggle, useToast } from '../components/ui';
+import { CheckCircle2, Mail, Pencil, Plus, Send, Server, Trash2, UserRound, Users, XCircle } from 'lucide-react';
+import { Avatar, Button, Field, Modal, PageHeader, Toggle, useToast } from '../components/ui';
 import { api } from '../lib/api';
 import { can, useCan, useMe, useRoles, useUsers, useWorkspaces } from '../lib/queries';
 import type { EmailSettings, GitInfo, Runtime, User } from '../lib/types';
@@ -29,7 +29,7 @@ export function ServerPage() {
   const settings = useCan('settings.manage');
   return (
     <Page>
-      <h1 className="text-lg font-semibold">Servidor</h1>
+      <PageHeader icon={Server} title="Servidor" description="E-mail de notificação, acesso ao git e runtimes dos agentes." />
       {settings && <EmailConfig />}
       <GitSection />
       <Runtimes />
@@ -47,7 +47,7 @@ function GitSection() {
     <section>
       <h2 className="mb-1 font-semibold">Acesso ao git</h2>
       <p className="mb-3 text-xs text-mute">O Multica clona e publica com as credenciais git do usuário que roda o servidor ({data.home}). Ao salvar um repositório, ele testa o acesso com <code>git ls-remote</code>.</p>
-      <div className="space-y-3 rounded-xl border border-line bg-panel p-4 text-sm">
+      <div className="space-y-3 surface p-4 text-sm">
         <div className="flex items-center gap-2">{ok ? <CheckCircle2 className="size-4 text-emerald-400" /> : <XCircle className="size-4 text-amber-400" />}<span>{data.version}</span></div>
         <div className="grid gap-1 text-xs text-dim">
           <div>Chave SSH: {data.sshKey ? <span className="text-emerald-400">encontrada</span> : <span className="text-mute">nenhuma em ~/.ssh</span>}</div>
@@ -87,8 +87,8 @@ function Profile({ me }: { me: User }) {
   };
   return (
     <section>
-      <h1 className="mb-4 text-lg font-semibold">Perfil</h1>
-      <div className="space-y-4 rounded-xl border border-line bg-panel p-4">
+      <PageHeader icon={UserRound} title="Minha conta" description="Seu nome, senha, contexto para os agentes e notificações." />
+      <div className="space-y-4 surface p-4">
         <div className="flex items-center gap-3"><Avatar name={me.name} size={40} /><div><div className="font-medium">{me.name}</div><div className="text-xs text-mute">{me.email}</div></div></div>
         <Field label="Nome"><input className="field-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label="Sobre você" hint="vai junto em toda execução que você pedir">
@@ -172,7 +172,7 @@ function EmailForm({ initial }: { initial: EmailSettings }) {
         Quando alguém cria uma issue, todos do workspace recebem um e-mail (menos quem desligou no perfil e quem criou).
         O assunto é sempre <span className="font-mono">[Multica] nome do workspace</span>, então cada workspace vira uma conversa só na caixa de entrada.
       </p>
-      <div className="space-y-4 rounded-xl border border-line bg-panel p-4">
+      <div className="space-y-4 surface p-4">
         <Toggle checked={f.enabled} onChange={(enabled) => up({ enabled })} label={f.enabled ? 'Ligado: avisa todo mundo' : 'Desligado: ninguém recebe'} />
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <span className="text-mute">Preencher:</span>
@@ -221,7 +221,7 @@ function Runtimes() {
     <section>
       <h2 className="mb-1 font-semibold">Runtimes no servidor</h2>
       <p className="mb-3 text-xs text-mute">Os agentes rodam o Claude Code e o Codex instalados no servidor, com o login feito lá (veja o README).</p>
-      <div className="divide-y divide-line rounded-xl border border-line bg-panel">
+      <div className="divide-y divide-line surface">
         {isLoading && <div className="p-4 text-mute">Verificando…</div>}
         {data?.map((r) => (
           <div key={r.runtime} className="flex items-center gap-3 p-3">
@@ -248,12 +248,9 @@ function Members({ me }: { me: User }) {
   const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? '?';
   return (
     <section>
-      <div className="mb-1 flex items-center">
-        <h1 className="text-lg font-semibold">Usuários</h1>
-        {canCreate && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({ workspaceIds: [] })}><Plus className="size-3.5" /> Novo usuário</Button>}
-      </div>
-      <p className="mb-3 text-xs text-mute">Cada pessoa tem um perfil (o que pode fazer) e os workspaces em que trabalha. Quem tem "ver todos os workspaces" não precisa de vínculo.</p>
-      <div className="divide-y divide-line rounded-xl border border-line bg-panel">
+      <PageHeader icon={Users} title="Usuários" description='Cada pessoa tem um perfil (o que pode fazer) e os workspaces em que trabalha. Quem tem "ver todos os workspaces" não precisa de vínculo.'
+        actions={canCreate && <Button variant="primary" onClick={() => setEditing({ workspaceIds: [] })}><Plus className="size-4" /> Novo usuário</Button>} />
+      <div className="divide-y divide-line surface">
         {users.map((u) => (
           <div key={u.id} className="flex items-center gap-3 p-3">
             <Avatar name={u.name} size={28} />

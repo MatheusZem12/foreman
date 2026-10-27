@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderGit2, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { FolderCog, FolderGit2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Avatar, Button, Empty, Field, Modal, useToast } from '../components/ui';
+import { Avatar, Button, Empty, Field, Modal, PageHeader, useToast } from '../components/ui';
 import { api } from '../lib/api';
 import { LABEL_COLORS } from '../lib/constants';
 import { can, useCan, useLabels, useMembers, useRepos, useUsers } from '../lib/queries';
@@ -32,9 +32,9 @@ export function WorkspaceSettings() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-8 p-4 md:p-6">
+      <div className="mx-auto max-w-3xl space-y-8 p-4 pb-24 md:p-8">
         <section>
-          <h1 className="mb-4 text-lg font-semibold">Workspace</h1>
+          <PageHeader icon={FolderCog} title="Workspace" description="Nome, repositórios git, pessoas e labels deste workspace." />
           <div className="flex items-end gap-2">
             <Field label="Nome" className="flex-1"><input className="field-input" value={name} disabled={!canRename} onChange={(e) => setName(e.target.value)} onBlur={saveName} /></Field>
             <Field label="Chave"><input className="field-input w-24 font-mono" value={ws.key} disabled /></Field>
@@ -52,7 +52,7 @@ export function WorkspaceSettings() {
           </p>
           <div className="space-y-2">
             {repos.map((r) => (
-              <div key={r.id} className="flex items-start gap-3 rounded-lg border border-line bg-panel p-3">
+              <div key={r.id} className="surface surface-hover flex items-start gap-3 p-3.5">
                 <FolderGit2 className="mt-0.5 size-4 text-mute" />
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{r.name}</div>

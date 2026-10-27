@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { FileCode2, Plus, Trash2 } from 'lucide-react';
-import { Button, Empty, Field, Toggle, useToast } from '../components/ui';
+import { BookOpen, FileCode2, Plus, Trash2 } from 'lucide-react';
+import { Button, Empty, EmptyState, Field, Toggle, useToast } from '../components/ui';
 import { api } from '../lib/api';
 import { useCan, useSkills } from '../lib/queries';
 import type { FileEntry, Skill } from '../lib/types';
@@ -37,11 +37,11 @@ export function SkillsPage() {
               <div className="line-clamp-2 text-xs text-mute">{s.description}</div>
             </button>
           ))}
-          {!skills.length && <Empty className="py-6">Nenhuma skill.</Empty>}
+          {!skills.length && <Empty className="mx-2 rounded-xl border border-dashed border-line py-8 text-xs">Nenhuma skill ainda. Skills são guias e scripts que você indexa nos agentes.</Empty>}
         </div>
       </aside>
       <div className={clsx('min-w-0 flex-1 overflow-y-auto', !selected && 'hidden md:block')}>
-        {selected ? <SkillEditor key={selected} skill={current} onDone={(id) => setSelected(id)} onBack={() => setSelected(null)} /> : <Empty>Selecione uma skill.</Empty>}
+        {selected ? <SkillEditor key={selected} skill={current} onDone={(id) => setSelected(id)} onBack={() => setSelected(null)} /> : <div className="p-6"><EmptyState icon={BookOpen} title={skills.length ? 'Selecione uma skill' : 'Nenhuma skill ainda'} action={canCreate && <Button variant="primary" onClick={() => setSelected('new')}><Plus className="size-4" /> Nova skill</Button>}>Instruções e scripts reutilizáveis. Indexe nos agentes: chamou o agente, vai o pacote de skills dele.</EmptyState></div>}
       </div>
     </div>
   );

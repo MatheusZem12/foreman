@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Copy, Pencil, Plus, Trash2 } from 'lucide-react';
-import { Avatar, Button, Empty, Field, Modal, useToast } from '../components/ui';
+import { Bot, Copy, Cpu, Gauge, Pencil, Plus, ShieldCheck, Trash2, Wallet } from 'lucide-react';
+import { Button, EmptyState, Field, Modal, PageHeader, useToast } from '../components/ui';
 import { api } from '../lib/api';
 import { CLAUDE_MODELS, EFFORTS } from '../lib/constants';
 import { useCan, useAgents, useSkills } from '../lib/queries';
@@ -26,43 +26,59 @@ export function AgentsPage() {
     toast('success', 'Agente removido');
   };
 
+  const create = () => setEditing({ runtime: 'claude', model: 'sonnet', permission: 'full', avatar: '🤖', skillIds: [] });
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-4xl p-4 md:p-6">
-        <div className="mb-1 flex items-center gap-2">
-          <h1 className="text-lg font-semibold">Agentes</h1>
-          {canCreate && <Button variant="primary" size="sm" className="ml-auto" onClick={() => setEditing({ runtime: 'claude', model: 'sonnet', permission: 'full', avatar: '🤖', skillIds: [] })}>
-            <Plus className="size-3.5" /> Novo agente
-          </Button>}
-        </div>
-        <p className="mb-5 text-dim">
-          Valem para todos os workspaces. Cada agente é um preset: runtime, modelo, instruções e o pacote de skills indexadas.
-          Dá para ter vários agentes com o mesmo modelo e papéis diferentes (dev, revisor, testes…). Em cada issue você escolhe o agente, e ele sempre começa num chat limpo.
-        </p>
-        <div className="space-y-2">
-          {agents.map((a) => (
-            <div key={a.id} className="flex items-start gap-3 rounded-lg border border-line bg-panel p-3">
-              <Avatar emoji={a.avatar} size={32} />
-              <div className="min-w-0 flex-1">
-                <div className="font-medium">{a.name}</div>
-                <div className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
-                  <span className="rounded bg-accent/15 px-1.5 py-0.5 text-accent">{a.runtime === 'claude' ? 'Claude Code' : 'Codex'}{a.model && ` · ${a.model}`}</span>
-                  {a.effort && <span className="rounded bg-hover px-1.5 py-0.5 text-dim">esforço {a.effort}</span>}
-                  {a.maxBudgetUsd ? <span className="rounded bg-hover px-1.5 py-0.5 text-dim">teto ${a.maxBudgetUsd}</span> : null}
-                  <span className="rounded bg-hover px-1.5 py-0.5 text-dim">{a.permission === 'full' ? 'permissão total' : 'só edições'}</span>
-                  {a.skillIds.map((id) => <span key={id} className="rounded bg-hover px-1.5 py-0.5 text-dim">{skills.find((s) => s.id === id)?.name}</span>)}
+      <div className="mx-auto max-w-6xl p-4 pb-24 md:p-8">
+        <PageHeader
+          icon={Bot}
+          title="Agentes"
+          description="Cada agente é um preset (runtime, modelo, instruções e um pacote de skills) e vale em todos os workspaces. Mesmo modelo, papéis diferentes: dev, revisor, testes. Toda execução começa num chat limpo."
+          actions={canCreate && <Button variant="primary" onClick={create}><Plus className="size-4" /> Novo agente</Button>}
+        />
+        {agents.length ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {agents.map((a) => {
+              const pack = skills.filter((s) => s.always || a.skillIds.includes(s.id));
+              return (
+                <div key={a.id} className="surface surface-hover group flex flex-col p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-gradient-to-br from-white/10 to-white/[0.02] text-xl">{a.avatar}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-semibold">{a.name}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-mute">
+                        <span className={a.runtime === 'claude' ? 'text-[#e58f5c]' : 'text-emerald-400'}>{a.runtime === 'claude' ? 'Claude Code' : 'Codex'}</span>
+                        <span>·</span><span className="truncate">{a.model || 'modelo padrão'}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-0.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
+                      {canCreate && <button title="Duplicar" onClick={() => setEditing({ ...a, id: undefined, name: `${a.name} (cópia)` })} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Copy className="size-4" /></button>}
+                      {canUpdate && <button title="Editar" onClick={() => setEditing(a)} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Pencil className="size-4" /></button>}
+                      {canDelete && <button title="Remover" onClick={() => remove(a)} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
+                    </div>
+                  </div>
+                  <p className="mt-3 line-clamp-2 min-h-[2.5em] text-[13px] text-dim">{a.instructions || <span className="text-mute">Sem instruções próprias.</span>}</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-dim">
+                    {a.effort && <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5"><Gauge className="size-3" /> {a.effort}</span>}
+                    {a.maxBudgetUsd ? <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5"><Wallet className="size-3" /> até ${a.maxBudgetUsd}</span> : null}
+                    <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5"><ShieldCheck className="size-3" /> {a.permission === 'full' ? 'total' : 'só edições'}</span>
+                  </div>
+                  <div className="mt-3 border-t border-line/70 pt-3">
+                    <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-mute"><Cpu className="size-3" /> {pack.length} skill(s) no pacote</div>
+                    <div className="flex flex-wrap gap-1">
+                      {pack.map((s) => <span key={s.id} className="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[11px] text-fg/90">{s.name}</span>)}
+                      {!pack.length && <span className="text-[11px] text-mute">Nenhuma skill indexada.</span>}
+                    </div>
+                  </div>
                 </div>
-                {a.instructions && <p className="mt-1.5 line-clamp-2 text-xs text-mute">{a.instructions}</p>}
-              </div>
-              <div className="flex gap-0.5">
-                {canCreate && <button title="Duplicar" onClick={() => setEditing({ ...a, id: undefined, name: `${a.name} (cópia)` })} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Copy className="size-4" /></button>}
-                {canUpdate && <button title="Editar" onClick={() => setEditing(a)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
-                {canDelete && <button title="Remover" onClick={() => remove(a)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-red-400"><Trash2 className="size-4" /></button>}
-              </div>
-            </div>
-          ))}
-          {!agents.length && <Empty>Nenhum agente. Crie um para começar a atribuir issues.</Empty>}
-        </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState icon={Bot} title="Nenhum agente ainda" action={canCreate && <Button variant="primary" onClick={create}><Plus className="size-4" /> Criar o primeiro agente</Button>}>
+            Ex.: "Dev Sonnet" com as skills de padrão de código e testes, e "Revisor" com o checklist de revisão.
+          </EmptyState>
+        )}
       </div>
       {editing && <AgentModal agent={editing} onClose={() => setEditing(null)} />}
     </div>

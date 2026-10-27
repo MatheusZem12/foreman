@@ -115,9 +115,9 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2 md:px-4">
+      <div className="flex items-center gap-2 border-b border-line/70 bg-panel/40 px-3 py-2.5 backdrop-blur md:px-5">
         <button onClick={() => nav(`/w/${ws.key}`)} className="rounded p-1 text-mute hover:bg-hover hover:text-fg"><ArrowLeft className="size-4" /></button>
-        <span className="font-mono text-xs text-mute">{ws.key}-{issue.number}</span>
+        <span className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-xs text-dim">{ws.key}-{issue.number}</span>
         <StatusIcon status={issue.status} />
         {active && <span className="flex items-center gap-1 text-xs text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> trabalhando</span>}
         <div className="ml-auto flex items-center gap-1.5">
@@ -173,7 +173,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
                 ['diff', 'Diff'],
                 ['execucoes', 'Execuções']
               ] as [Tab, string][]).map(([id, label]) => (
-                <button key={id} onClick={() => setTab(id)} className={clsx('-mb-px border-b-2 px-2.5 py-2', tab === id ? 'border-accent text-fg' : 'border-transparent text-mute hover:text-fg')}>{label}</button>
+                <button key={id} onClick={() => setTab(id)} className={clsx('-mb-px border-b-2 px-3 py-2 transition-colors', tab === id ? 'border-accent font-medium text-fg' : 'border-transparent text-mute hover:text-fg')}>{label}</button>
               ))}
             </div>
             <div className="pt-4">
@@ -303,7 +303,7 @@ function CommentItem({ comment }: { comment: Comment }) {
   const user = users.find((u) => u.id === comment.userId);
   const agent = agents.find((a) => a.id === comment.agentId);
   return (
-    <div className={clsx('rounded-lg border p-3', comment.kind === 'agent' ? 'border-accent/25 bg-accent/5' : 'border-line bg-card')}>
+    <div className={clsx('rounded-xl border p-3.5', comment.kind === 'agent' ? 'border-accent/25 bg-gradient-to-b from-accent/[0.08] to-accent/[0.02]' : 'border-white/[0.07] bg-card/60')}>
       <div className="mb-1.5 flex items-center gap-2 text-xs">
         {agent ? <Avatar emoji={agent.avatar} /> : <Avatar name={user?.name} />}
         <span className="font-medium">{agent?.name ?? user?.name ?? 'alguém'}</span>
@@ -329,13 +329,13 @@ function RunCard({ run, defaultOpen }: { run: Run; defaultOpen: boolean }) {
   const [label, color] = RUN_STATUS[run.status];
   const secs = runSeconds(run);
   return (
-    <div className="overflow-hidden rounded-lg border border-line">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 bg-panel px-3 py-2 text-left text-xs hover:bg-hover">
+    <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-panel">
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-xs transition-colors hover:bg-white/[0.03]">
         {open ? <ChevronDown className="size-3.5 text-mute" /> : <ChevronRight className="size-3.5 text-mute" />}
-        <Wand2 className="size-3.5 text-accent" />
+        <span className="grid size-5 place-items-center rounded-md bg-accent/15"><Wand2 className="size-3 text-accent" /></span>
         <span className="font-medium">{RUN_LABEL[run.kind]}</span>
         <span className="text-mute">· {run.agentName}{run.model ? ` (${run.model})` : ''}</span>
-        <span className={clsx('flex items-center gap-1', color)}>
+        <span className={clsx('flex items-center gap-1 rounded-full bg-white/[0.04] px-2 py-0.5', color)}>
           {(run.status === 'running' || run.status === 'queued') && <span className="size-1.5 animate-pulse-soft rounded-full bg-current" />} {label}
         </span>
         <span className="ml-auto hidden gap-2 text-mute sm:flex">
@@ -428,7 +428,7 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
     }
   };
   return (
-    <div className="rounded-lg border border-line bg-card p-2">
+    <div className="rounded-xl border border-white/[0.08] bg-card/60 p-2.5 transition focus-within:border-accent/50 focus-within:shadow-[0_0_0_3px_rgb(var(--accent)/0.12)]">
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -466,7 +466,7 @@ function SummaryTab({ issue, onSave }: { issue: Issue; onSave: (s: string) => vo
           </div>
         </>
       ) : (
-        <div onClick={() => setEditing(true)} className="cursor-text rounded-lg border border-line bg-card p-3">
+        <div onClick={() => setEditing(true)} className="cursor-text rounded-xl border border-white/[0.08] bg-card/60 p-4">
           {issue.summary ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.summary) }} /> : <span className="text-mute">Ainda sem resumo. Ele aparece depois da primeira execução.</span>}
         </div>
       )}
