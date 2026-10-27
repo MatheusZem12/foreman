@@ -132,8 +132,8 @@ export function Modal({
 // ---------- popover / seletor ----------
 
 export function Popover({
-  trigger, children, align = 'left', className
-}: { trigger: (open: boolean) => ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right'; className?: string }) {
+  trigger, children, align = 'left', className, block
+}: { trigger: (open: boolean) => ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right'; className?: string; block?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -148,8 +148,8 @@ export function Popover({
     };
   }, [open]);
   return (
-    <div ref={ref} className="relative inline-flex">
-      <div onClick={() => setOpen((o) => !o)} className="inline-flex">{trigger(open)}</div>
+    <div ref={ref} className={clsx('relative', block ? 'flex w-full' : 'inline-flex')}>
+      <div onClick={() => setOpen((o) => !o)} className={block ? 'flex w-full' : 'inline-flex'}>{trigger(open)}</div>
       {open && (
         <div
           className={clsx(

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
-import type { Agent, Issue, Label, Member, Permission, Repo, Role, Skill, User, Workspace } from './types';
+import type { Agent, Issue, Label, Member, ModelOption, Permission, Repo, Role, RuntimeModels, Skill, User, Workspace } from './types';
 
 // retryOnMount: false — sem login, /me dá 401; outro componente que monte não
 // pode refazer a consulta (o "carregando" de novo desmontava a tela num loop).
@@ -31,3 +31,17 @@ export const useBranches = (repoId?: string | null) =>
     staleTime: 60_000,
     retry: false
   });
+
+// Catálogo de modelos lido dos CLIs no servidor (atualiza sozinho a cada 6 h).
+export const useModels = () => useQuery({ queryKey: ['models'], queryFn: () => api.get<RuntimeModels[]>('/runtimes/models'), staleTime: 10 * 60_000 });
+
+// Situação do modelo do agente frente ao catálogo: ok, desconhecido ou esforço não suportado.
+export function modelStatus(catalog: RuntimeModels[] | undefined, runtime: string, model: string, effort: string): { option?: ModelOption; warning?: string } {
+  const rt = catalog?.find((c) => c.runtime === runtime);
+  if (!rt?.installed || !rt.models.length) return {};
+  const option = rt.models.find((m) => m.id === model);
+  if (model && !option && !(runtime === 'claude' && model.startsWith('claude-'))) return { warning: `"${model}" não está no catálogo do ${runtime === 'claude' ? 'Claude Code' : 'Codex'}` };
+  const efforts = option?.efforts ?? rt.efforts;
+  if (effort && efforts.length && !efforts.includes(effort)) return { option, warning: `esforço "${effort}" não é aceito por este modelo` };
+  return { option };
+}

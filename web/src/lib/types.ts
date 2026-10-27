@@ -57,6 +57,8 @@ export interface Analytics {
   top: { id: string; ref: string; title: string; status: Status; costUsd: number; runs: number }[];
 }
 export interface Runtime { runtime: string; bin: string; installed: boolean; version: string }
+export interface ModelOption { id: string; label: string; description?: string; group: 'alias' | 'model' | 'used'; efforts?: string[]; defaultEffort?: string }
+export interface RuntimeModels { runtime: 'claude' | 'codex'; installed: boolean; models: ModelOption[]; efforts: string[]; source: string; fetchedAt: string; error?: string }
 export interface EmailSettings {
   enabled: boolean; host: string; port: number; security: 'starttls' | 'tls' | 'none'; username: string; password?: string;
   from: string; fromName: string; appUrl: string;

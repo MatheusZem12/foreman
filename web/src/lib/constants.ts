@@ -22,11 +22,6 @@ export const PRIORITIES = [
 
 export const LABEL_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#ec4899', '#64748b'];
 
-export const CLAUDE_MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
-export const EFFORTS: Record<string, string[]> = {
-  claude: ['', 'low', 'medium', 'high', 'xhigh', 'max'],
-  codex: ['', 'minimal', 'low', 'medium', 'high']
-};
 
 export const LAST_WS = 'mx.lastWorkspace';
 export const LAST_AGENT = 'mx.lastAgent';

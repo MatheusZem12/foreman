@@ -133,6 +133,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 
 			r.Get("/analytics", a.h(a.analytics))
 			r.Get("/runtimes", a.h(a.runtimes))
+			r.Get("/runtimes/models", a.h(a.runtimeModels))
 		})
 	})
 	r.Handle("/*", static)
@@ -1083,6 +1084,13 @@ func (a *API) analytics(w http.ResponseWriter, r *http.Request) (any, error) {
 		}
 	}
 	return a.st.Analytics(r.Context(), ids, days)
+}
+
+// Catálogo de modelos por runtime; ?refresh=1 consulta os CLIs de novo (quem configura agentes).
+func (a *API) runtimeModels(w http.ResponseWriter, r *http.Request) (any, error) {
+	u := userOf(r)
+	force := r.URL.Query().Get("refresh") == "1" && (u.Can("agent.create") || u.Can("agent.update"))
+	return a.run.Models(r.Context(), force), nil
 }
 
 func (a *API) runtimes(w http.ResponseWriter, r *http.Request) (any, error) {

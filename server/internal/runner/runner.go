@@ -37,6 +37,8 @@ type Runner struct {
 	active map[string]*activeRun // runID → processo
 
 	repoLocks sync.Map // repoID → *sync.Mutex (fetch/worktree/merge no mesmo clone)
+
+	models modelCache
 }
 
 type activeRun struct {
@@ -71,6 +73,7 @@ func (r *Runner) Start(ctx context.Context) {
 	for _, id := range ids {
 		r.st.SetIssueStatus(ctx, id, "blocked")
 	}
+	go r.refreshModelsLoop(ctx)
 	go func() {
 		for {
 			r.dispatch(ctx)
