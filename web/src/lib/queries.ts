@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
-import type { Agent, Issue, Label, Member, ModelOption, Permission, Repo, Role, RuntimeModels, Skill, User, Workspace } from './types';
+import type { Agent, Issue, Label, Member, ModelOption, Permission, Repo, Role, Rule, RuntimeModels, Skill, Stage, User, Workspace } from './types';
+import { registerStages } from './constants';
 
 // retryOnMount: false — sem login, /me dá 401; outro componente que monte não
 // pode refazer a consulta (o "carregando" de novo desmontava a tela num loop).
@@ -45,3 +46,16 @@ export function modelStatus(catalog: RuntimeModels[] | undefined, runtime: strin
   if (effort && efforts.length && !efforts.includes(effort)) return { option, warning: `esforço "${effort}" não é aceito por este modelo` };
   return { option };
 }
+
+// Etapas do workspace (sistema + personalizadas); alimentam o registro usado por statusOf.
+export const useStages = (wsId: string) => useQuery({
+  queryKey: ['stages', wsId],
+  queryFn: async () => {
+    const list = await api.get<Stage[]>(`/workspaces/${wsId}/stages`);
+    registerStages(list);
+    return list;
+  },
+  enabled: !!wsId,
+  staleTime: 60_000
+});
+export const useRules = (wsId: string) => useQuery({ queryKey: ['rules', wsId], queryFn: () => api.get<Rule[]>(`/workspaces/${wsId}/rules`) });

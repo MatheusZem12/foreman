@@ -11,6 +11,7 @@ import { SkillsPage } from './pages/Skills';
 import { WorkspaceSettings } from './pages/WorkspaceSettings';
 import { AccountPage, ServerPage, UsersPage } from './pages/Account';
 import { RolesPage } from './pages/Roles';
+import { WorkflowPage } from './pages/Workflow';
 import { Landing } from './pages/Landing';
 import { Onboarding } from './pages/Onboarding';
 import { can, useMe, useWorkspaces } from './lib/queries';
@@ -92,6 +93,7 @@ export default function App() {
               <Route path="agentes" element={<Need perms={['agent.create', 'agent.update', 'agent.delete']}><AgentsPage /></Need>} />
               <Route path="skills" element={<Need perms={['skill.create', 'skill.update', 'skill.delete']}><SkillsPage /></Need>} />
               <Route path="workspace" element={<Need perms={['repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete']}><WorkspaceSettings /></Need>} />
+              <Route path="fluxo" element={<Need perms={['workflow.manage']}><WorkflowPage /></Need>} />
               <Route path="usuarios" element={<Need perms={['user.create', 'user.update', 'user.delete']}><UsersPage /></Need>} />
               <Route path="permissoes" element={<Need owner><RolesPage /></Need>} />
               <Route path="servidor" element={<Need perms={['settings.manage', 'repo.create']}><ServerPage /></Need>} />

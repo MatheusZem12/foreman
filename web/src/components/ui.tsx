@@ -213,6 +213,10 @@ export function StatusIcon({ status, className }: { status: Status; className?: 
       return <svg {...common}><circle cx="7" cy="7" r="6.25" fill={color} /><path d="M4.3 7.2l1.8 1.8 3.6-3.8" fill="none" stroke="#111" strokeWidth="1.6" /></svg>;
     case 'cancelled':
       return <svg {...common}><circle cx="7" cy="7" r="6.25" fill={color} /><path d="M5 5l4 4M9 5l-4 4" stroke="#111" strokeWidth="1.5" /></svg>;
+    case 'waiting':
+      return <svg {...common}><circle cx="7" cy="7" r="5.5" fill="none" stroke={color} strokeWidth="1.5" /><path d="M5.6 4.8v4.4M8.4 4.8v4.4" stroke={color} strokeWidth="1.5" strokeLinecap="round" /></svg>;
+    default:
+      return <svg {...common}><circle cx="7" cy="7" r="5.5" fill="none" stroke={color} strokeWidth="1.5" /><circle cx="7" cy="7" r="2.2" fill={color} /></svg>;
   }
 }
 

@@ -10,8 +10,8 @@ import { Columns3, List, ListFilter, Plus, Search } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Chip, MenuItem, Popover, PriorityIcon, Spinner, StatusIcon, useToast } from '../components/ui';
 import { LabelDots } from '../components/pickers';
-import { BOARD_STATUSES, STATUSES, statusOf } from '../lib/constants';
-import { useAgents, useIssues, useLabels, useMe } from '../lib/queries';
+import { STATUSES, statusOf } from '../lib/constants';
+import { useAgents, useIssues, useLabels, useMe, useStages } from '../lib/queries';
 import { money, timeAgo } from '../lib/format';
 import { api } from '../lib/api';
 import type { Agent, Issue, Label, Status } from '../lib/types';
@@ -74,13 +74,14 @@ export function Board() {
     });
   }, [issues, who, labelFilter, text, me, ws.key]);
 
+  const { data: stages } = useStages(ws.id);
   const byStatus = useMemo(() => {
     const map = {} as Record<Status, Issue[]>;
     for (const s of STATUSES) map[s.id] = [];
-    for (const i of filtered) map[i.status].push(i);
+    for (const i of filtered) (map[i.status] ??= []).push(i);
     for (const s of STATUSES) map[s.id] = sortIssues(map[s.id], sort);
     return map;
-  }, [filtered, sort]);
+  }, [filtered, sort, stages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const working = (issues ?? []).filter((i) => i.activeRun).length;
   const sensors = useSensors(
@@ -133,7 +134,7 @@ export function Board() {
     move(issue, status, position);
   };
 
-  const columns = [...BOARD_STATUSES, ...(showCancelled ? (['cancelled'] as Status[]) : [])];
+  const columns = STATUSES.map((s) => s.id).filter((id) => id !== 'cancelled' || showCancelled);
 
   return (
     <div className="flex h-full flex-col">

@@ -1,4 +1,12 @@
-export type Status = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'blocked' | 'done' | 'cancelled';
+// Etapa: as do sistema ou o id de uma etapa personalizada do workspace.
+export type Status = 'backlog' | 'todo' | 'in_progress' | 'waiting' | 'in_review' | 'blocked' | 'done' | 'cancelled' | (string & {});
+export interface Stage { id: string; name: string; color: string; position: number; system: boolean }
+export type RuleAction = 'notify' | 'webhook' | 'move' | 'run_agent' | 'open_pr' | 'merge' | 'script';
+export interface RuleConfig {
+  to?: string; emails?: string; message?: string; url?: string; agentId?: string; request?: string;
+  base?: string; draft?: boolean; script?: string; onFail?: string;
+}
+export interface Rule { id: string; workspaceId: string; stage: string; action: RuleAction; config: RuleConfig; enabled: boolean; position: number }
 
 export interface User {
   id: string; email: string; name: string; about: string; emailNotifications: boolean; createdAt: string;
@@ -34,6 +42,7 @@ export interface Run {
   kind: 'initial' | 'followup' | 'conflict'; request: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
   error: string; costUsd: number; inputTokens: number; cachedTokens: number; outputTokens: number; commitSha: string;
   createdBy: string | null; createdAt: string; startedAt: string | null; endedAt: string | null;
+  outcome: '' | 'done' | 'waiting' | 'incomplete'; outcomeNote: string;
 }
 export interface RunEvent { id: number; runId: string; kind: string; body: string; createdAt: string }
 export interface Comment {

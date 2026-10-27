@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  ArrowLeft, ChevronDown, ChevronRight, CircleStop, GitMerge, MoreHorizontal, Play, Send, Swords, Trash2, Undo2, Wand2
+  ArrowLeft, Check, ChevronDown, ChevronRight, CircleStop, GitMerge, Hand, MoreHorizontal, Play, Send, Swords, Trash2, Undo2, Wand2
 } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Avatar, Button, Empty, MenuItem, Modal, Popover, Spinner, StatusIcon, Toggle, useToast } from '../components/ui';
@@ -131,7 +131,13 @@ function IssueView({ detail }: { detail: IssueDetail }) {
           {canRun && conflict && !active && (
             <Button size="sm" variant="outline" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: 'conflict' }), 'IA resolvendo o conflito')}><Swords className="size-3.5" /> Resolver conflito com IA</Button>
           )}
-          {canMerge && !active && !closed && hasCommits && !conflict && (
+          {canMerge && !active && issue.status === 'in_review' && (
+            <Button size="sm" variant="success" title="Aprovar: vai para Concluída e as regras da etapa rodam (por padrão, o merge)"
+              onClick={() => act(() => api.post(`/issues/${issue.id}/approve`), 'Aprovada: indo para Concluída')}>
+              <Check className="size-3.5" /> Aprovar
+            </Button>
+          )}
+          {canMerge && !active && !closed && hasCommits && !conflict && issue.status !== 'in_review' && issue.status !== 'waiting' && (
             <Button size="sm" variant="success" onClick={() => setMerging(true)}>
               <GitMerge className="size-3.5" /> Merge{pendingRepos.length > 1 ? ` (${pendingRepos.length} repos)` : <span className="hidden sm:inline"> em {pendingRepos[0].targetBranch}</span>}
             </Button>
@@ -139,6 +145,9 @@ function IssueView({ detail }: { detail: IssueDetail }) {
           <Popover align="right" trigger={() => <button className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><MoreHorizontal className="size-4" /></button>}>
             {(close) => (
               <>
+                {canMerge && !active && issue.status === 'in_review' && hasCommits && !conflict && (
+                  <MenuItem onClick={() => { close(); setMerging(true); }}><GitMerge className="size-4" /> Fazer merge escolhendo a branch</MenuItem>
+                )}
                 {canMerge && !closed && hasCommits && (
                   <MenuItem onClick={() => { close(); if (confirm('Descartar? Apaga o worktree e a branch da issue (local e remota).')) act(() => api.post(`/issues/${issue.id}/discard`), 'Descartada'); }}>
                     <Undo2 className="size-4" /> Descartar alterações
@@ -166,10 +175,12 @@ function IssueView({ detail }: { detail: IssueDetail }) {
             </button>
             {showProps && <div className="mt-2 rounded-lg border border-line p-1 lg:hidden">{properties}</div>}
 
+            {issue.status === 'waiting' && <WaitingCard issue={issue} lastRun={lastRun} />}
+
             <div className="mt-6 flex gap-1 border-b border-line">
               {([
                 ['atividade', 'Atividade'],
-                ['resumo', 'Resumo'],
+                ['resumo', 'README'],
                 ['diff', 'Diff'],
                 ['execucoes', 'Execuções']
               ] as [Tab, string][]).map(([id, label]) => (
@@ -178,7 +189,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
             </div>
             <div className="pt-4">
               {tab === 'atividade' && <Activity issue={issue} runs={runs} comments={comments} />}
-              {tab === 'resumo' && <SummaryTab issue={issue} onSave={(summary) => patch({ summary })} />}
+              {tab === 'resumo' && <SummaryTab issue={issue} runs={runs} onSave={(summary) => patch({ summary })} />}
               {tab === 'diff' && <DiffTab issue={issue} />}
               {tab === 'execucoes' && <RunsTable runs={runs} />}
             </div>
@@ -448,7 +459,7 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
 
 // ---------- resumo, diff, execuções, merge ----------
 
-function SummaryTab({ issue, onSave }: { issue: Issue; onSave: (s: string) => void }) {
+function SummaryTab({ issue, runs, onSave }: { issue: Issue; runs: Run[]; onSave: (s: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(issue.summary);
   useEffect(() => {
@@ -456,7 +467,7 @@ function SummaryTab({ issue, onSave }: { issue: Issue; onSave: (s: string) => vo
   }, [issue.summary, editing]);
   return (
     <div>
-      <p className="mb-3 text-xs text-mute">O agente reescreve este resumo ao fim de cada execução, e ele é o contexto da próxima, que sempre começa num chat limpo.</p>
+      <p className="mb-3 text-xs text-mute">O registro do que foi feito. O agente reescreve o README ao fim de cada execução; ele e o histórico abaixo vão como anexo para o próximo chat, que sempre começa limpo.</p>
       {editing ? (
         <>
           <textarea value={value} onChange={(e) => setValue(e.target.value)} rows={16} className="field-input font-mono text-[12px]" />
@@ -467,7 +478,79 @@ function SummaryTab({ issue, onSave }: { issue: Issue; onSave: (s: string) => vo
         </>
       ) : (
         <div onClick={() => setEditing(true)} className="cursor-text rounded-xl border border-white/[0.08] bg-card/60 p-4">
-          {issue.summary ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.summary) }} /> : <span className="text-mute">Ainda sem resumo. Ele aparece depois da primeira execução.</span>}
+          {issue.summary ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.summary) }} /> : <span className="text-mute">Ainda sem README. Ele aparece depois da primeira execução.</span>}
+        </div>
+      )}
+      {runs.some((r) => r.status !== 'queued' && r.status !== 'running') && (
+        <div className="mt-6">
+          <div className="mb-2 text-xs font-medium text-dim">Histórico de pedidos</div>
+          <ol className="relative space-y-3 border-l border-line pl-4">
+            {runs.filter((r) => r.status !== 'queued' && r.status !== 'running').map((r) => {
+              const [label, color] = runResult(r);
+              return (
+                <li key={r.id} className="relative text-[13px]">
+                  <span className={clsx('absolute -left-[21px] top-1.5 size-2 rounded-full ring-4 ring-bg', color.replace('text-', 'bg-'))} />
+                  <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-mute">
+                    <span>{new Date(r.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                    <span>· {r.agentName} · {RUN_LABEL[r.kind].toLowerCase()}</span>
+                    <span className={clsx('font-medium', color)}>· {label}</span>
+                  </div>
+                  {r.request && <div className="mt-0.5 text-dim">“{r.request}”</div>}
+                  {(r.outcomeNote || (r.status === 'failed' && r.error)) && <div className="mt-0.5 text-xs text-mute">{r.outcomeNote || r.error}</div>}
+                  {r.commitSha && <div className="mt-0.5 font-mono text-[11px] text-mute">{r.commitSha}</div>}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Resultado de uma execução: o que a IA declarou, ou o status técnico.
+function runResult(r: Run): [string, string] {
+  if (r.status === 'succeeded') {
+    if (r.outcome === 'waiting') return ['aguardando você', 'text-orange-400'];
+    if (r.outcome === 'incomplete') return ['incompleto', 'text-orange-400'];
+    return ['concluído', 'text-emerald-400'];
+  }
+  return RUN_STATUS[r.status];
+}
+
+// A IA parou e precisa de alguém: mostra o que ela pediu e já deixa responder.
+function WaitingCard({ issue, lastRun }: { issue: Issue; lastRun?: Run }) {
+  const [reply, setReply] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const canRun = useCan('issue.run');
+  const send = async () => {
+    if (!reply.trim()) return;
+    setBusy(true);
+    try {
+      const res = await api.post<{ warning?: string }>(`/issues/${issue.id}/comments`, { body: reply, sendToAgent: true, agentId: issue.agentId ?? '' });
+      if (res.warning) toast('error', res.warning);
+      else toast('success', 'Resposta enviada: o agente continua num chat novo');
+      setReply('');
+    } catch (err) {
+      toast('error', (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-5 rounded-xl border border-orange-400/30 bg-gradient-to-b from-orange-400/[0.09] to-orange-400/[0.03] p-4">
+      <div className="flex items-center gap-2 text-sm font-medium text-orange-200">
+        <Hand className="size-4 text-orange-400" />
+        {lastRun?.outcome === 'incomplete' ? 'A IA não conseguiu terminar' : 'A IA precisa de você'}
+      </div>
+      <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-dim">{lastRun?.outcomeNote || 'Veja o último comentário do agente.'}</p>
+      {canRun && issue.agentId && (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2} placeholder="Responda ou decida aqui; vai para o agente continuar…"
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(); }}
+            className="field-input flex-1 text-[13px]" />
+          <Button variant="primary" loading={busy} onClick={send} className="sm:self-end"><Send className="size-3.5" /> Responder</Button>
         </div>
       )}
     </div>
@@ -533,7 +616,7 @@ function RunsTable({ runs }: { runs: Run[] }) {
       <table className="w-full text-left text-xs">
         <thead className="text-mute">
           <tr className="border-b border-line">
-            {['Quando', 'Tipo', 'Agente', 'Status', 'Duração', 'Custo', 'Tokens in / cache / out', 'Commit'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}
+            {['Quando', 'Tipo', 'Agente', 'Resultado', 'Duração', 'Custo', 'Tokens in / cache / out', 'Commit'].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -544,7 +627,7 @@ function RunsTable({ runs }: { runs: Run[] }) {
                 <td className="px-2 py-2 text-mute">{timeAgo(r.createdAt)}</td>
                 <td className="px-2 py-2">{RUN_LABEL[r.kind]}</td>
                 <td className="px-2 py-2">{r.agentName} <span className="text-mute">{r.model}</span></td>
-                <td className={clsx('px-2 py-2', RUN_STATUS[r.status][1])}>{RUN_STATUS[r.status][0]}</td>
+                <td className={clsx('px-2 py-2', runResult(r)[1])} title={r.outcomeNote || r.error}>{runResult(r)[0]}</td>
                 <td className="px-2 py-2">{secs != null ? duration(secs) : '—'}</td>
                 <td className="px-2 py-2">{r.costUsd ? money(r.costUsd) : '—'}</td>
                 <td className="px-2 py-2 font-mono">{compact(r.inputTokens)} / {compact(r.cachedTokens)} / {compact(r.outputTokens)}</td>

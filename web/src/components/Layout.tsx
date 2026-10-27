@@ -3,13 +3,13 @@ import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from '
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  BarChart3, Bot, BookOpen, ChevronDown, CircleHelp, FolderCog, LayoutGrid, LogOut, Menu, Plus, Search, Server, ShieldCheck, UserRound, Users, X
+  BarChart3, Bot, BookOpen, ChevronDown, CircleHelp, FolderCog, LayoutGrid, LogOut, Menu, Plus, Search, Server, ShieldCheck, UserRound, Users, Workflow, X
 } from 'lucide-react';
 import { Avatar, Modal, MenuItem, Popover, Spinner } from './ui';
 import { NewIssueModal } from './NewIssue';
 import { SearchModal } from './SearchModal';
 import { CreateWorkspaceForm } from '../pages/Onboarding';
-import { can, useIssues, useMe, useWorkspaces } from '../lib/queries';
+import { can, useIssues, useMe, useStages, useWorkspaces } from '../lib/queries';
 import { useRealtime } from '../lib/realtime';
 import { api } from '../lib/api';
 import { LAST_WS } from '../lib/constants';
@@ -37,6 +37,7 @@ export function Layout() {
   const loc = useLocation();
 
   useRealtime(ws?.id);
+  const stages = useStages(ws?.id ?? '');
   useEffect(() => setDrawer(false), [loc.pathname]);
   useEffect(() => {
     if (ws) {
@@ -62,7 +63,7 @@ export function Layout() {
   }, []);
 
   const ctx = useMemo(() => (ws ? { ws, openNewIssue: (status: Status = 'todo') => setNewIssue({ status }) } : null), [ws]);
-  if (isLoading) return <div className="grid h-full place-items-center"><Spinner /></div>;
+  if (isLoading || (ws && stages.isPending)) return <div className="grid h-full place-items-center"><Spinner /></div>;
   if (!ws || !ctx) return <Navigate to="/" replace />;
 
   return (
@@ -183,11 +184,12 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
         {link(`${base}/analytics`, <BarChart3 className="size-4" />, 'Analytics')}
 
         {(can(me, 'agent.create', 'agent.update', 'agent.delete', 'skill.create', 'skill.update', 'skill.delete',
-          'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete')) && (
+          'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete', 'workflow.manage')) && (
           <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">Configuração</div>
         )}
         {can(me, 'agent.create', 'agent.update', 'agent.delete') && link(`${base}/agentes`, <Bot className="size-4" />, 'Agentes')}
         {can(me, 'skill.create', 'skill.update', 'skill.delete') && link(`${base}/skills`, <BookOpen className="size-4" />, 'Skills')}
+        {can(me, 'workflow.manage') && link(`${base}/fluxo`, <Workflow className="size-4" />, 'Fluxo e automações')}
         {can(me, 'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete') &&
           link(`${base}/workspace`, <FolderCog className="size-4" />, 'Workspace e repositórios')}
 

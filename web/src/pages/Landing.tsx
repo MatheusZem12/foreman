@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  ArrowRight, BarChart3, Bot, BookOpen, Check, CheckCircle2, Copy, Eye, FolderGit2, GitMerge, Globe, HardDrive, Laptop,
+  ArrowRight, BarChart3, Bot, Hand, Workflow, BookOpen, Check, CheckCircle2, Copy, Eye, FolderGit2, GitMerge, Globe, HardDrive, Laptop,
   LayoutGrid, Lock, Mail, MessageSquareText, ScrollText, ShieldCheck, Sparkles, Terminal, Wallet
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -257,7 +257,9 @@ const FEATURES: [typeof Bot, string, React.ReactNode][] = [
   [FolderGit2, 'Vários repositórios por workspace', 'Front, API, mobile… A issue recebe todos e a IA decide em quais mexer, guiada pela descrição de cada um. Só os alterados ganham branch e merge.'],
   [Bot, 'Agentes como presets', 'Runtime (Claude ou Codex), modelo, esforço, teto de custo, instruções e um pacote de skills. Mesmo modelo com papéis diferentes: dev, revisor, testes.'],
   [BookOpen, 'Skills compartilhadas', 'Escreva uma vez, indexe em quantos agentes quiser. Editou a skill, todos os agentes passam a usar a versão nova.'],
-  [MessageSquareText, 'Ajuste por comentário', '"Troque o botão para verde": o comentário vira uma nova execução, com o agente que você escolher, no mesmo worktree.'],
+  [MessageSquareText, 'Ajuste por comentário', '"Troque o botão para verde": o comentário vira um chat novo, com o agente que você escolher, levando o README da issue.'],
+  [Workflow, 'Etapas e automações', 'Crie etapas e regras: ao entrar em uma etapa, notificar, chamar webhook, rodar agente, abrir PR, fazer merge ou rodar script.'],
+  [Hand, 'A IA diz quando precisa de você', 'Cada execução termina como concluída, aguardando você ou incompleta. Pergunta vira comentário e você responde ali mesmo.'],
   [ShieldCheck, 'Permissões por perfil', 'O dono monta perfis (criar, editar e excluir issues, agentes, skills, repositórios…) e cada pessoa vê só os workspaces dela.'],
   [Mail, 'Aviso por e-mail', 'Issue nova avisa o workspace inteiro numa conversa só por workspace. O dono liga; quem não quiser desliga no perfil.'],
   [Wallet, 'Custo sob controle', 'Issues resolvidas e custo por mês, tokens, tempo, ranking de agentes e modelos. Teto em US$ por execução no Claude.'],

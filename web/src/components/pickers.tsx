@@ -3,7 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Bot, FolderGit2, GitBranch, Plus, Tag } from 'lucide-react';
 import { Chip, MenuItem, Popover, PriorityIcon, StatusIcon } from './ui';
 import { LABEL_COLORS, PRIORITIES, STATUSES, statusOf } from '../lib/constants';
-import { useAgents, useBranches, useLabels, useRepos } from '../lib/queries';
+import { useAgents, useBranches, useLabels, useRepos, useStages } from '../lib/queries';
+import { useWs } from './Layout';
 import { api } from '../lib/api';
 import type { Label, Status } from '../lib/types';
 import { AgentIcon } from './AgentIcon';
@@ -19,6 +20,7 @@ function Trigger({ variant, children }: { variant: Variant; children: React.Reac
 }
 
 export function StatusPicker({ value, onChange, variant = 'chip' }: { value: Status; onChange: (s: Status) => void; variant?: Variant }) {
+  useStages(useWs().ws.id); // re-renderiza quando as etapas do workspace mudam
   return (
     <Popover trigger={() => <Trigger variant={variant}><StatusIcon status={value} /><span className="truncate">{statusOf(value).label}</span></Trigger>}>
       {(close) =>
