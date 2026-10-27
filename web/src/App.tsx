@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ToastProvider, Spinner } from './components/ui';
@@ -5,7 +6,6 @@ import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Board } from './pages/Board';
 import { IssuePage } from './pages/IssuePage';
-import { AnalyticsPage } from './pages/Analytics';
 import { AgentsPage } from './pages/Agents';
 import { SkillsPage } from './pages/Skills';
 import { WorkspaceSettings } from './pages/WorkspaceSettings';
@@ -15,6 +15,9 @@ import { Landing } from './pages/Landing';
 import { Onboarding } from './pages/Onboarding';
 import { can, useMe, useWorkspaces } from './lib/queries';
 import { LAST_WS } from './lib/constants';
+
+// Analytics carrega os gráficos (Recharts) só quando a tela é aberta.
+const AnalyticsPage = lazy(() => import('./pages/Analytics').then((m) => ({ default: m.AnalyticsPage })));
 
 const qc = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, refetchOnWindowFocus: true, retry: 1 } }
@@ -85,7 +88,7 @@ export default function App() {
             <Route path="/w/:key" element={<Authed><Layout /></Authed>}>
               <Route index element={<Board />} />
               <Route path="issues/:ref" element={<IssuePage />} />
-              <Route path="analytics" element={<AnalyticsPage />} />
+              <Route path="analytics" element={<Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage /></Suspense>} />
               <Route path="agentes" element={<Need perms={['agent.create', 'agent.update', 'agent.delete']}><AgentsPage /></Need>} />
               <Route path="skills" element={<Need perms={['skill.create', 'skill.update', 'skill.delete']}><SkillsPage /></Need>} />
               <Route path="workspace" element={<Need perms={['repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete']}><WorkspaceSettings /></Need>} />

@@ -45,7 +45,17 @@ export interface RepoDiff { repoId: string; name: string; stat: string; patch: s
 export interface RepoMerge { repoId: string; name: string; target: string; conflict?: boolean; files?: string[]; sha?: string }
 export interface GitInfo { version: string; home: string; sshKey?: string; credentialHelper: string; user: string; gh: boolean }
 export interface Totals { costUsd: number; inputTokens: number; cachedTokens: number; outputTokens: number; seconds: number; runs: number; failed: number }
-export interface Analytics { totals: Totals; daily: (Totals & { day: string })[]; agents: (Totals & { agentId: string | null; agentName: string })[] }
+export interface Analytics {
+  totals: Totals;
+  issues: { created: number; resolved: number; open: number; avgResolveHours: number };
+  daily: (Totals & { day: string })[];
+  monthly: { month: string; created: number; resolved: number; costUsd: number; runs: number }[];
+  status: { status: Status; count: number }[];
+  agents: (Totals & { agentId: string | null; agentName: string })[];
+  models: (Totals & { runtime: string; model: string })[];
+  users: { userId: string | null; name: string; runs: number; costUsd: number }[];
+  top: { id: string; ref: string; title: string; status: Status; costUsd: number; runs: number }[];
+}
 export interface Runtime { runtime: string; bin: string; installed: boolean; version: string }
 export interface EmailSettings {
   enabled: boolean; host: string; port: number; security: 'starttls' | 'tls' | 'none'; username: string; password?: string;
