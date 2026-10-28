@@ -272,7 +272,7 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
     >
       {(close) => (
         <div>
-          <ModelRow selected={!value} title={t('Padrão do CLI')} desc="O que estiver configurado no claude/codex do servidor" onClick={() => { onChange(''); close(); }} />
+          <ModelRow selected={!value} title={t('Padrão do CLI')} desc={t('O que estiver configurado no claude/codex do servidor')} onClick={() => { onChange(''); close(); }} />
           {!rt?.installed && <div className="px-2.5 py-2 text-xs text-amber-300">{rt?.error ?? t('Carregando catálogo…')}</div>}
           {groups.map(([g, title]) => {
             const list = models.filter((m) => m.group === g);

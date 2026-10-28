@@ -1,25 +1,31 @@
-// Etapa: as do sistema ou o id de uma etapa personalizada do workspace.
+// Etapa: o id de uma etapa do workspace (as do fluxo padrão usam ids legíveis, como "todo").
 export type Status = 'backlog' | 'todo' | 'in_progress' | 'waiting' | 'in_review' | 'blocked' | 'done' | 'cancelled' | (string & {});
+// Papel da etapa no fluxo, tirado das regras (analytics).
+export type StageKind = 'ai' | 'people' | 'approval' | 'closed' | 'queue';
 export interface Who { roles?: string[]; users?: string[] }
 export type LockField = 'title' | 'description' | 'priority' | 'labels' | 'agent' | 'repos' | 'assignee';
 export type Requirement = 'agent' | 'assignee' | 'description' | 'changes';
 export interface StagePolicy {
   enter: Who; act: Who; locked?: LockField[]; requires?: Requirement[]; wip?: number;
   approvals?: number; approveTo?: string; approvers: Who; responsible: Who; readOnly?: boolean;
+  close?: '' | 'done' | 'cancelled';
 }
-export interface Stage { id: string; name: string; color: string; position: number; system: boolean; policy: StagePolicy; parallel?: boolean }
+export interface Stage { id: string; name: string; color: string; position: number; policy: StagePolicy; parallel?: boolean }
 export type RuleAction = 'notify' | 'webhook' | 'move' | 'run_agent' | 'open_pr' | 'merge' | 'script'
-  | 'set_agent' | 'set_priority' | 'add_label' | 'assign' | 'comment'
+  | 'set_agent' | 'set_priority' | 'add_label' | 'assign' | 'comment' | 'stop_agent'
   // regras de acesso da etapa (trigger 'access')
-  | 'allow_act' | 'allow_enter' | 'read_only' | 'lock_fields' | 'require' | 'wip' | 'approval' | 'responsible';
-export type RuleTrigger = 'access' | 'enter' | 'leave' | 'stale' | 'created' | 'commented' | 'run_finished' | 'cost_over' | 'assigned' | 'priority_changed';
+  | 'allow_act' | 'allow_enter' | 'read_only' | 'lock_fields' | 'require' | 'wip' | 'approval' | 'responsible' | 'close';
+export type RuleTrigger = 'access' | 'enter' | 'leave' | 'stale' | 'created' | 'commented' | 'run_started' | 'run_finished' | 'merged' | 'merge_conflict'
+  | 'cost_over' | 'assigned' | 'priority_changed';
 export interface RuleConditions {
   priorities?: number[]; labels?: string[]; agents?: string[]; outcomes?: string[]; hours?: number; cost?: number; actorRoles?: string[];
+  stages?: string[];
 }
 export interface RuleConfig {
   to?: string; roles?: string[]; users?: string[]; message?: string; url?: string; agentId?: string; request?: string;
   base?: string; draft?: boolean; script?: string; onFail?: string; priority?: number; labelId?: string; mode?: string;
   fields?: LockField[]; requires?: Requirement[]; wip?: number; approvals?: number;
+  wait?: boolean; onWaiting?: string; kind?: 'done' | 'cancelled';
 }
 export interface Rule {
   id: string; workspaceId: string; stage: string; action: RuleAction; config: RuleConfig; enabled: boolean; position: number;
@@ -52,6 +58,7 @@ export interface Issue {
   labelIds: string[]; skillIds: string[]; summary: string; createdBy: string | null;
   createdAt: string; updatedAt: string; activeRun: string | null; costUsd: number;
   assigneeId: string | null; stageSince: string; approvals: string[];
+  closed: '' | 'done' | 'cancelled'; // pela regra "Encerrar" da etapa
 }
 export interface IssueRepo {
   repoId: string; name: string; baseBranch: string; targetBranch: string;
@@ -91,7 +98,8 @@ export interface Analytics {
   top: { id: string; ref: string; title: string; status: Status; costUsd: number; runs: number }[];
   priorities: { priority: number; issues: number; runs: number; costUsd: number; avgSeconds: number }[];
   creators: { userId: string | null; name: string; runs: number; costUsd: number }[];
-  stageTimes: { stage: string; name: string; passes: number; avgHours: number; medHours: number }[];
+  stageTimes: { stage: string; name: string; kind: StageKind; passes: number; avgHours: number; medHours: number }[];
+  kindTimes: { kind: StageKind; hours: number; passes: number; avgHours: number }[];
   people: { userId: string; name: string; created: number; openAssigned: number; resolved: number; resolveHours: number; comments: number; approvals: number; runs: number; costUsd: number; replyHours: number }[];
 }
 export interface Runtime { runtime: string; bin: string; installed: boolean; version: string }

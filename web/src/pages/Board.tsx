@@ -163,7 +163,6 @@ export function Board() {
     try {
       const res = await api.patch<{ issue: Issue; warning?: string }>(`/issues/${issue.id}`, { status, position });
       if (res.warning) toast('error', res.warning);
-      else if (status === 'todo' && issue.status !== 'todo' && issue.agentId) toast('info', t('{0}-{1} foi para a fila do agente', ws.key, issue.number));
     } catch (err) {
       qc.setQueryData(key, prev);
       toast('error', (err as Error).message);
@@ -201,7 +200,8 @@ export function Board() {
     move(issue, status, position);
   };
 
-  const columns = STATUSES.map((s) => s.id).filter((id) => id !== 'cancelled' || showCancelled);
+  // Etapas que encerram como cancelada ficam escondidas, a não ser que a pessoa peça.
+  const columns = STATUSES.filter((s) => s.closes !== 'cancelled' || showCancelled).map((s) => s.id);
   // Etapas em paralelo dividem a mesma coluna, uma embaixo da outra.
   const groups = stageGroups(STATUSES.filter((s) => columns.includes(s.id))).map((g) => g.map((s) => s.id));
 

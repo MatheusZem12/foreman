@@ -34,7 +34,7 @@ export function Layout() {
   const { data: workspaces, isLoading } = useWorkspaces();
   const ws = workspaces?.find((w) => w.key === key?.toUpperCase());
   const [drawer, setDrawer] = useState(false);
-  const [newIssue, setNewIssue] = useState<{ status: Status } | null>(null);
+  const [newIssue, setNewIssue] = useState<{ status?: Status } | null>(null);
   const [search, setSearch] = useState(false);
   const loc = useLocation();
 
@@ -57,14 +57,14 @@ export function Layout() {
         setSearch(true);
       } else if (e.key === 'c' && !e.ctrlKey && !e.metaKey && !e.altKey && !isTyping(e)) {
         e.preventDefault();
-        setNewIssue({ status: 'todo' });
+        setNewIssue({});
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  const ctx = useMemo(() => (ws ? { ws, openNewIssue: (status: Status = 'todo') => setNewIssue({ status }) } : null), [ws]);
+  const ctx = useMemo(() => (ws ? { ws, openNewIssue: (status?: Status) => setNewIssue({ status }) } : null), [ws]);
   if (isLoading || (ws && stages.isPending)) return <div className="grid h-full place-items-center"><Spinner /></div>;
   if (!ws || !ctx) return <Navigate to="/" replace />;
 
@@ -79,7 +79,7 @@ export function Layout() {
             drawer ? 'translate-x-0' : '-translate-x-full'
           )}
         >
-          <Sidebar ws={ws} workspaces={workspaces!} onSearch={() => setSearch(true)} onNew={() => setNewIssue({ status: 'todo' })} onClose={() => setDrawer(false)} />
+          <Sidebar ws={ws} workspaces={workspaces!} onSearch={() => setSearch(true)} onNew={() => setNewIssue({})} onClose={() => setDrawer(false)} />
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -95,7 +95,7 @@ export function Layout() {
 
         {/* Botão flutuante de nova issue no celular (fora da página da issue, onde cobriria o comentário) */}
         {!loc.pathname.includes('/issues/') && <button
-          onClick={() => setNewIssue({ status: 'todo' })}
+          onClick={() => setNewIssue({})}
           className="fixed bottom-5 right-5 z-30 grid size-14 place-items-center rounded-2xl bg-gradient-to-b from-accent to-accent/80 text-snow shadow-[0_10px_30px_-8px_rgb(var(--accent)/0.8)] active:scale-95 md:hidden"
           aria-label={t('Nova issue')}
         >

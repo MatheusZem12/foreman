@@ -47,7 +47,20 @@ Caminho de uma issue:
 
 Usuários e perfis são **globais**; o acesso a workspaces, não. O fluxo de cada workspace fica em *Fluxo e automações*.
 
-**Etapas.** Todo workspace tem as etapas do sistema (com comportamento próprio) e as suas. A etapa em si é só **nome, lugar no fluxo e se fica em paralelo** com a anterior. Todas podem ser **arrastadas** para mudar a ordem; as personalizadas podem ser removidas (as issues voltam para o Backlog).
+**Nada é fixo por etapa.** Todo workspace nasce com um **fluxo padrão** (Backlog → A fazer → Em andamento → Aguardando você → Em revisão → Bloqueada → Concluída → Cancelada) e com **regras padrão** que fazem o que antes era embutido no código. Tudo pode ser renomeado, reordenado, desligado ou apagado, e dá para montar um fluxo do zero. A etapa em si é só **nome, lugar no fluxo e se fica em paralelo** com a anterior; removida, as issues dela vão para a primeira etapa.
+
+As regras padrão (função `seed_workflow` no banco, migração 016):
+- **A fazer, ao entrar:** rodar o agente da issue (sem agente, fica como tarefa manual; sem repositório, a regra avisa e a issue fica onde está).
+- **Agente começou** (pedido pelo quadro, comentário ou resposta): mover para Em andamento.
+- **Execução terminou**, estando em Em andamento: concluída → Em revisão; precisa de você ou incompleta → Aguardando você; falhou → Bloqueada; parada → Backlog.
+- **Backlog e Cancelada, ao entrar:** parar o agente.
+- **Merge feito** → Concluída; **conflito no merge** → Bloqueada.
+- **Concluída** encerra a issue como resolvida e **Cancelada** como cancelada (regra de acesso "Encerrar a issue"); é isso que o analytics conta.
+- **Em revisão:** 1 aprovação → Concluída. **Concluída, ao entrar:** merge. **Aguardando você, ao entrar:** e-mail para quem pediu.
+
+O filtro **"a issue está na etapa"** faz uma regra de gatilho geral (agente terminou, merge…) valer só a partir de certas etapas. **Rodar agente** pode **esperar terminar na etapa** (a issue fica ali e as regras seguintes rodam depois, ex.: revisão por IA) ou ser um pedido normal (as regras de "agente começou/terminou" decidem a etapa).
+
+**O analytics segue o fluxo que você montou:** cada etapa ganha um tipo pelas regras (o agente trabalha ali, espera alguém responder à IA, tem aprovação, encerra), e daí saem "onde o tempo vai", o tipo de cada etapa no tempo por etapa e o tempo de resposta por pessoa.
 
 **Regras de acesso** (*+ Regra → Sempre: acesso e travas*) valem o tempo todo enquanto a issue está na etapa; várias se somam:
 - **Quem mexe nas issues desta etapa** (perfis e/ou pessoas): editar, comentar, rodar agente, tirar dali.

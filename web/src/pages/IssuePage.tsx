@@ -93,8 +93,10 @@ function IssueView({ detail }: { detail: IssueDetail }) {
   const active = !!issue.activeRun;
   const pendingRepos = issue.repos.filter((r) => r.changed && !r.mergedInto);
   const hasCommits = pendingRepos.length > 0;
-  const closed = issue.status === 'done' || issue.status === 'cancelled';
+  // Encerrada pela regra "Encerrar" da etapa; esperando alguém pelo que a IA declarou.
+  const closed = !!issue.closed;
   const lastRun = runs[runs.length - 1];
+  const needsYou = !active && !closed && (lastRun?.outcome === 'waiting' || lastRun?.outcome === 'incomplete');
   const conflict = issue.repos.some((r) => r.conflict);
 
   const properties = (
@@ -109,7 +111,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
         <Gate on={caps.repos}><RepoScopePicker variant="row" ws={ws.id} value={issue.allRepos ? [] : issue.repos.map((r) => r.repoId)}
           onChange={(ids) => saveRepos(!ids.length, ids.map((repoId) => ({ repoId, ...pick(issue.repos.find((r) => r.repoId === repoId)) })))} /></Gate>
       </PropRow>
-      {issue.repos.map((r) => <IssueRepoRow key={r.repoId} r={r} locked={!canEdit || issue.status === 'done' || issue.status === 'cancelled'} onChange={(b) => setBranch(r.repoId, b)} />)}
+      {issue.repos.map((r) => <IssueRepoRow key={r.repoId} r={r} locked={!canEdit || closed} onChange={(b) => setBranch(r.repoId, b)} />)}
       <div className="space-y-1 px-2 pt-3 text-xs text-mute">
         {issue.branch && <div className="truncate font-mono" title={issue.branch}>{issue.branch}</div>}
         <div>{t('Custo total:')} <span className="text-dim">{money(issue.costUsd)}</span> · {runs.length} {t('execução(ões)')}</div>
@@ -143,7 +145,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
               <Check className="size-3.5" /> {t('Aprovar')}{caps.approvals > 1 && <span className="opacity-80"> {issue.approvals.length}/{caps.approvals}</span>}
             </Button>
           )}
-          {canMerge && !active && !closed && hasCommits && !conflict && caps.approvals === 0 && issue.status !== 'waiting' && (
+          {canMerge && !active && !closed && hasCommits && !conflict && caps.approvals === 0 && !needsYou && (
             <Button size="sm" variant="success" onClick={() => setMerging(true)}>
               <GitMerge className="size-3.5" /> {t('Merge')}{pendingRepos.length > 1 ? t(' ({0} repos)', pendingRepos.length) : <span className="hidden sm:inline"> {t('em')} {pendingRepos[0].targetBranch}</span>}
             </Button>
@@ -181,7 +183,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
             </button>
             {showProps && <div className="mt-2 rounded-lg border border-line p-1 lg:hidden">{properties}</div>}
 
-            {issue.status === 'waiting' && <WaitingCard issue={issue} lastRun={lastRun} />}
+            {needsYou && <WaitingCard issue={issue} lastRun={lastRun} />}
 
             <div className="mt-6 flex gap-1 border-b border-line">
               {([
@@ -426,7 +428,7 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
   const [body, setBody] = useState('');
   const [agentId, setAgentId] = useState<string | null>(issue.agentId);
   const canRun = useCan('issue.run');
-  const [send, setSend] = useState(canRun && !!issue.agentId && issue.status !== 'backlog');
+  const [send, setSend] = useState(canRun && !!issue.agentId && !issue.closed);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   useEffect(() => setAgentId(issue.agentId), [issue.agentId]);

@@ -7,7 +7,7 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  AlertTriangle, ArrowRightLeft, ListChecks, ListOrdered, LogIn, LogOut, Map as MapIcon, Bot, Check, ChevronDown, Copy, Flag, GitMerge, GitPullRequest,
+  AlertTriangle, ArrowRightLeft, CheckCircle2, CircleStop, ListChecks, ListOrdered, LogIn, LogOut, Map as MapIcon, Bot, Check, ChevronDown, Copy, Flag, GitMerge, GitPullRequest,
   GripVertical, Inbox, Lock, Mail, MessageSquare, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, SquareTerminal, Tag, Timer, Trash2,
   UserCheck, Users, Webhook, Workflow, Zap
 } from 'lucide-react';
@@ -22,17 +22,6 @@ import { t } from '../lib/i18n';
 
 // ---------- catálogos ----------
 
-const BUILTIN: Record<string, string> = {
-  backlog: t('Ideias e tarefas que ainda não rodam.'),
-  todo: t('Com agente, a issue entra na fila na hora.'),
-  in_progress: t('O agente está trabalhando. Todo pedido novo vem para cá.'),
-  waiting: t('A IA parou e precisa de alguém: decisão, acesso, dado ou confirmação.'),
-  in_review: t('A IA terminou. Quem aprova dá o ✓.'),
-  blocked: t('A execução falhou ou o merge deu conflito.'),
-  done: t('Aprovada e entregue.'),
-  cancelled: t('Interrompida; a execução em andamento para.')
-};
-
 const TRIGGERS: { id: RuleTrigger; label: string; stage?: boolean; hint: string }[] = [
   { id: 'access', label: t('Sempre: acesso e travas'), stage: true, hint: t('quem mexe ou traz issues, aprovação, travas, requisitos, limite, responsáveis') },
   { id: 'enter', label: t('Entrar na etapa'), stage: true, hint: t('venha do quadro, do agente ou de outra regra') },
@@ -40,7 +29,10 @@ const TRIGGERS: { id: RuleTrigger; label: string; stage?: boolean; hint: string 
   { id: 'stale', label: t('Ficar parada na etapa'), stage: true, hint: t('por X horas sem sair dela') },
   { id: 'created', label: t('Issue criada'), hint: t('no quadro, por webhook ou e-mail encaminhado') },
   { id: 'commented', label: t('Novo comentário'), hint: t('de uma pessoa') },
-  { id: 'run_finished', label: t('Execução do agente terminou'), hint: t('concluída, aguardando, incompleta ou com falha') },
+  { id: 'run_started', label: t('Agente começou'), hint: t('pedido pelo quadro, comentário, resposta ou regra') },
+  { id: 'run_finished', label: t('Execução do agente terminou'), hint: t('concluída, aguardando, incompleta, com falha ou parada') },
+  { id: 'merged', label: t('Merge feito'), hint: t('pelo botão ou por regra') },
+  { id: 'merge_conflict', label: t('Conflito no merge'), hint: t('nada foi publicado') },
   { id: 'assigned', label: t('Responsável definido'), hint: t('alguém virou dono da issue') },
   { id: 'priority_changed', label: t('Prioridade trocada'), hint: t('use a condição para pegar só urgentes') },
   { id: 'cost_over', label: t('Custo passou de um valor'), hint: t('soma das execuções em US$') }
@@ -59,7 +51,8 @@ const ACTIONS: { id: RuleAction; icon: typeof Mail; label: string; desc: string;
   { id: 'run_agent', icon: Sparkles, label: t('Rodar agente'), desc: t('Revisão por IA, testes, documentação…'), group: t('IA e código') },
   { id: 'open_pr', icon: GitPullRequest, label: t('Abrir pull request'), desc: t('GitHub, via gh.'), group: t('IA e código') },
   { id: 'merge', icon: GitMerge, label: t('Fazer merge'), desc: t('Tudo ou nada entre repositórios.'), group: t('IA e código') },
-  { id: 'script', icon: SquareTerminal, label: t('Rodar script'), desc: t('Bash com variáveis MULTICA_*.'), group: t('IA e código') }
+  { id: 'script', icon: SquareTerminal, label: t('Rodar script'), desc: t('Bash com variáveis MULTICA_*.'), group: t('IA e código') },
+  { id: 'stop_agent', icon: CircleStop, label: t('Parar o agente'), desc: t('Cancela a execução em andamento.'), group: t('IA e código') }
 ];
 // Regras de acesso: não "rodam"; valem o tempo todo enquanto a issue está na etapa.
 const ACCESS: { id: RuleAction; icon: typeof Mail; label: string; desc: string }[] = [
@@ -70,7 +63,8 @@ const ACCESS: { id: RuleAction; icon: typeof Mail; label: string; desc: string }
   { id: 'require', icon: ListChecks, label: t('Requisitos para entrar'), desc: t('A issue só entra se tiver o que for marcado.') },
   { id: 'wip', icon: Inbox, label: t('Limite de issues'), desc: t('Máximo de issues ao mesmo tempo nesta etapa.') },
   { id: 'read_only', icon: Lock, label: t('Somente leitura'), desc: t('Entrou aqui, ninguém mexe mais. Só o dono, como saída de emergência.') },
-  { id: 'responsible', icon: Users, label: t('Responsáveis da etapa'), desc: t('Recebem o e-mail “responsáveis da etapa”.') }
+  { id: 'responsible', icon: Users, label: t('Responsáveis da etapa'), desc: t('Recebem o e-mail “responsáveis da etapa”.') },
+  { id: 'close', icon: CheckCircle2, label: t('Encerrar a issue'), desc: t('Entrou aqui, conta como concluída (resolvida) ou cancelada: some das abertas e entra no analytics.') }
 ];
 const isAccess = (tt?: RuleTrigger) => tt === 'access';
 const actionOf = (id: RuleAction) => ACTIONS.find((a) => a.id === id) ?? ACCESS.find((a) => a.id === id) ?? ACTIONS[0];
@@ -93,7 +87,7 @@ const LOCKS: [LockField, string][] = [
 const REQUIRES: [Requirement, string][] = [
   ['agent', t('Ter agente')], ['assignee', t('Ter responsável')], ['description', t('Ter descrição')], ['changes', t('Ter alterações de código')]
 ];
-const OUTCOMES: [string, string][] = [['done', t('Concluída')], ['waiting', t('Aguardando alguém')], ['incomplete', t('Incompleta')], ['failed', t('Falhou')]];
+const OUTCOMES: [string, string][] = [['done', t('Concluída')], ['waiting', t('Aguardando alguém')], ['incomplete', t('Incompleta')], ['failed', t('Falhou')], ['cancelled', t('Parada')]];
 
 // ---------- página ----------
 
@@ -163,8 +157,14 @@ export function WorkflowPage() {
     refresh();
   };
   const removeStage = async (s: Stage) => {
-    if (!confirm(t('Remover a etapa "{0}"? As issues dela voltam para o Backlog e as regras dela são apagadas.', s.name))) return;
-    await api.del(`/workspaces/${ws.id}/stages/${s.id}`);
+    const first = stages.find((x) => x.id !== s.id)?.name ?? '';
+    if (!confirm(t('Remover a etapa "{0}"? As issues dela vão para "{1}" e as regras dela são apagadas.', s.name, first))) return;
+    try {
+      await api.del(`/workspaces/${ws.id}/stages/${s.id}`);
+    } catch (err) {
+      toast('error', (err as Error).message);
+      return;
+    }
     refresh();
     qc.invalidateQueries({ queryKey: ['issues', ws.id] });
   };
@@ -180,7 +180,7 @@ export function WorkflowPage() {
           description={t('As etapas do quadro, quem pode fazer o quê em cada uma e as regras que rodam sozinhas. As regras de uma etapa rodam de cima para baixo{0}.', canEdit ? t('; arraste etapas e regras para mudar a ordem') : '')}
           actions={canEdit ? <>
             <Button onClick={() => setCopying(true)}><Copy className="size-4" /> {t('Copiar para…')}</Button>
-            <Button variant="primary" onClick={() => setEditingStage({ after: 'in_review' })}><Plus className="size-4" /> {t('Nova etapa')}</Button>
+            <Button variant="primary" onClick={() => setEditingStage({ after: stages[stages.length - 1]?.id ?? '' })}><Plus className="size-4" /> {t('Nova etapa')}</Button>
           </> : <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-mute">{t('somente leitura')}</span>}
         />
 
@@ -283,13 +283,13 @@ function StageCard({ readOnly, stage: s, stages, rules, onEdit, onDelete, onAddR
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2">
             <span className="font-semibold">{s.name}</span>
-            <span className="text-[11px] text-mute">{s.system ? t('do sistema') : t('personalizada')}</span>
+            {s.policy?.close && <span className="text-[11px] text-mute">{s.policy.close === 'done' ? t('encerra como concluída') : t('encerra como cancelada')}</span>}
           </div>
-          <p className="truncate text-xs text-mute">{s.system ? BUILTIN[s.id] : rules.length ? t('{0} regra(s)', rules.length) : t('Sem regras ainda.')}</p>
+          <p className="truncate text-xs text-mute">{rules.length ? t('{0} regra(s)', rules.length) : t('Sem regras ainda.')}</p>
         </div>
         {!readOnly && <div className="flex shrink-0 items-center gap-0.5">
           <button title={t('Renomear ou mudar de lugar')} onClick={onEdit} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Settings2 className="size-4" /></button>
-          {!s.system && <button title={t('Remover etapa')} onClick={onDelete} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
+          {stages.length > 1 && <button title={t('Remover etapa')} onClick={onDelete} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
           <Button size="sm" variant="ghost" onClick={onAddRule}><Plus className="size-3.5" /> {t('Regra')}</Button>
         </div>}
       </div>
@@ -384,7 +384,7 @@ function RuleRow({ readOnly, rule: r, stages, index, onEdit, onToggle, onDelete 
   const c = r.config ?? {};
   const cond = r.conditions ?? {};
   const stageName = (id?: string) => stages.find((s) => s.id === id)?.name;
-  const missing = (r.action === 'move' || r.action === 'approval') && !stageName(c.to || (r.action === 'approval' ? 'done' : ''));
+  const missing = (r.action === 'move' || r.action === 'approval') && !stageName(c.to);
   const who = [...roles.filter((x) => c.roles?.includes(x.id)).map((x) => t('perfil {0}', x.name)), ...members.filter((m) => c.users?.includes(m.id)).map((m) => m.name)].join(', ');
   const what = (() => {
     switch (r.action) {
@@ -402,15 +402,18 @@ function RuleRow({ readOnly, rule: r, stages, index, onEdit, onToggle, onDelete 
       case 'script': return t('Script: {0}', (c.script ?? '').split('\n')[0]);
       case 'allow_act': return t('Só {0} mexe nas issues daqui', who || '?');
       case 'allow_enter': return t('Só {0} traz issues para cá', who || '?');
-      case 'approval': return t('{0} aprovação(ões) de {1} → {2}', c.approvals ?? 1, who || t('quem tem permissão de aprovar'), stageName(c.to || 'done') ?? t('etapa removida'));
+      case 'approval': return t('{0} aprovação(ões) de {1} → {2}', c.approvals ?? 1, who || t('quem tem permissão de aprovar'), stageName(c.to) ?? t('etapa removida'));
       case 'lock_fields': return t('Travado: {0}', (c.fields ?? []).map((f) => LOCKS.find(([k]) => k === f)?.[1]).join(', '));
       case 'require': return t('Para entrar precisa: {0}', (c.requires ?? []).map((f) => REQUIRES.find(([k]) => k === f)?.[1].toLowerCase()).join(', '));
       case 'wip': return t('No máximo {0} issue(s) ao mesmo tempo', c.wip);
       case 'read_only': return t('Somente leitura: ninguém mexe mais (só o dono)');
       case 'responsible': return t('Responsáveis: {0}', who || '?');
+      case 'stop_agent': return t('Parar o agente');
+      case 'close': return c.kind === 'cancelled' ? t('Encerrar como cancelada') : t('Encerrar como concluída (resolvida)');
     }
   })();
   const filters = [
+    cond.stages?.length ? t('em {0}', cond.stages.map((id) => stageName(id) ?? '?').join('/')) : '',
     cond.priorities?.length ? cond.priorities.map((p) => PRIORITIES.find((x) => x.id === p)?.label).join('/') : '',
     cond.labels?.length ? t('{0} label(s)', cond.labels.length) : '',
     cond.outcomes?.length ? cond.outcomes.map((o) => OUTCOMES.find(([k]) => k === o)?.[1]).join('/') : '',
@@ -538,7 +541,6 @@ function StageModal({ stage, stages, onClose, onSaved }: { stage: Partial<Stage>
     <Modal open onClose={onClose} title={s.id ? t('Etapa {0}', stage.name) : t('Nova etapa')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancelar')}</Button><Button variant="primary" loading={busy} onClick={save}>{t('Salvar')}</Button></>}>
       <div className="space-y-4">
         <Field label={t('Nome')}><input autoFocus className="field-input" value={s.name ?? ''} onChange={(e) => setS({ ...s, name: e.target.value })} placeholder={t('Ex.: Triagem, Desenvolvimento, QA, Homologação')} /></Field>
-        {s.system && <p className="-mt-2 text-xs text-mute">{BUILTIN[s.id!]} {t('O nome pode mudar; o comportamento continua.')}</p>}
         <Field label={t('Vem depois de')}>
           <select className="field-input" value={s.after} onChange={(e) => setS({ ...s, after: e.target.value })}>
             {!prev && s.id && <option value="">{t('(primeira etapa)')}</option>}
@@ -564,7 +566,7 @@ function StageModal({ stage, stages, onClose, onSaved }: { stage: Partial<Stage>
 // Filtros (opcional). Escolher a ação já avança. Regras de acesso ("Sempre")
 // não têm filtros: valem para toda issue da etapa.
 type WizardStep = 0 | 1 | 2 | 3;
-const ACCESS_DEFAULTS: Partial<Record<RuleAction, RuleConfig>> = { approval: { approvals: 1, to: 'done' }, wip: { wip: 3 } };
+const ACCESS_DEFAULTS: Partial<Record<RuleAction, RuleConfig>> = { approval: { approvals: 1 }, wip: { wip: 3 }, close: { kind: 'done' } };
 
 function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; stages: Stage[]; onClose: () => void; onSaved: () => void }) {
   const { ws } = useWs();
@@ -703,12 +705,13 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
               <WhoPicker value={{ roles: c.roles, users: c.users }} onChange={(w) => setC({ roles: w.roles, users: w.users })} empty={t('quem tem a permissão de aprovar')} />
             </div>
             <Field label={t('Aprovada, vai para')}>
-              <select className="field-input" value={c.to || 'done'} onChange={(e) => setC({ to: e.target.value })}>
+              <select className="field-input" value={c.to ?? ''} onChange={(e) => setC({ to: e.target.value })}>
+                <option value="" disabled>{t('escolha a etapa')}</option>
                 {others.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
               </select>
             </Field>
             <p className="rounded-lg bg-white/[0.03] px-3 py-2 text-xs text-mute">
-              {t('Na issue aparece o botão ✓ Aprovar. Cada pessoa aprova uma vez; com {0} aprovação(ões) diferente(s) a issue vai sozinha para {1}, e as regras de lá disparam.', c.approvals ?? 1, stages.find((x) => x.id === (c.to || 'done'))?.name ?? t('o destino'))}
+              {t('Na issue aparece o botão ✓ Aprovar. Cada pessoa aprova uma vez; com {0} aprovação(ões) diferente(s) a issue vai sozinha para {1}, e as regras de lá disparam.', c.approvals ?? 1, stages.find((x) => x.id === c.to)?.name ?? t('o destino'))}
               {(c.approvals ?? 1) > 1 && t(' Ex.: com 2, o tech lead aprova (1 de 2) e a issue espera; o PO aprova (2 de 2) e ela segue.')}
             </p>
           </>}
@@ -784,11 +787,38 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
           )}
           {r.action === 'run_agent' && <>
             <Field label={t('O que pedir')} hint={t('vazio = executar a issue')}><textarea className="field-input" rows={3} value={c.request ?? ''} onChange={(e) => setC({ request: e.target.value })} placeholder={t('Ex.: revise o diff e rode os testes.')} /></Field>
-            <p className="text-xs text-mute">{tt.stage
-              ? t('A issue fica nesta etapa enquanto o agente trabalha; as regras seguintes rodam quando ele terminar. Se ele precisar de alguém, a issue vai para Aguardando você.')
-              : t('Pedido normal: a issue vai para Em andamento e segue o resultado do agente.')}</p>
-            {tt.stage && onFail}
+            {(r.trigger === 'enter' || r.trigger === 'stale') && (
+              <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', c.wait ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
+                <Toggle checked={!!c.wait} onChange={(wait) => setC({ wait })} />
+                <span>
+                  <span className="block text-[13px] font-medium">{t('Esperar terminar nesta etapa')}</span>
+                  <span className="block text-xs text-mute">{t('Ligado: a issue fica aqui enquanto o agente trabalha e as regras seguintes rodam quando ele terminar (ex.: revisão por IA). Desligado: pedido normal, e as regras de “Agente começou” e “Execução terminou” decidem a etapa.')}</span>
+                </span>
+              </label>
+            )}
+            {c.wait && <>
+              <Field label={t('Se a IA precisar de alguém, mover para')} hint={t('opcional')}>
+                <select className="field-input" value={c.onWaiting ?? ''} onChange={(e) => setC({ onWaiting: e.target.value })}>
+                  <option value="">{t('não mover (a sequência para)')}</option>
+                  {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </Field>
+              {onFail}
+            </>}
+            <p className="text-xs text-mute">{t('Sem agente na issue (e nenhum escolhido aqui), a regra não faz nada: fica como tarefa manual.')}</p>
           </>}
+          {r.action === 'stop_agent' && <p className="text-xs text-mute">{t('Se a issue tiver uma execução na fila ou rodando, ela é cancelada; o resultado “parada” dispara as regras de “Execução terminou”.')}</p>}
+          {r.action === 'close' && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {([['done', t('Concluída'), t('Conta como resolvida: entra em “issues resolvidas” e no tempo até resolver.')], ['cancelled', t('Cancelada'), t('Sai das abertas sem contar como resolvida.')]] as const).map(([k, label, desc]) => (
+                <button key={k} type="button" onClick={() => setC({ kind: k })}
+                  className={clsx('rounded-xl border p-3 text-left transition', (c.kind ?? 'done') === k ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
+                  <span className="block text-[13px] font-medium">{label}</span>
+                  <span className="block text-xs text-mute">{desc}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {r.action === 'open_pr' && <>
             <Field label={t('Branch de destino do PR')} hint={t('vazio = a de merge da issue')}><input className="field-input font-mono text-xs" value={c.base ?? ''} onChange={(e) => setC({ base: e.target.value })} placeholder={t('main')} /></Field>
             <Toggle checked={!!c.draft} onChange={(draft) => setC({ draft })} label={t('Abrir como rascunho')} />
@@ -809,6 +839,8 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
       {step === 3 && !access && (
         <div className="space-y-4">
           <p className="text-xs text-mute">{t('A regra só dispara se a issue atender a todos os filtros marcados. Sem filtros, vale para toda issue.')}</p>
+          {!tt.stage && <div className="flex flex-col gap-1.5"><span className="text-xs font-medium text-dim">{t('A issue está na etapa')}</span>
+            <Chips options={stages.map((x) => [x.id, x.name] as [string, string])} value={cond.stages ?? []} onChange={(st) => setCond({ stages: st })} /></div>}
           <div className="flex flex-col gap-1.5"><span className="text-xs font-medium text-dim">{t('Prioridade é')}</span>
             <Chips options={PRIORITIES.map((p) => [p.id, p.label] as [number, string])} value={cond.priorities ?? []} onChange={(priorities) => setCond({ priorities })} /></div>
           {labels.length > 0 && <div className="flex flex-col gap-1.5"><span className="text-xs font-medium text-dim">{t('Tem alguma destas labels')}</span>

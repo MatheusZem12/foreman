@@ -24,13 +24,19 @@ const COL_GAP = 28, ROW_GAP = 64, LANE_PAD = 36, LANE_GAP = 26, PILL_H = 20, MAR
 const COLORS: Record<Kind, string> = { seq: 'rgb(var(--ink) / 0.22)', rule: '#9d8cff', approve: '#34d399', system: '#e0a43a' };
 const START = '__start';
 
-const SYSTEM_EDGES: Edge[] = [
-  { from: 'todo', to: 'in_progress', kind: 'system', label: t('agente começa') },
-  { from: 'in_progress', to: 'in_review', kind: 'system', label: t('IA concluiu') },
-  { from: 'in_progress', to: 'waiting', kind: 'system', label: t('IA precisa de você') },
-  { from: 'in_progress', to: 'blocked', kind: 'system', label: t('falhou') },
-  { from: 'waiting', to: 'in_progress', kind: 'system', label: t('você respondeu') }
-];
+// Gatilhos de rotina (agente e merge): desenhados em laranja, como "automático".
+const ROUTINE = ['run_started', 'run_finished', 'merged', 'merge_conflict'];
+const OUTCOME_LABEL: Record<string, () => string> = {
+  done: () => t('IA concluiu'), waiting: () => t('IA precisa de você'), incomplete: () => t('IA não terminou'),
+  failed: () => t('falhou'), cancelled: () => t('parada')
+};
+function routineLabel(r: Rule) {
+  if (r.trigger === 'run_started') return t('agente começa');
+  if (r.trigger === 'merged') return t('merge feito');
+  if (r.trigger === 'merge_conflict') return t('conflito no merge');
+  const o = r.conditions?.outcomes ?? [];
+  return o.length ? [...new Set(o.map((x) => OUTCOME_LABEL[x]?.() ?? x))].join(' / ') : t('agente terminou');
+}
 
 function condLabel(r: Rule) {
   const c = r.conditions ?? {};
@@ -69,20 +75,28 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
     const ids = new Set(stages.map((s) => s.id));
     const edges: Edge[] = [];
     const loose: Rule[] = [];
+    // Onde o agente começa sem esperar (regra "rodar agente" ao entrar): origem de "agente começa".
+    const starts = rules.filter((r) => r.enabled && r.action === 'run_agent' && r.trigger === 'enter' && !r.config?.wait).map((r) => r.stage);
     for (const r of rules) {
       if (!r.enabled || r.action !== 'move' || !r.config?.to || !ids.has(r.config.to)) continue;
-      if (['enter', 'leave', 'stale'].includes(r.trigger) && ids.has(r.stage)) edges.push({ from: r.stage, to: r.config.to, kind: 'rule', label: condLabel(r) });
+      if (ROUTINE.includes(r.trigger)) {
+        if (!system) continue;
+        const from = r.conditions?.stages?.length ? r.conditions.stages : r.trigger === 'run_started' ? starts : [];
+        const label = routineLabel(r);
+        if (from.length) from.filter((f) => ids.has(f)).forEach((f) => edges.push({ from: f, to: r.config.to!, kind: 'system', label }));
+        else loose.push(r);
+      } else if (['enter', 'leave', 'stale'].includes(r.trigger) && ids.has(r.stage)) edges.push({ from: r.stage, to: r.config.to, kind: 'rule', label: condLabel(r) });
       else if (r.trigger === 'created') edges.push({ from: START, to: r.config.to, kind: 'rule', label: condLabel(r) === t('sempre') ? t('issue criada') : condLabel(r) });
       else loose.push(r);
     }
     for (const s of stages) {
       const p = s.policy;
-      if (p?.approvals && ids.has(p.approveTo || 'done')) {
-        edges.push({ from: s.id, to: p.approveTo || 'done', kind: 'approve', label: p.approvals > 1 ? t('✓ {0} aprovações', p.approvals) : t('✓ {0} aprovação', p.approvals) });
+      if (p?.approvals && p.approveTo && ids.has(p.approveTo)) {
+        edges.push({ from: s.id, to: p.approveTo, kind: 'approve', label: p.approvals > 1 ? t('✓ {0} aprovações', p.approvals) : t('✓ {0} aprovação', p.approvals) });
       }
     }
-    if (system) edges.push(...SYSTEM_EDGES.filter((e) => ids.has(e.from) && ids.has(e.to)));
-    const visible = stages.filter((s) => s.id !== 'cancelled' || edges.some((e) => e.to === 'cancelled' || e.from === 'cancelled'));
+    // Etapas que encerram como cancelada só aparecem se alguma seta chega nelas.
+    const visible = stages.filter((s) => s.policy?.close !== 'cancelled' || edges.some((e) => e.to === s.id || e.from === s.id));
     const groups = stageGroups(visible);
 
     // Grade: uma linha por degrau do quadro, centralizada em x = 0.
@@ -231,14 +245,14 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-mute">
-        {([['seq', t('ordem do quadro')], ['rule', t('regra de mover')], ['approve', t('aprovação')], ['system', t('automático do sistema')]] as [Kind, string][]).map(([k, label]) => (
+        {([['seq', t('ordem do quadro')], ['rule', t('regra de mover')], ['approve', t('aprovação')], ['system', t('agente e merge')]] as [Kind, string][]).map(([k, label]) => (
           <span key={k} className="inline-flex items-center gap-1.5">
             <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" style={{ stroke: k === 'seq' ? 'rgb(var(--ink) / 0.4)' : COLORS[k] }} strokeWidth="2" strokeDasharray={k === 'seq' ? '2 3' : k === 'system' ? '5 3' : undefined} /></svg>{label}
           </span>
         ))}
         <span className="ml-auto flex flex-wrap items-center gap-4">
           <Toggle checked={showSeq} onChange={setShowSeq} label={t('Ordem do quadro')} />
-          <Toggle checked={system} onChange={setSystem} label={t('O que o sistema faz sozinho')} />
+          <Toggle checked={system} onChange={setSystem} label={t('Agente e merge')} />
         </span>
       </div>
       <div className="surface overflow-auto">
@@ -287,7 +301,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
                   {!!s.policy?.approvals && <span className="inline-flex items-center gap-0.5 text-emerald-400"><UserCheck className="size-2.5" />{s.policy.approvals}</span>}
                   {locked && <Lock className="size-2.5" />}
                   {s.parallel && <span>{t('paralela')}</span>}
-                  {s.system && <span className="ml-auto">{t('sistema')}</span>}
+                  {s.policy?.close && <span className="ml-auto">{s.policy.close === 'done' ? t('encerra') : t('cancela')}</span>}
                 </div>
               </div>
             );
@@ -296,7 +310,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       </div>
       {layout.loose.length > 0 && (
         <p className="text-xs text-mute">
-          {t('Também movem issues, de qualquer etapa:')} {layout.loose.map((r) => `${t('regra')} → ${stages.find((s) => s.id === r.config.to)?.name}`).join(' · ')}
+          {t('Também movem issues, de qualquer etapa:')} {layout.loose.map((r) => `${ROUTINE.includes(r.trigger) ? routineLabel(r) : t('regra')} → ${stages.find((s) => s.id === r.config.to)?.name}`).join(' · ')}
         </p>
       )}
     </div>

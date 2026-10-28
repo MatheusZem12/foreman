@@ -1,29 +1,34 @@
 import type { Status } from './types';
 import { t } from './i18n';
 
-export interface StageInfo { id: Status; label: string; color: string; system: boolean; parallel?: boolean }
+export interface StageInfo { id: Status; label: string; color: string; parallel?: boolean; closes?: string }
 
-// Etapas do sistema; as personalizadas do workspace entram via registerStages
+// Etapas do fluxo padrão, só até o workspace carregar as dele via registerStages
 // (chamado quando /stages carrega). STATUSES é um "live binding": quem importa
 // sempre vê a lista atual.
 const SYSTEM_STAGES: StageInfo[] = [
-  { id: 'backlog', label: t('Backlog'), color: '#8b8b94', system: true },
-  { id: 'todo', label: t('A fazer'), color: '#d4d4d8', system: true },
-  { id: 'in_progress', label: t('Em andamento'), color: '#f5b83d', system: true },
-  { id: 'waiting', label: t('Aguardando você'), color: '#fb923c', system: true },
-  { id: 'in_review', label: t('Em revisão'), color: '#4ade80', system: true },
-  { id: 'blocked', label: t('Bloqueada'), color: '#f87171', system: true },
-  { id: 'done', label: t('Concluída'), color: '#60a5fa', system: true },
-  { id: 'cancelled', label: t('Cancelada'), color: '#71717a', system: true }
+  { id: 'backlog', label: t('Backlog'), color: '#8b8b94' },
+  { id: 'todo', label: t('A fazer'), color: '#d4d4d8' },
+  { id: 'in_progress', label: t('Em andamento'), color: '#f5b83d' },
+  { id: 'waiting', label: t('Aguardando você'), color: '#fb923c' },
+  { id: 'in_review', label: t('Em revisão'), color: '#4ade80' },
+  { id: 'blocked', label: t('Bloqueada'), color: '#f87171' },
+  { id: 'done', label: t('Concluída'), color: '#60a5fa' },
+  { id: 'cancelled', label: t('Cancelada'), color: '#71717a' }
 ];
 export let STATUSES: StageInfo[] = SYSTEM_STAGES;
 // As etapas do sistema vêm do servidor com o nome em português; com o nome
 // original (não renomeadas), mostram a tradução.
-export function localizeStages<T extends { system: boolean; name: string }>(list: T[]): T[] {
-  return list.map((s) => (s.system ? { ...s, name: t(s.name) } : s));
+export function localizeStages<T extends { id: string; name: string }>(list: T[]): T[] {
+  return list.map((s) => (DEFAULT_NAMES[s.id] === s.name ? { ...s, name: t(s.name) } : s));
 }
-export function registerStages(list: { id: string; name: string; color: string; system: boolean; parallel?: boolean }[]) {
-  STATUSES = list.map((s) => ({ id: s.id as Status, label: s.name, color: s.color, system: s.system, parallel: s.parallel }));
+// Nomes com que o fluxo padrão nasce (em português, no banco).
+const DEFAULT_NAMES: Record<string, string> = {
+  backlog: 'Backlog', todo: 'A fazer', in_progress: 'Em andamento', waiting: 'Aguardando você',
+  in_review: 'Em revisão', blocked: 'Bloqueada', done: 'Concluída', cancelled: 'Cancelada'
+};
+export function registerStages(list: { id: string; name: string; color: string; parallel?: boolean; policy?: { close?: string } }[]) {
+  STATUSES = list.map((s) => ({ id: s.id as Status, label: s.name, color: s.color, parallel: s.parallel, closes: s.policy?.close || '' }));
 }
 
 // Agrupa etapas em paralelo (marcadas como "ao lado da anterior") com a anterior:
@@ -36,8 +41,7 @@ export function stageGroups<T extends { id: string; parallel?: boolean }>(list: 
   }
   return out;
 }
-export const isSystemStage = (id: string) => SYSTEM_STAGES.some((s) => s.id === id);
-export const statusOf = (id: Status): StageInfo => STATUSES.find((s) => s.id === id) ?? SYSTEM_STAGES.find((s) => s.id === id) ?? { id, label: t('Etapa removida'), color: '#71717a', system: false };
+export const statusOf = (id: Status): StageInfo => STATUSES.find((s) => s.id === id) ?? SYSTEM_STAGES.find((s) => s.id === id) ?? { id, label: t('Etapa removida'), color: '#71717a' };
 
 export const PRIORITIES = [
   { id: 0, label: t('Sem prioridade') },

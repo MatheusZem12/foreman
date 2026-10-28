@@ -7,9 +7,9 @@ import { createPortal } from 'react-dom';
 import { Button, Toggle, useToast } from './ui';
 import { AgentPicker, AssigneePicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from './pickers';
 import { useWs } from './Layout';
-import { useAgents, useCan, useRepos } from '../lib/queries';
+import { useAgents, useCan, useRepos, useRules } from '../lib/queries';
 import { api } from '../lib/api';
-import { LAST_AGENT } from '../lib/constants';
+import { LAST_AGENT, STATUSES } from '../lib/constants';
 import type { Issue, Status } from '../lib/types';
 import { t } from '../lib/i18n';
 
@@ -21,12 +21,22 @@ function readLastAgent() {
   }
 }
 
-export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Status; onClose: () => void }) {
+// Etapa inicial: a última usada neste workspace, ou a primeira do fluxo.
+function lastStage(wsId: string): Status {
+  let saved = '';
+  try {
+    saved = localStorage.getItem(`mx.newStage.${wsId}`) ?? '';
+  } catch {
+    /* sem storage */
+  }
+  return STATUSES.some((s) => s.id === saved) ? saved : STATUSES[0]?.id ?? '';
+}
+
+export function NewIssueModal({ initialStatus, onClose }: { initialStatus?: Status; onClose: () => void }) {
   const { ws } = useWs();
   const { data: agents = [] } = useAgents();
   const { data: repos = [] } = useRepos(ws.id);
   const canRepos = useCan('repo.create');
-  const canRun = useCan('issue.run');
   // O perfil define o que quem cria pode escolher (ex.: estagiário cria, mas sem agente).
   const may = { agent: useCan('issue.agent'), priority: useCan('issue.priority'), labels: useCan('issue.labels'), repos: useCan('issue.repos'), assign: useCan('issue.assign') };
   const qc = useQueryClient();
@@ -37,7 +47,7 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
   const [another, setAnother] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
-    title: '', description: '', status: initialStatus, priority: 0,
+    title: '', description: '', status: initialStatus || lastStage(ws.id), priority: 0,
     agentId: null as string | null, assigneeId: null as string | null, repoIds: [] as string[], labelIds: [] as string[]
   });
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
@@ -55,7 +65,17 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const willStart = !!form.agentId && form.status === 'todo' && canRun;
+  // O agente começa se a etapa escolhida tem a regra "rodar agente" ao entrar.
+  const { data: rules = [] } = useRules(ws.id);
+  const startStages = rules.filter((r) => r.enabled && r.trigger === 'enter' && r.action === 'run_agent').map((r) => r.stage);
+  const willStart = !!form.agentId && startStages.includes(form.status);
+  useEffect(() => {
+    try {
+      localStorage.setItem(`mx.newStage.${ws.id}`, form.status);
+    } catch {
+      /* sem storage */
+    }
+  }, [form.status, ws.id]);
 
   const submit = async () => {
     if (!form.title.trim()) return titleRef.current?.focus();
@@ -109,7 +129,7 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
         </div>
         <div className="px-6 pb-2.5 text-xs text-mute">
           {form.agentId
-            ? willStart ? t('Atribuída: o agente começa assim que você criar.') : t('Atribuída: só começa quando for para "A fazer".')
+            ? willStart ? t('Atribuída: o agente começa assim que você criar.') : t('Atribuída: começa quando for para uma etapa que roda o agente.')
             : t('Sem agente: fica como tarefa manual.')}
           {repos.length > 1 && !form.repoIds.length && t(' A IA recebe todos os repositórios e mexe só nos necessários.')}
           {!repos.length && <span className="text-amber-400"> · {canRepos ? t('Cadastre um repositório em Workspace para o agente poder trabalhar.') : t('Este workspace ainda não tem repositório; peça ao administrador.')}</span>}
