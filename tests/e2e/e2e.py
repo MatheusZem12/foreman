@@ -195,10 +195,20 @@ jun_role = ok(own('POST', '/roles', {'name': 'Júnior', 'permissions': base}))
 est = mk('est', est_role['id'], [ws['id']]); jun = mk('jun', jun_role['id'], [ws['id']])
 zed = mk('zed', roles['Membro']['id'], [ws2['id']])  # só tem acesso ao outro workspace
 E_, J_ = login('est'), login('jun')
-tri = ok(C('POST', f'/workspaces/{ws["id"]}/stages', {'name': 'Triagem', 'after': 'backlog', 'policy': {'act': {'roles': [est_role['id']]}, 'enter': {'roles': [est_role['id']]}, 'approvers': {}, 'responsible': {'users': [est['id']]}}}))
-dev = ok(C('POST', f'/workspaces/{ws["id"]}/stages', {'name': 'Desenvolvimento', 'after': tri['id'], 'policy': {'act': {'roles': [jun_role['id']]}, 'enter': {'roles': [jun_role['id']]}, 'locked': ['title'], 'approvers': {}, 'responsible': {}}}))
-st, r = C('POST', f'/workspaces/{ws["id"]}/stages', {'name': 'X', 'policy': {'act': {'users': [zed['id']]}, 'enter': {}, 'approvers': {}, 'responsible': {}}})
-check(st == 400 and 'não tem acesso' in r['error'], 'etapa não aceita pessoa sem acesso ao workspace')
+# A etapa é só nome e posição; quem pode, travas e aprovação são regras de acesso.
+def stage_with(name, after, access, w=None):
+    w = w or ws
+    s = ok(C('POST', f'/workspaces/{w["id"]}/stages', {'name': name, 'after': after}))
+    for action, cfg in access:
+        ok(C('POST', f'/workspaces/{w["id"]}/rules', {'trigger': 'access', 'stage': s['id'], 'action': action, 'config': cfg}))
+    return s
+tri = stage_with('Triagem', 'backlog', [('allow_act', {'roles': [est_role['id']]}), ('allow_enter', {'roles': [est_role['id']]}), ('responsible', {'users': [est['id']]})])
+dev = stage_with('Desenvolvimento', tri['id'], [('allow_act', {'roles': [jun_role['id']]}), ('allow_enter', {'roles': [jun_role['id']]}), ('lock_fields', {'fields': ['title']})])
+check(next(x for x in ok(C('GET', f'/workspaces/{ws["id"]}/stages')) if x['id'] == dev['id'])['policy']['locked'] == ['title'], 'a etapa resume as regras de acesso dela')
+st, r = C('POST', f'/workspaces/{ws["id"]}/rules', {'trigger': 'access', 'stage': dev['id'], 'action': 'allow_act', 'config': {'users': [zed['id']]}})
+check(st == 400 and 'não tem acesso' in r['error'], 'regra de acesso não aceita pessoa sem acesso ao workspace')
+check(C('POST', f'/workspaces/{ws["id"]}/rules', {'trigger': 'access', 'stage': dev['id'], 'action': 'notify', 'config': {'to': 'team'}})[0] == 400, 'regra de acesso só aceita ações de acesso')
+check(C('POST', f'/workspaces/{ws["id"]}/rules', {'trigger': 'access', 'stage': dev['id'], 'action': 'approval', 'config': {'approvals': 0, 'to': 'done'}})[0] == 400, 'aprovação pede ao menos 1 pessoa')
 check(E_('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'com agente', 'status': tri['id'], 'agentId': ag['id']})[0] == 403, 'estagiário não escolhe agente ao criar')
 check(E_('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'urgente', 'status': tri['id'], 'priority': 1})[0] == 403, 'estagiário não define prioridade')
 T = ok(E_('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'Pedido do cliente', 'status': tri['id']}))['issue']
@@ -215,7 +225,7 @@ check(st == 403 and 'travado' in r['error'], 'campo travado na etapa não muda: 
 check(own('PATCH', f'/issues/{T["id"]}', {'assigneeId': zed['id']})[0] == 400, 'responsável precisa ter acesso ao workspace')
 
 # requisitos, limite e aprovação dupla
-qa2 = ok(C('POST', f'/workspaces/{ws["id"]}/stages', {'name': 'Homologação', 'after': 'in_review', 'policy': {'act': {}, 'enter': {}, 'requires': ['assignee'], 'wip': 1, 'approvals': 2, 'approveTo': 'done', 'approvers': {}, 'responsible': {}}}))
+qa2 = stage_with('Homologação', 'in_review', [('require', {'requires': ['assignee']}), ('wip', {'wip': 1}), ('approval', {'approvals': 2, 'to': 'done'})])
 st, r = own('PATCH', f'/issues/{T["id"]}', {'status': qa2['id']})
 check(st == 400 and 'responsável' in r['error'], 'requisito da etapa: precisa de responsável')
 ok(own('PATCH', f'/issues/{T["id"]}', {'assigneeId': jun['id'], 'status': qa2['id']}))
@@ -270,7 +280,7 @@ ok(own('PATCH', f'/workspaces/{ws["id"]}/', {'name': 'Loja', 'key': 'OUTRA'}))
 check([w['key'] for w in ok(own('GET', '/workspaces')) if w['id'] == ws['id']] == ['LOJA'], 'a chave do workspace não muda')
 
 # etapa somente leitura, desempenho no analytics, regras de e-mail esperando o envio
-arq = ok(C('POST', f'/workspaces/{ws["id"]}/stages', {'name': 'Arquivada', 'after': 'done', 'policy': {'readOnly': True, 'act': {}, 'enter': {}, 'approvers': {}, 'responsible': {}}}))
+arq = stage_with('Arquivada', 'done', [('read_only', {})])
 R = ok(A('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'Para arquivar', 'status': 'backlog'}))['issue']
 ok(A('PATCH', f'/issues/{R["id"]}', {'status': arq['id']}))
 st, r = A('PATCH', f'/issues/{R["id"]}', {'title': 'mudou'})

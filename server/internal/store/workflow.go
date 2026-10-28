@@ -11,7 +11,9 @@ import (
 
 // Stage é uma coluna do quadro. Todo workspace tem as do sistema (com
 // comportamento próprio: A fazer inicia o agente, Concluída finaliza…) e as
-// suas; todas podem ser reordenadas, renomeadas e ter política própria.
+// suas; todas podem ser reordenadas e renomeadas. Quem pode, travas e
+// aprovação são regras de acesso da etapa (trigger "access"); Policy é o
+// resumo delas, montado na leitura.
 type Stage struct {
 	ID          string      `db:"id" json:"id"`
 	WorkspaceID string      `db:"workspace_id" json:"workspaceId,omitempty"`
@@ -20,7 +22,7 @@ type Stage struct {
 	Position    float64     `db:"position" json:"position"`
 	CreatedAt   time.Time   `db:"created_at" json:"-"`
 	System      bool        `db:"system" json:"system"`
-	Policy      StagePolicy `db:"policy" json:"policy"`
+	Policy      StagePolicy `db:"-" json:"policy"`          // derivada das regras de acesso
 	Parallel    bool        `db:"parallel" json:"parallel"` // ao lado da etapa anterior (mesma coluna no quadro)
 }
 
@@ -48,7 +50,8 @@ func (w Who) Includes(u *User) bool {
 	return slices.Contains(w.Users, u.ID) || (u.RoleID != nil && slices.Contains(w.Roles, *u.RoleID))
 }
 
-// StagePolicy é o que vale para as issues numa etapa.
+// StagePolicy é o que vale para as issues numa etapa: a soma das regras de
+// acesso ativas dela.
 type StagePolicy struct {
 	Enter       Who      `json:"enter"`               // quem pode trazer issues para cá
 	Act         Who      `json:"act"`                 // quem pode mexer nas issues daqui (editar, comentar, rodar, tirar)
@@ -80,8 +83,7 @@ var SystemStages = []Stage{
 	{ID: "todo", Name: "A fazer", Color: "#d4d4d8", Position: 20, System: true},
 	{ID: "in_progress", Name: "Em andamento", Color: "#f5b83d", Position: 30, System: true},
 	{ID: "waiting", Name: "Aguardando você", Color: "#fb923c", Position: 40, System: true},
-	{ID: "in_review", Name: "Em revisão", Color: "#4ade80", Position: 50, System: true,
-		Policy: StagePolicy{Approvals: 1, ApproveTo: "done"}},
+	{ID: "in_review", Name: "Em revisão", Color: "#4ade80", Position: 50, System: true},
 	{ID: "blocked", Name: "Bloqueada", Color: "#f87171", Position: 60, System: true},
 	{ID: "done", Name: "Concluída", Color: "#60a5fa", Position: 70, System: true},
 	{ID: "cancelled", Name: "Cancelada", Color: "#71717a", Position: 80, System: true},
@@ -98,11 +100,100 @@ func SystemStage(id string) (Stage, bool) {
 
 // Stages: todas as etapas do workspace, na ordem do quadro.
 func (s *Store) Stages(ctx context.Context, wsID string) ([]Stage, error) {
-	return many[Stage](ctx, s, `select * from stages where workspace_id = $1 order by position, created_at`, wsID)
+	list, err := many[Stage](ctx, s, `select * from stages where workspace_id = $1 order by position, created_at`, wsID)
+	if err != nil {
+		return nil, err
+	}
+	pols, err := s.policies(ctx, wsID, "")
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		list[i].Policy = pols[list[i].ID]
+	}
+	return list, nil
 }
 
 func (s *Store) StageOf(ctx context.Context, wsID, id string) (*Stage, error) {
-	return one[Stage](ctx, s, `select * from stages where workspace_id = $1 and id = $2`, wsID, id)
+	st, err := one[Stage](ctx, s, `select * from stages where workspace_id = $1 and id = $2`, wsID, id)
+	if err != nil {
+		return nil, err
+	}
+	pols, err := s.policies(ctx, wsID, id)
+	if err != nil {
+		return nil, err
+	}
+	st.Policy = pols[id]
+	return st, nil
+}
+
+// AccessActions: o que uma regra de acesso pode dizer sobre a etapa.
+var AccessActions = map[string]bool{
+	"allow_act": true, "allow_enter": true, "read_only": true, "lock_fields": true,
+	"require": true, "wip": true, "approval": true, "responsible": true,
+}
+
+// AccessConfig: a config das regras de acesso.
+type AccessConfig struct {
+	Roles     []string `json:"roles,omitempty"`
+	Users     []string `json:"users,omitempty"`
+	Fields    []string `json:"fields,omitempty"`    // lock_fields
+	Requires  []string `json:"requires,omitempty"`  // require
+	WIP       int      `json:"wip,omitempty"`       // wip
+	Approvals int      `json:"approvals,omitempty"` // approval: quantas pessoas diferentes
+	To        string   `json:"to,omitempty"`        // approval: para onde vai
+}
+
+func union(a, b []string) []string {
+	for _, x := range b {
+		if !slices.Contains(a, x) {
+			a = append(a, x)
+		}
+	}
+	return a
+}
+
+// policies soma as regras de acesso ativas por etapa (stage vazio = todas).
+// Várias regras do mesmo tipo se somam: listas se juntam, o limite menor vale
+// e a aprovação mais exigente vale.
+func (s *Store) policies(ctx context.Context, wsID, stage string) (map[string]StagePolicy, error) {
+	rules, err := many[Rule](ctx, s, `select * from rules where workspace_id = $1 and trigger = 'access' and enabled
+		and ($2 = '' or stage = $2) order by position, created_at`, wsID, stage)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]StagePolicy{}
+	for _, r := range rules {
+		var c AccessConfig
+		json.Unmarshal(r.Config, &c)
+		p := out[r.Stage]
+		who := func(w *Who) { w.Roles, w.Users = union(w.Roles, c.Roles), union(w.Users, c.Users) }
+		switch r.Action {
+		case "allow_act":
+			who(&p.Act)
+		case "allow_enter":
+			who(&p.Enter)
+		case "read_only":
+			p.ReadOnly = true
+		case "lock_fields":
+			p.Locked = union(p.Locked, c.Fields)
+		case "require":
+			p.Requires = union(p.Requires, c.Requires)
+		case "wip":
+			if c.WIP > 0 && (p.WIP == 0 || c.WIP < p.WIP) {
+				p.WIP = c.WIP
+			}
+		case "approval":
+			if c.Approvals > p.Approvals {
+				p.Approvals, p.ApproveTo = c.Approvals, c.To
+			}
+			who(&p.Approvers)
+		case "responsible":
+			who(&p.Responsible)
+		}
+		out[r.Stage] = p
+	}
+	return out, nil
 }
 
 // StageName devolve o nome da etapa no workspace.
@@ -121,12 +212,12 @@ func (s *Store) ValidStage(ctx context.Context, wsID, id string) bool {
 
 func (s *Store) SaveStage(ctx context.Context, st Stage) (*Stage, error) {
 	if st.ID == "" {
-		return one[Stage](ctx, s, `insert into stages(workspace_id, id, name, color, position, policy, parallel)
-			values($1, gen_random_uuid()::text, $2, $3, $4, $5, $6) returning *`,
-			st.WorkspaceID, st.Name, st.Color, st.Position, st.Policy, st.Parallel)
+		return one[Stage](ctx, s, `insert into stages(workspace_id, id, name, color, position, parallel)
+			values($1, gen_random_uuid()::text, $2, $3, $4, $5) returning *`,
+			st.WorkspaceID, st.Name, st.Color, st.Position, st.Parallel)
 	}
-	return one[Stage](ctx, s, `update stages set name=$3, color=$4, position=$5, policy=$6, parallel=$7 where workspace_id=$1 and id=$2 returning *`,
-		st.WorkspaceID, st.ID, st.Name, st.Color, st.Position, st.Policy, st.Parallel)
+	return one[Stage](ctx, s, `update stages set name=$3, color=$4, position=$5, parallel=$6 where workspace_id=$1 and id=$2 returning *`,
+		st.WorkspaceID, st.ID, st.Name, st.Color, st.Position, st.Parallel)
 }
 
 // SetStageOrder grava a ordem das etapas (lista completa de ids).
@@ -207,11 +298,13 @@ type Rule struct {
 
 // Gatilhos. enter/leave/stale pedem etapa.
 var RuleTriggers = map[string]bool{
-	"enter": true, "leave": true, "stale": true, // etapa
+	"enter": true, "leave": true, "stale": true, "access": true, // etapa
 	"created": true, "commented": true, "run_finished": true, "cost_over": true, "assigned": true, "priority_changed": true,
 }
 
-func TriggerNeedsStage(t string) bool { return t == "enter" || t == "leave" || t == "stale" }
+func TriggerNeedsStage(t string) bool {
+	return t == "enter" || t == "leave" || t == "stale" || t == "access"
+}
 
 var RuleActions = map[string]bool{
 	"notify": true, "webhook": true, "move": true, "run_agent": true, "open_pr": true, "merge": true, "script": true,
@@ -305,11 +398,12 @@ func (s *Store) CostlyIssues(ctx context.Context, wsID string, usd float64) ([]I
 // seedWorkflow: as etapas do sistema e as regras com que todo workspace nasce.
 func (s *Store) seedWorkflow(ctx context.Context, wsID string) {
 	for _, st := range SystemStages {
-		s.DB.Exec(ctx, `insert into stages(workspace_id, id, name, color, position, system, policy) values($1,$2,$3,$4,$5,true,$6)
-			on conflict do nothing`, wsID, st.ID, st.Name, st.Color, st.Position, st.Policy)
+		s.DB.Exec(ctx, `insert into stages(workspace_id, id, name, color, position, system) values($1,$2,$3,$4,$5,true)
+			on conflict do nothing`, wsID, st.ID, st.Name, st.Color, st.Position)
 	}
-	s.DB.Exec(ctx, `insert into rules(workspace_id, stage, action, config, position) values
-		($1, 'done', 'merge', '{}', 0), ($1, 'waiting', 'notify', '{"to": "requester"}', 0)`, wsID)
+	s.DB.Exec(ctx, `insert into rules(workspace_id, stage, trigger, action, config, position) values
+		($1, 'done', 'enter', 'merge', '{}', 0), ($1, 'waiting', 'enter', 'notify', '{"to": "requester"}', 0),
+		($1, 'in_review', 'access', 'approval', '{"approvals": 1, "to": "done"}', 0)`, wsID)
 }
 
 // ReplaceWorkflow troca etapas e regras do workspace pelas informadas (duplicação).
@@ -329,8 +423,8 @@ func (s *Store) ReplaceWorkflow(ctx context.Context, wsID string, stages []Stage
 	ids := []string{}
 	for _, st := range stages {
 		ids = append(ids, st.ID)
-		if _, err := tx.Exec(ctx, `insert into stages(workspace_id, id, name, color, position, system, policy, parallel) values($1,$2,$3,$4,$5,$6,$7,$8)`,
-			wsID, st.ID, st.Name, st.Color, st.Position, st.System, st.Policy, st.Parallel); err != nil {
+		if _, err := tx.Exec(ctx, `insert into stages(workspace_id, id, name, color, position, system, parallel) values($1,$2,$3,$4,$5,$6,$7)`,
+			wsID, st.ID, st.Name, st.Color, st.Position, st.System, st.Parallel); err != nil {
 			return err
 		}
 	}

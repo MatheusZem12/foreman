@@ -26,12 +26,31 @@ func (a *API) listStages(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.Stages(r.Context(), chi.URLParam(r, "ws"))
 }
 
+// A etapa em si é só nome, posição e se fica em paralelo com a anterior; quem
+// pode, travas e aprovação são regras de acesso. A cor sai da paleta sozinha.
 type stageInput struct {
-	Name     string             `json:"name"`
-	Color    string             `json:"color"`
-	After    string             `json:"after"` // etapa depois da qual a nova entra
-	Policy   *store.StagePolicy `json:"policy"`
-	Parallel *bool              `json:"parallel"` // ao lado da etapa anterior
+	Name     string `json:"name"`
+	After    string `json:"after"`    // etapa depois da qual a nova entra
+	Parallel *bool  `json:"parallel"` // ao lado da etapa anterior
+}
+
+var stagePalette = []string{"#a78bfa", "#22d3ee", "#34d399", "#fbbf24", "#f472b6", "#60a5fa", "#a3e635", "#fb923c", "#94a3b8"}
+
+// nextColor: a primeira cor da paleta que nenhuma etapa usa (ou a que se repete menos).
+func nextColor(stages []store.Stage) string {
+	best, min := stagePalette[0], 1<<30
+	for _, c := range stagePalette {
+		n := 0
+		for _, s := range stages {
+			if strings.EqualFold(s.Color, c) {
+				n++
+			}
+		}
+		if n < min {
+			best, min = c, n
+		}
+	}
+	return best
 }
 
 func positionAfter(stages []store.Stage, after string) float64 {
@@ -74,24 +93,6 @@ func (a *API) checkWho(ctx context.Context, wsID string, w store.Who, what strin
 	return nil
 }
 
-func (a *API) checkPolicy(ctx context.Context, wsID string, p store.StagePolicy) error {
-	for _, c := range []struct {
-		w    store.Who
-		what string
-	}{{p.Enter, "Quem traz issues"}, {p.Act, "Quem mexe nas issues"}, {p.Approvers, "Aprovadores"}, {p.Responsible, "Responsáveis"}} {
-		if err := a.checkWho(ctx, wsID, c.w, c.what); err != nil {
-			return err
-		}
-	}
-	if p.Approvals < 0 || p.Approvals > 10 || p.WIP < 0 {
-		return bad("números inválidos na etapa")
-	}
-	if p.Approvals > 0 && p.ApproveTo != "" && !a.st.ValidStage(ctx, wsID, p.ApproveTo) {
-		return bad("etapa de destino da aprovação inválida")
-	}
-	return nil
-}
-
 func (a *API) saveStage(w http.ResponseWriter, r *http.Request) (any, error) {
 	ctx := r.Context()
 	wsID := chi.URLParam(r, "ws")
@@ -103,28 +104,22 @@ func (a *API) saveStage(w http.ResponseWriter, r *http.Request) (any, error) {
 	if in.Name == "" {
 		return nil, bad("dê um nome à etapa")
 	}
-	st := store.Stage{WorkspaceID: wsID, Name: in.Name, Color: firstNonEmptyStr(in.Color, "#a78bfa")}
+	all, err := a.st.Stages(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	st := store.Stage{WorkspaceID: wsID, Name: in.Name, Color: nextColor(all)}
 	if id := chi.URLParam(r, "id"); id != "" {
 		cur, err := a.st.StageOf(ctx, wsID, id)
 		if err != nil {
 			return nil, err
 		}
-		st.ID, st.Position, st.System, st.Policy, st.Parallel = cur.ID, cur.Position, cur.System, cur.Policy, cur.Parallel
+		st.ID, st.Color, st.Position, st.System, st.Parallel = cur.ID, cur.Color, cur.Position, cur.System, cur.Parallel
 	}
 	if in.Parallel != nil {
 		st.Parallel = *in.Parallel
 	}
-	if in.Policy != nil {
-		if err := a.checkPolicy(ctx, wsID, *in.Policy); err != nil {
-			return nil, err
-		}
-		st.Policy = *in.Policy
-	}
 	if st.ID == "" || in.After != "" {
-		all, err := a.st.Stages(ctx, wsID)
-		if err != nil {
-			return nil, err
-		}
 		all = slices.DeleteFunc(all, func(x store.Stage) bool { return x.ID == st.ID })
 		st.Position = positionAfter(all, firstNonEmptyStr(in.After, "in_review"))
 	}
@@ -196,6 +191,7 @@ type ruleConfig struct {
 	LabelID string   `json:"labelId"`
 	Mode    string   `json:"mode"`
 	Message string   `json:"message"`
+	store.AccessConfig
 }
 
 var notifyTargets = map[string]bool{"requester": true, "creator": true, "assignee": true, "responsible": true, "team": true, "admins": true, "roles": true, "users": true}
@@ -203,6 +199,9 @@ var notifyTargets = map[string]bool{"requester": true, "creator": true, "assigne
 func (a *API) checkRule(ctx context.Context, in *store.Rule) error {
 	if !store.RuleTriggers[in.Trigger] {
 		return bad("gatilho desconhecido")
+	}
+	if in.Trigger == "access" {
+		return a.checkAccess(ctx, in)
 	}
 	if !store.RuleActions[in.Action] {
 		return bad("ação desconhecida")
@@ -279,6 +278,52 @@ func (a *API) checkRule(ctx context.Context, in *store.Rule) error {
 	return nil
 }
 
+var lockFields = []string{"title", "description", "priority", "labels", "agent", "repos", "assignee"}
+var requirements = []string{"agent", "assignee", "description", "changes"}
+
+// checkAccess: regra de acesso (quem pode, travas, requisitos, limite,
+// aprovação, responsáveis) de uma etapa. Não tem filtros: vale sempre.
+func (a *API) checkAccess(ctx context.Context, in *store.Rule) error {
+	if !store.AccessActions[in.Action] {
+		return bad("ação desconhecida")
+	}
+	if !a.st.ValidStage(ctx, in.WorkspaceID, in.Stage) {
+		return bad("escolha a etapa")
+	}
+	in.Conditions = json.RawMessage("{}")
+	var c store.AccessConfig
+	if len(in.Config) > 0 && json.Unmarshal(in.Config, &c) != nil {
+		return bad("configuração inválida")
+	}
+	who := store.Who{Roles: c.Roles, Users: c.Users}
+	switch in.Action {
+	case "allow_act", "allow_enter", "responsible":
+		if who.Empty() {
+			return bad("escolha ao menos um perfil ou pessoa")
+		}
+	case "lock_fields":
+		if len(c.Fields) == 0 || slices.ContainsFunc(c.Fields, func(f string) bool { return !slices.Contains(lockFields, f) }) {
+			return bad("escolha o que fica travado")
+		}
+	case "require":
+		if len(c.Requires) == 0 || slices.ContainsFunc(c.Requires, func(f string) bool { return !slices.Contains(requirements, f) }) {
+			return bad("escolha o que a issue precisa ter")
+		}
+	case "wip":
+		if c.WIP < 1 {
+			return bad("informe o limite de issues")
+		}
+	case "approval":
+		if c.Approvals < 1 || c.Approvals > 10 {
+			return bad("de 1 a 10 aprovações")
+		}
+		if c.To == "" || c.To == in.Stage || !a.st.ValidStage(ctx, in.WorkspaceID, c.To) {
+			return bad("escolha para onde a issue vai quando aprovada")
+		}
+	}
+	return a.checkWho(ctx, in.WorkspaceID, who, "Pessoas da regra")
+}
+
 func (a *API) saveRule(w http.ResponseWriter, r *http.Request) (any, error) {
 	var body struct {
 		store.Rule
@@ -340,6 +385,11 @@ func (a *API) deleteRule(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- alertas ----------
 
+var actionNames = map[string]string{
+	"allow_act": "quem mexe", "allow_enter": "quem traz issues", "read_only": "somente leitura", "lock_fields": "campos travados",
+	"require": "requisitos", "wip": "limite de issues", "approval": "aprovação", "responsible": "responsáveis",
+}
+
 type warning struct {
 	Where   string `json:"where"`
 	Message string `json:"message"`
@@ -374,16 +424,21 @@ func (a *API) workflowWarnings(ctx context.Context, wsID string, stages []store.
 			}
 		}
 	}
-	for _, s := range stages {
-		checkWho(s.Policy.Enter, "Etapa "+s.Name+" · quem traz issues", s.ID, "")
-		checkWho(s.Policy.Act, "Etapa "+s.Name+" · quem mexe", s.ID, "")
-		checkWho(s.Policy.Approvers, "Etapa "+s.Name+" · aprovadores", s.ID, "")
-		checkWho(s.Policy.Responsible, "Etapa "+s.Name+" · responsáveis", s.ID, "")
+	stageName := func(id string) string {
+		for _, s := range stages {
+			if s.ID == id {
+				return s.Name
+			}
+		}
+		return id
 	}
 	for _, r := range rules {
 		var c ruleConfig
 		json.Unmarshal(r.Config, &c)
 		where := "Regra " + firstNonEmptyStr(r.Name, r.Action)
+		if r.Stage != "" {
+			where = "Etapa " + stageName(r.Stage) + " · " + firstNonEmptyStr(r.Name, actionNames[r.Action], r.Action)
+		}
 		checkWho(store.Who{Roles: c.Roles, Users: c.Users}, where, "", r.ID)
 		if c.LabelID != "" {
 			if l, err := a.st.Label(ctx, c.LabelID); err != nil || l.WorkspaceID != wsID {
@@ -415,7 +470,7 @@ func (a *API) getWarnings(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- duplicar o fluxo ----------
 
-// copyWorkflow copia etapas, políticas e regras para outro workspace.
+// copyWorkflow copia etapas e regras (inclusive as de acesso) para outro workspace.
 // Pessoas sem acesso ao destino saem das listas; labels são recriadas pelo
 // nome; regras que ficariam sem efeito vão desativadas. dryRun só devolve
 // os alertas, para a pessoa decidir antes de confirmar.
@@ -465,14 +520,6 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 		}
 		return kept
 	}
-	for i := range stages {
-		p := &stages[i].Policy
-		n := stages[i].Name
-		p.Enter.Users = strip(p.Enter.Users, "Etapa "+n+" · quem traz issues")
-		p.Act.Users = strip(p.Act.Users, "Etapa "+n+" · quem mexe")
-		p.Approvers.Users = strip(p.Approvers.Users, "Etapa "+n+" · aprovadores")
-		p.Responsible.Users = strip(p.Responsible.Users, "Etapa "+n+" · responsáveis")
-	}
 	destLabels, _ := a.st.ListLabels(ctx, in.To)
 	for i := range rules {
 		rl := &rules[i]
@@ -486,7 +533,10 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 			}
 			kept := strip(ids, where)
 			c["users"] = kept
-			needsUsers := (rl.Action == "notify" && c["to"] == "users") || (rl.Action == "assign" && (c["mode"] == nil || c["mode"] == "" || c["mode"] == "user"))
+			roles, _ := c["roles"].([]any)
+			// Regra de acesso que ficaria sem ninguém liberaria a etapa para todos.
+			needsUsers := (rl.Action == "notify" && c["to"] == "users") || (rl.Action == "assign" && (c["mode"] == nil || c["mode"] == "" || c["mode"] == "user")) ||
+				(rl.Trigger == "access" && slices.Contains([]string{"allow_act", "allow_enter", "responsible"}, rl.Action) && len(roles) == 0)
 			if needsUsers && len(kept) == 0 && rl.Enabled {
 				rl.Enabled = false
 				warns = append(warns, warning{Where: where, Message: "ficou sem ninguém e vai desativada; escolha pessoas do destino"})

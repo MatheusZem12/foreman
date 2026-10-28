@@ -47,13 +47,16 @@ Caminho de uma issue:
 
 Usuários e perfis são **globais**; o acesso a workspaces, não. O fluxo de cada workspace fica em *Fluxo e automações*.
 
-**Etapas.** Todo workspace tem as etapas do sistema (com comportamento próprio) e as suas. Todas podem ser **arrastadas** para mudar a ordem; as personalizadas podem ser removidas (as issues voltam para o Backlog). Cada etapa tem uma política:
+**Etapas.** Todo workspace tem as etapas do sistema (com comportamento próprio) e as suas. A etapa em si é só **nome, lugar no fluxo e se fica em paralelo** com a anterior. Todas podem ser **arrastadas** para mudar a ordem; as personalizadas podem ser removidas (as issues voltam para o Backlog).
+
+**Regras de acesso** (*+ Regra → Sempre: acesso e travas*) valem o tempo todo enquanto a issue está na etapa; várias se somam:
 - **Quem mexe nas issues desta etapa** (perfis e/ou pessoas): editar, comentar, rodar agente, tirar dali.
 - **Quem pode trazer issues para cá.**
 - **Travas:** campos que ninguém altera ali (título, descrição, prioridade, labels, agente, repositórios, responsável).
 - **Requisitos para entrar:** ter agente, responsável, descrição ou alterações de código.
 - **Limite** de issues ao mesmo tempo.
-- **Aprovação:** quantas aprovações de pessoas diferentes, quem aprova e para onde a issue vai quando aprovada. *Em revisão* nasce com 1 aprovação → *Concluída*.
+- **Somente leitura:** entrou, ninguém mexe mais (só o dono).
+- **Aprovação:** a issue ganha o botão *✓ Aprovar*; ela só segue quando **N pessoas diferentes** aprovarem (cada uma conta uma vez) e vai sozinha para o destino escolhido. Ex.: com 2, o tech lead aprova (1 de 2) e a issue espera; o PO aprova (2 de 2) e ela segue. *Em revisão* nasce com 1 aprovação → *Concluída*.
 - **Responsáveis da etapa** (destinatários de e-mail).
 
 Ex.: Estagiário e Júnior podem ter o **mesmo perfil de permissões**, mas a Triagem só aceita o Estagiário e o Desenvolvimento só o Júnior: cada um mexe na sua etapa. O dono passa por tudo.

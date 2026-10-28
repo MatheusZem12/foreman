@@ -9,14 +9,17 @@ export interface StagePolicy {
 }
 export interface Stage { id: string; name: string; color: string; position: number; system: boolean; policy: StagePolicy; parallel?: boolean }
 export type RuleAction = 'notify' | 'webhook' | 'move' | 'run_agent' | 'open_pr' | 'merge' | 'script'
-  | 'set_agent' | 'set_priority' | 'add_label' | 'assign' | 'comment';
-export type RuleTrigger = 'enter' | 'leave' | 'stale' | 'created' | 'commented' | 'run_finished' | 'cost_over' | 'assigned' | 'priority_changed';
+  | 'set_agent' | 'set_priority' | 'add_label' | 'assign' | 'comment'
+  // regras de acesso da etapa (trigger 'access')
+  | 'allow_act' | 'allow_enter' | 'read_only' | 'lock_fields' | 'require' | 'wip' | 'approval' | 'responsible';
+export type RuleTrigger = 'access' | 'enter' | 'leave' | 'stale' | 'created' | 'commented' | 'run_finished' | 'cost_over' | 'assigned' | 'priority_changed';
 export interface RuleConditions {
   priorities?: number[]; labels?: string[]; agents?: string[]; outcomes?: string[]; hours?: number; cost?: number; actorRoles?: string[];
 }
 export interface RuleConfig {
   to?: string; roles?: string[]; users?: string[]; message?: string; url?: string; agentId?: string; request?: string;
   base?: string; draft?: boolean; script?: string; onFail?: string; priority?: number; labelId?: string; mode?: string;
+  fields?: LockField[]; requires?: Requirement[]; wip?: number; approvals?: number;
 }
 export interface Rule {
   id: string; workspaceId: string; stage: string; action: RuleAction; config: RuleConfig; enabled: boolean; position: number;

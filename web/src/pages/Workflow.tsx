@@ -7,19 +7,17 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  AlertTriangle, ArrowRightLeft, ListOrdered, Map as MapIcon, Bot, Check, ChevronDown, Copy, Flag, GitMerge, GitPullRequest, GripVertical, Inbox, Lock,
-  Mail, MessageSquare, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, SquareTerminal, Tag, Trash2, UserCheck,
-  Users, Webhook, Workflow, Zap
+  AlertTriangle, ArrowRightLeft, ListChecks, ListOrdered, LogIn, LogOut, Map as MapIcon, Bot, Check, ChevronDown, Copy, Flag, GitMerge, GitPullRequest,
+  GripVertical, Inbox, Lock, Mail, MessageSquare, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, SquareTerminal, Tag, Timer, Trash2,
+  UserCheck, Users, Webhook, Workflow, Zap
 } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Button, Field, Modal, PageHeader, Popover, StatusIcon, Toggle, useToast } from '../components/ui';
 import { AgentIcon } from '../components/AgentIcon';
 import { api } from '../lib/api';
-import { PRIORITIES } from '../lib/constants';
+import { PRIORITIES, stageGroups } from '../lib/constants';
 import { useAgents, useCan, useLabels, useMembers, useRoles, useRules, useStages, useWorkspaces } from '../lib/queries';
-import type {
-  LockField, Requirement, Rule, RuleAction, RuleConditions, RuleConfig, RuleTrigger, Stage, StagePolicy, Who, WorkflowWarning
-} from '../lib/types';
+import type { LockField, Requirement, Rule, RuleAction, RuleConditions, RuleConfig, RuleTrigger, Stage, Who, WorkflowWarning } from '../lib/types';
 
 // ---------- catálogos ----------
 
@@ -35,6 +33,7 @@ const BUILTIN: Record<string, string> = {
 };
 
 const TRIGGERS: { id: RuleTrigger; label: string; stage?: boolean; hint: string }[] = [
+  { id: 'access', label: 'Sempre: acesso e travas', stage: true, hint: 'quem mexe ou traz issues, aprovação, travas, requisitos, limite, responsáveis' },
   { id: 'enter', label: 'Entrar na etapa', stage: true, hint: 'venha do quadro, do agente ou de outra regra' },
   { id: 'leave', label: 'Sair da etapa', stage: true, hint: 'para qualquer outra' },
   { id: 'stale', label: 'Ficar parada na etapa', stage: true, hint: 'por X horas sem sair dela' },
@@ -61,7 +60,19 @@ const ACTIONS: { id: RuleAction; icon: typeof Mail; label: string; desc: string;
   { id: 'merge', icon: GitMerge, label: 'Fazer merge', desc: 'Tudo ou nada entre repositórios.', group: 'IA e código' },
   { id: 'script', icon: SquareTerminal, label: 'Rodar script', desc: 'Bash com variáveis MULTICA_*.', group: 'IA e código' }
 ];
-const actionOf = (id: RuleAction) => ACTIONS.find((a) => a.id === id) ?? ACTIONS[0];
+// Regras de acesso: não "rodam"; valem o tempo todo enquanto a issue está na etapa.
+const ACCESS: { id: RuleAction; icon: typeof Mail; label: string; desc: string }[] = [
+  { id: 'allow_act', icon: ShieldCheck, label: 'Quem mexe nas issues', desc: 'Só essas pessoas editam, comentam, rodam o agente e tiram a issue daqui.' },
+  { id: 'allow_enter', icon: LogIn, label: 'Quem traz issues para cá', desc: 'Só essas pessoas movem (ou criam) issues nesta etapa.' },
+  { id: 'approval', icon: UserCheck, label: 'Exigir aprovação', desc: 'A issue só segue quando pessoas diferentes derem o ✓.' },
+  { id: 'lock_fields', icon: Lock, label: 'Travar campos', desc: 'Ninguém altera esses campos enquanto a issue estiver aqui.' },
+  { id: 'require', icon: ListChecks, label: 'Requisitos para entrar', desc: 'A issue só entra se tiver o que for marcado.' },
+  { id: 'wip', icon: Inbox, label: 'Limite de issues', desc: 'Máximo de issues ao mesmo tempo nesta etapa.' },
+  { id: 'read_only', icon: Lock, label: 'Somente leitura', desc: 'Entrou aqui, ninguém mexe mais. Só o dono, como saída de emergência.' },
+  { id: 'responsible', icon: Users, label: 'Responsáveis da etapa', desc: 'Recebem o e-mail “responsáveis da etapa”.' }
+];
+const isAccess = (t?: RuleTrigger) => t === 'access';
+const actionOf = (id: RuleAction) => ACTIONS.find((a) => a.id === id) ?? ACCESS.find((a) => a.id === id) ?? ACTIONS[0];
 
 const TARGETS: [string, string][] = [
   ['requester', 'Quem pediu (último pedido ao agente)'],
@@ -82,8 +93,6 @@ const REQUIRES: [Requirement, string][] = [
   ['agent', 'Ter agente'], ['assignee', 'Ter responsável'], ['description', 'Ter descrição'], ['changes', 'Ter alterações de código']
 ];
 const OUTCOMES: [string, string][] = [['done', 'Concluída'], ['waiting', 'Aguardando alguém'], ['incomplete', 'Incompleta'], ['failed', 'Falhou']];
-
-const emptyPolicy = (): StagePolicy => ({ enter: {}, act: {}, approvers: {}, responsible: {} });
 
 // ---------- página ----------
 
@@ -170,7 +179,7 @@ export function WorkflowPage() {
           description={`As etapas do quadro, quem pode fazer o quê em cada uma e as regras que rodam sozinhas. As regras de uma etapa rodam de cima para baixo${canEdit ? '; arraste etapas e regras para mudar a ordem' : ''}.`}
           actions={canEdit ? <>
             <Button onClick={() => setCopying(true)}><Copy className="size-4" /> Copiar para…</Button>
-            <Button variant="primary" onClick={() => setEditingStage({ color: '#a78bfa', after: 'in_review', policy: emptyPolicy() })}><Plus className="size-4" /> Nova etapa</Button>
+            <Button variant="primary" onClick={() => setEditingStage({ after: 'in_review' })}><Plus className="size-4" /> Nova etapa</Button>
           </> : <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-mute">somente leitura</span>}
         />
 
@@ -198,11 +207,25 @@ export function WorkflowPage() {
         {view === 'etapas' && <>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={ordered.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-            <ol className="relative space-y-3">
-              {ordered.map((s) => (
-                <StageCard key={s.id} readOnly={!canEdit} stage={s} stages={stages} rules={rules.filter((r) => r.stage === s.id && triggerOf(r.trigger).stage)}
-                  onEdit={() => setEditingStage(s)} onDelete={() => removeStage(s)} onAddRule={() => newRule({ stage: s.id })}
-                  onEditRule={setEditingRule} onToggleRule={toggle} onDeleteRule={remove} />
+            {/* Trilha numerada na ordem do quadro; etapas em paralelo dividem o mesmo degrau. */}
+            <ol>
+              {stageGroups(ordered).map((g, gi, all) => (
+                <li key={g[0].id} className="relative flex gap-3 pb-4 last:pb-0">
+                  <div className="relative flex w-7 shrink-0 justify-center">
+                    <span className="relative z-[1] mt-3.5 grid size-7 place-items-center rounded-full border border-line bg-panel text-[11px] font-semibold text-dim">{gi + 1}</span>
+                    {gi < all.length - 1 && <span className="absolute bottom-0 top-10 w-px bg-line" />}
+                  </div>
+                  <div className={clsx('min-w-0 flex-1', g.length > 1 && 'rounded-2xl border border-dashed border-sky-400/30 p-2')}>
+                    {g.length > 1 && <div className="mb-2 flex items-center gap-1.5 px-1 text-[11px] text-sky-300"><ArrowRightLeft className="size-3" /> Em paralelo: dividem a mesma coluna no quadro; uma regra decide para qual vai cada issue</div>}
+                    <div className="space-y-2">
+                      {g.map((s) => (
+                        <StageCard key={s.id} readOnly={!canEdit} stage={s} stages={stages} rules={rules.filter((r) => r.stage === s.id && triggerOf(r.trigger).stage)}
+                          onEdit={() => setEditingStage(s)} onDelete={() => removeStage(s)} onAddRule={() => newRule({ stage: s.id })}
+                          onEditRule={setEditingRule} onToggleRule={toggle} onDeleteRule={remove} />
+                      ))}
+                    </div>
+                  </div>
+                </li>
               ))}
             </ol>
           </SortableContext>
@@ -233,56 +256,55 @@ export function WorkflowPage() {
 
 // ---------- cartão de etapa ----------
 
+// Uma etapa: cabeçalho com o que ela é e, embaixo, as regras agrupadas pelo
+// momento em que valem. Etapa sem regra fica numa linha só.
 function StageCard({ readOnly, stage: s, stages, rules, onEdit, onDelete, onAddRule, onEditRule, onToggleRule, onDeleteRule }: {
   readOnly?: boolean; stage: Stage; stages: Stage[]; rules: Rule[]; onEdit: () => void; onDelete: () => void; onAddRule: () => void;
   onEditRule: (r: Rule) => void; onToggleRule: (r: Rule) => void; onDeleteRule: (r: Rule) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id, disabled: readOnly });
-  const p = s.policy ?? emptyPolicy();
-  const badges: [typeof Lock, string][] = [];
-  if (!isEmpty(p.act)) badges.push([ShieldCheck, 'acesso restrito']);
-  if (!isEmpty(p.enter)) badges.push([ArrowRightLeft, 'entrada restrita']);
-  if (p.locked?.length) badges.push([Lock, `${p.locked.length} campo(s) travado(s)`]);
-  if (p.requires?.length) badges.push([Check, `${p.requires.length} requisito(s)`]);
-  if (p.wip) badges.push([Inbox, `até ${p.wip} issues`]);
-  if (p.readOnly) badges.push([Lock, 'somente leitura']);
-  if (p.approvals) badges.push([UserCheck, `${p.approvals} aprovação(ões) → ${stages.find((x) => x.id === (p.approveTo || 'done'))?.name ?? '?'}`]);
-  if (!isEmpty(p.responsible)) badges.push([Users, 'com responsáveis']);
+  const by = (t: RuleTrigger[]) => rules.filter((r) => t.includes(r.trigger));
+  const sections: { key: string; icon: typeof Lock; title: string; hint?: string; list: Rule[]; sequence?: boolean }[] = [
+    { key: 'access', icon: ShieldCheck, title: 'Acesso e travas', hint: 'valem o tempo todo', list: by(['access']) },
+    { key: 'enter', icon: LogIn, title: 'Ao entrar', hint: readOnly ? 'nesta ordem' : 'nesta ordem · arraste para mudar', list: by(['enter']), sequence: true },
+    { key: 'leave', icon: LogOut, title: 'Ao sair', list: by(['leave']) },
+    { key: 'stale', icon: Timer, title: 'Se ficar parada', list: by(['stale']) }
+  ].filter((x) => x.list.length > 0);
   return (
-    <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={clsx('relative flex gap-2', isDragging && 'z-10 opacity-80')}>
-      <button {...attributes} {...listeners} aria-label="Arrastar" className={clsx('mt-3 grid h-10 w-6 shrink-0 cursor-grab touch-none place-items-center rounded-lg text-mute hover:bg-white/5 hover:text-fg active:cursor-grabbing', readOnly && 'invisible')}>
-        <GripVertical className="size-4" />
-      </button>
-      <div className={clsx('surface min-w-0 flex-1 p-4', isDragging && 'shadow-pop')}>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusIcon status={s.id} />
-          <span className="font-semibold">{s.name}</span>
-          <span className="rounded-md px-1.5 py-0.5 text-[10px]" style={s.system ? undefined : { background: `${s.color}22`, color: s.color }}>
-            {s.system ? <span className="text-mute">sistema</span> : 'personalizada'}
-          </span>
-          {s.parallel && <span className="rounded-md bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-300" title="Fica ao lado da etapa anterior e divide a coluna dela no quadro">em paralelo com a anterior</span>}
-          {!readOnly && <div className="ml-auto flex items-center gap-0.5">
-            <button title="Configurar etapa" onClick={onEdit} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Settings2 className="size-4" /></button>
-            {!s.system && <button title="Remover etapa" onClick={onDelete} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
-            <Button size="sm" variant="ghost" onClick={onAddRule}><Plus className="size-3.5" /> Regra</Button>
-          </div>}
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={clsx('surface min-w-0', isDragging && 'relative z-10 shadow-pop')}>
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button {...attributes} {...listeners} aria-label="Arrastar" className={clsx('grid h-7 w-5 shrink-0 cursor-grab touch-none place-items-center rounded text-mute hover:text-fg active:cursor-grabbing', readOnly && 'hidden')}>
+          <GripVertical className="size-4" />
+        </button>
+        <span className="h-6 w-1 shrink-0 rounded-full" style={{ background: s.color }} />
+        <StatusIcon status={s.id} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2">
+            <span className="font-semibold">{s.name}</span>
+            <span className="text-[11px] text-mute">{s.system ? 'do sistema' : 'personalizada'}</span>
+          </div>
+          <p className="truncate text-xs text-mute">{s.system ? BUILTIN[s.id] : rules.length ? `${rules.length} regra(s)` : 'Sem regras ainda.'}</p>
         </div>
-        <p className="mt-0.5 text-xs text-mute">{s.system ? BUILTIN[s.id] : 'Etapa sua: configure acesso e regras como quiser.'}</p>
-        {badges.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {badges.map(([I, t]) => <span key={t} className="inline-flex items-center gap-1 rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] text-dim"><I className="size-3" /> {t}</span>)}
-          </div>
-        )}
-        {rules.length > 0 && (
-          <div className="mt-3">
-            {rules.filter((r) => r.trigger === 'enter').length > 0 && <div className="mb-1.5 text-[11px] text-mute">Ao entrar, nesta ordem{readOnly ? '' : ' (arraste para mudar)'}:</div>}
-            <RuleList readOnly={readOnly} rules={rules.filter((r) => r.trigger === 'enter')} stages={stages} sequence onEdit={onEditRule} onToggle={onToggleRule} onDelete={onDeleteRule} />
-            {rules.some((r) => r.trigger !== 'enter') && <div className="mb-1.5 mt-3 text-[11px] text-mute">Ao sair ou quando ficar parada:</div>}
-            <RuleList readOnly={readOnly} rules={rules.filter((r) => r.trigger !== 'enter')} stages={stages} onEdit={onEditRule} onToggle={onToggleRule} onDelete={onDeleteRule} />
-          </div>
-        )}
+        {!readOnly && <div className="flex shrink-0 items-center gap-0.5">
+          <button title="Renomear ou mudar de lugar" onClick={onEdit} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Settings2 className="size-4" /></button>
+          {!s.system && <button title="Remover etapa" onClick={onDelete} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
+          <Button size="sm" variant="ghost" onClick={onAddRule}><Plus className="size-3.5" /> Regra</Button>
+        </div>}
       </div>
-    </li>
+      {sections.length > 0 && (
+        <div className="space-y-3 border-t border-line/70 px-3 pb-3 pt-2.5">
+          {sections.map((x) => (
+            <div key={x.key}>
+              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-dim">
+                <x.icon className="size-3 text-mute" /> {x.title}{x.hint && <span className="font-normal text-mute">· {x.hint}</span>}
+              </div>
+              <RuleList readOnly={readOnly} rules={x.list} stages={stages} sequence={x.sequence} onEdit={onEditRule} onToggle={onToggleRule} onDelete={onDeleteRule} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -310,7 +332,9 @@ function RuleList({ readOnly, rules, stages, onEdit, onToggle, onDelete, sequenc
     }
   };
   // "Mover" no meio corta a sequência: avisa quais regras nunca rodariam.
-  const cut = sequence ? list.findIndex((r) => r.enabled && r.action === 'move') : -1;
+  // Com filtro (ex.: só urgentes), o "Mover" pode não disparar e a sequência segue.
+  const unconditional = (r: Rule) => !Object.values(r.conditions ?? {}).some((v) => (Array.isArray(v) ? v.length : !!v));
+  const cut = sequence ? list.findIndex((r) => r.enabled && r.action === 'move' && unconditional(r)) : -1;
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <SortableContext items={list.map((r) => r.id)} strategy={verticalListSortingStrategy}>
@@ -347,63 +371,74 @@ function EmailOffAlert({ count }: { count?: number }) {
   );
 }
 
-const isEmpty = (w?: Who) => !w || (!w.roles?.length && !w.users?.length);
 
 function RuleRow({ readOnly, rule: r, stages, index, onEdit, onToggle, onDelete }: { readOnly?: boolean; rule: Rule; stages: Stage[]; index?: number; onEdit: () => void; onToggle: () => void; onDelete: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: r.id, disabled: readOnly });
   const { ws } = useWs();
   const { data: agents = [] } = useAgents();
   const { data: labels = [] } = useLabels(ws.id);
+  const { data: roles = [] } = useRoles();
+  const { data: members = [] } = useMembers(ws.id);
   const A = actionOf(r.action);
-  const t = triggerOf(r.trigger);
   const c = r.config ?? {};
   const cond = r.conditions ?? {};
-  const stageName = (id?: string) => stages.find((s) => s.id === id)?.name ?? 'etapa removida';
+  const stageName = (id?: string) => stages.find((s) => s.id === id)?.name;
+  const missing = (r.action === 'move' || r.action === 'approval') && !stageName(c.to || (r.action === 'approval' ? 'done' : ''));
+  const who = [...roles.filter((x) => c.roles?.includes(x.id)).map((x) => `perfil ${x.name}`), ...members.filter((m) => c.users?.includes(m.id)).map((m) => m.name)].join(', ');
   const what = (() => {
     switch (r.action) {
       case 'notify': return `E-mail para ${(TARGETS.find(([k]) => k === (c.to ?? 'requester'))?.[1] ?? '').toLowerCase()}`;
       case 'webhook': return `POST ${c.url}`;
-      case 'move': return `Mover para ${stageName(c.to)}`;
-      case 'run_agent': return `${agents.find((x) => x.id === c.agentId)?.name ?? 'Agente da issue'}${c.request ? `: “${c.request}”` : ''}`;
+      case 'move': return `Mover para ${stageName(c.to) ?? 'uma etapa que foi removida'}`;
+      case 'run_agent': return `Rodar ${agents.find((x) => x.id === c.agentId)?.name ?? 'o agente da issue'}${c.request ? `: “${c.request}”` : ''}`;
       case 'set_agent': return `Agente: ${agents.find((x) => x.id === c.agentId)?.name ?? '?'}`;
       case 'set_priority': return `Prioridade: ${PRIORITIES.find((p) => p.id === c.priority)?.label ?? '?'}`;
       case 'add_label': return `Label: ${labels.find((l) => l.id === c.labelId)?.name ?? '?'}`;
-      case 'assign': return { creator: 'Responsável: quem criou', requester: 'Responsável: quem pediu', balance: 'Distribuir entre o grupo (quem tem menos issues)' }[c.mode ?? ''] ?? 'Responsável fixo';
-      case 'comment': return c.message;
-      case 'open_pr': return `PR para ${c.base || 'a branch de destino'}${c.draft ? ' (rascunho)' : ''}`;
+      case 'assign': return { creator: 'Responsável: quem criou', requester: 'Responsável: quem pediu', balance: 'Distribuir entre o grupo (quem tem menos issues)' }[c.mode ?? ''] ?? `Responsável: ${who || '?'}`;
+      case 'comment': return `Comentar: ${c.message}`;
+      case 'open_pr': return `Abrir PR para ${c.base || 'a branch de destino'}${c.draft ? ' (rascunho)' : ''}`;
       case 'merge': return `Merge em ${c.base || 'a branch de destino'}`;
-      case 'script': return (c.script ?? '').split('\n')[0];
+      case 'script': return `Script: ${(c.script ?? '').split('\n')[0]}`;
+      case 'allow_act': return `Só ${who || '?'} mexe nas issues daqui`;
+      case 'allow_enter': return `Só ${who || '?'} traz issues para cá`;
+      case 'approval': return `${c.approvals ?? 1} aprovação(ões) de ${who || 'quem tem permissão de aprovar'} → ${stageName(c.to || 'done') ?? 'etapa removida'}`;
+      case 'lock_fields': return `Travado: ${(c.fields ?? []).map((f) => LOCKS.find(([k]) => k === f)?.[1]).join(', ')}`;
+      case 'require': return `Para entrar precisa: ${(c.requires ?? []).map((f) => REQUIRES.find(([k]) => k === f)?.[1].toLowerCase()).join(', ')}`;
+      case 'wip': return `No máximo ${c.wip} issue(s) ao mesmo tempo`;
+      case 'read_only': return 'Somente leitura: ninguém mexe mais (só o dono)';
+      case 'responsible': return `Responsáveis: ${who || '?'}`;
     }
   })();
   const filters = [
     cond.priorities?.length ? cond.priorities.map((p) => PRIORITIES.find((x) => x.id === p)?.label).join('/') : '',
     cond.labels?.length ? `${cond.labels.length} label(s)` : '',
     cond.outcomes?.length ? cond.outcomes.map((o) => OUTCOMES.find(([k]) => k === o)?.[1]).join('/') : '',
-    cond.hours ? `${cond.hours} h parada` : '', cond.cost ? `> US$ ${cond.cost}` : '',
+    cond.hours ? `após ${cond.hours} h` : '', cond.cost ? `> US$ ${cond.cost}` : '',
     cond.actorRoles?.length ? 'por perfil' : '', cond.agents?.length ? 'por agente' : ''
   ].filter(Boolean);
+  const global = !triggerOf(r.trigger).stage;
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={clsx('group relative flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-1.5 py-2', !r.enabled && 'opacity-50', isDragging && 'z-10 bg-panel shadow-pop')}>
+      className={clsx('group relative flex items-center gap-2 rounded-lg border px-1.5 py-1.5', missing ? 'border-red-400/30 bg-red-400/[0.05]' : 'border-white/[0.06] bg-white/[0.02]', !r.enabled && 'opacity-50', isDragging && 'z-10 bg-panel shadow-pop')}>
       {!readOnly && (
-        <button {...attributes} {...listeners} aria-label="Arrastar para mudar a ordem" className="grid h-7 w-5 shrink-0 cursor-grab touch-none place-items-center rounded text-mute hover:text-fg active:cursor-grabbing">
+        <button {...attributes} {...listeners} aria-label="Arrastar para mudar a ordem" className="grid h-7 w-4 shrink-0 cursor-grab touch-none place-items-center rounded text-mute hover:text-fg active:cursor-grabbing">
           <GripVertical className="size-3.5" />
         </button>
       )}
       {index !== undefined && <span className="grid size-5 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[10px] font-semibold text-dim">{index + 1}</span>}
-      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent"><A.icon className="size-3.5" /></span>
+      <span className={clsx('grid size-7 shrink-0 place-items-center rounded-lg', missing ? 'bg-red-400/10 text-red-400' : 'bg-accent/10 text-accent')}><A.icon className="size-3.5" /></span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 text-[13px]">
-          <Zap className="size-3 text-mute" /><span className="text-mute">{t.label.toLowerCase()}{!t.stage ? '' : ''}:</span>
-          <span className="font-medium">{r.name || A.label}</span>
-          {filters.map((f) => <span key={f} className="rounded bg-white/5 px-1 text-[10px] text-dim">{f}</span>)}
+          {global && <span className="text-mute">{triggerOf(r.trigger).label}:</span>}
+          <span className="truncate">{what}</span>
+          {filters.map((f) => <span key={f} className="rounded bg-white/5 px-1.5 text-[10px] text-dim">{f}</span>)}
         </div>
-        <div className="truncate text-xs text-dim">{what}</div>
+        {(r.name || missing) && <div className="truncate text-[11px] text-mute">{missing ? 'A etapa de destino foi removida: edite ou apague esta regra.' : r.name}</div>}
       </div>
       {readOnly ? <span className="pr-1.5 text-[11px] text-mute">{r.enabled ? 'ativa' : 'desligada'}</span> : <>
         <Toggle checked={r.enabled} onChange={onToggle} />
-        <button onClick={onEdit} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Pencil className="size-3.5" /></button>
-        <button onClick={onDelete} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-3.5" /></button>
+        <button onClick={onEdit} title="Editar" className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Pencil className="size-3.5" /></button>
+        <button onClick={onDelete} title="Apagar" className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-3.5" /></button>
       </>}
     </div>
   );
@@ -475,19 +510,18 @@ function Chips<T extends string | number>({ options, value, onChange }: { option
 
 // ---------- configurar etapa ----------
 
+// A etapa é só nome, lugar no fluxo e se fica em paralelo com a anterior.
+// Quem pode, travas e aprovação são regras ("+ Regra" → "Sempre: acesso e travas").
 function StageModal({ stage, stages, onClose, onSaved }: { stage: Partial<Stage> & { after?: string }; stages: Stage[]; onClose: () => void; onSaved: () => void }) {
   const { ws } = useWs();
-  const [s, setS] = useState({ ...stage, policy: { ...emptyPolicy(), ...(stage.policy ?? {}) } });
-  const [tab, setTab] = useState<'geral' | 'acesso' | 'regras' | 'aprovacao'>('geral');
+  const prev = stage.id ? stages[stages.findIndex((x) => x.id === stage.id) - 1]?.id : undefined;
+  const [s, setS] = useState({ ...stage, after: stage.after ?? prev ?? '' });
   const [busy, setBusy] = useState(false);
   const toast = useToast();
-  const p = s.policy;
-  const setP = (patch: Partial<StagePolicy>) => setS({ ...s, policy: { ...p, ...patch } });
-  const COLORS = ['#a78bfa', '#60a5fa', '#22d3ee', '#34d399', '#a3e635', '#fbbf24', '#fb923c', '#f87171', '#f472b6', '#94a3b8'];
   const save = async () => {
     setBusy(true);
     try {
-      const body = { name: s.name, color: s.color, after: s.after ?? '', policy: p, parallel: !!s.parallel };
+      const body = { name: s.name, after: s.after !== prev ? s.after : '', parallel: !!s.parallel };
       if (s.id) await api.put(`/workspaces/${ws.id}/stages/${s.id}`, body);
       else await api.post(`/workspaces/${ws.id}/stages`, body);
       onSaved();
@@ -498,100 +532,27 @@ function StageModal({ stage, stages, onClose, onSaved }: { stage: Partial<Stage>
       setBusy(false);
     }
   };
-  const TABS: [typeof tab, string][] = [['geral', 'Geral'], ['acesso', 'Quem pode'], ['regras', 'Travas e requisitos'], ['aprovacao', 'Aprovação']];
+  const afterName = stages.find((x) => x.id === s.after)?.name;
   return (
-    <Modal open wide onClose={onClose} title={s.id ? `Etapa ${stage.name}` : 'Nova etapa'} footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} onClick={save}>Salvar</Button></>}>
-      <div className="-mt-1 mb-5 flex gap-1 border-b border-line">
-        {TABS.map(([id, label]) => (
-          <button key={id} type="button" onClick={() => setTab(id)} className={clsx('-mb-px border-b-2 px-3 py-2 text-[13px] transition-colors', tab === id ? 'border-accent font-medium text-fg' : 'border-transparent text-mute hover:text-fg')}>{label}</button>
-        ))}
+    <Modal open onClose={onClose} title={s.id ? `Etapa ${stage.name}` : 'Nova etapa'} footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} onClick={save}>Salvar</Button></>}>
+      <div className="space-y-4">
+        <Field label="Nome"><input autoFocus className="field-input" value={s.name ?? ''} onChange={(e) => setS({ ...s, name: e.target.value })} placeholder="Ex.: Triagem, Desenvolvimento, QA, Homologação" /></Field>
+        {s.system && <p className="-mt-2 text-xs text-mute">{BUILTIN[s.id!]} O nome pode mudar; o comportamento continua.</p>}
+        <Field label="Vem depois de">
+          <select className="field-input" value={s.after} onChange={(e) => setS({ ...s, after: e.target.value })}>
+            {!prev && s.id && <option value="">(primeira etapa)</option>}
+            {stages.filter((x) => x.id !== s.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </Field>
+        <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', s.parallel ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
+          <Toggle checked={!!s.parallel} onChange={(parallel) => setS({ ...s, parallel })} />
+          <span>
+            <span className="block text-[13px] font-medium">Em paralelo com {afterName ? `“${afterName}”` : 'a etapa anterior'}</span>
+            <span className="block text-xs text-mute">Fica lado a lado no fluxo e divide a mesma coluna no quadro. Ex.: depois de “Prioridade”, “Difícil” e “Médio” em paralelo, e uma regra manda cada issue para a sua.</span>
+          </span>
+        </label>
+        <p className="text-xs text-mute">Quem pode mexer, aprovação, travas e responsáveis ficam nas regras da etapa: depois de salvar, use <b className="font-medium text-dim">+ Regra → Sempre: acesso e travas</b>.</p>
       </div>
-      {tab === 'geral' && (
-        <div className="space-y-4">
-          <Field label="Nome"><input autoFocus className="field-input" value={s.name ?? ''} onChange={(e) => setS({ ...s, name: e.target.value })} placeholder="Ex.: Triagem, Desenvolvimento, QA, Homologação" /></Field>
-          {!s.id && (
-            <Field label="Entra depois de">
-              <select className="field-input" value={s.after ?? ''} onChange={(e) => setS({ ...s, after: e.target.value })}>
-                {stages.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-              </select>
-            </Field>
-          )}
-          {!s.system && (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-dim">Cor</span>
-              <div className="flex flex-wrap gap-2">
-                {COLORS.map((c) => <button key={c} type="button" onClick={() => setS({ ...s, color: c })} style={{ background: c }} className={clsx('size-6 rounded-full transition hover:scale-110', s.color === c && 'ring-2 ring-white/80 ring-offset-2 ring-offset-panel')} />)}
-              </div>
-            </div>
-          )}
-          {s.system && <p className="text-xs text-mute">{BUILTIN[s.id!]} O nome pode mudar; o comportamento continua.</p>}
-          <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', s.parallel ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
-            <Toggle checked={!!s.parallel} onChange={(parallel) => setS({ ...s, parallel })} />
-            <span>
-              <span className="block text-[13px] font-medium">Em paralelo com a etapa anterior</span>
-              <span className="block text-xs text-mute">Fica ao lado dela no fluxo e divide a mesma coluna no quadro, uma embaixo da outra. Ex.: depois de “Prioridade”, “Difícil” e “Médio” em paralelo, e uma regra manda cada tipo de issue para a sua.</span>
-            </span>
-          </label>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-dim">Responsáveis da etapa <span className="font-normal text-mute">· recebem o e-mail “responsáveis da etapa”</span></span>
-            <WhoPicker value={p.responsible} onChange={(responsible) => setP({ responsible })} empty="ninguém" />
-          </div>
-        </div>
-      )}
-      {tab === 'acesso' && (
-        <div className="space-y-5">
-          <p className="text-xs text-mute">Vale junto com as permissões do perfil. Ex.: estagiário e júnior podem ter o mesmo perfil de permissões, mas aqui você diz que só o estagiário mexe na Triagem e só o júnior no Desenvolvimento. O dono sempre pode tudo.</p>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-dim">Quem mexe nas issues desta etapa <span className="font-normal text-mute">· editar, comentar, rodar agente, tirar daqui</span></span>
-            <WhoPicker value={p.act} onChange={(act) => setP({ act })} empty="todos com permissão" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-dim">Quem pode trazer issues para cá</span>
-            <WhoPicker value={p.enter} onChange={(enter) => setP({ enter })} empty="todos com permissão" />
-          </div>
-        </div>
-      )}
-      {tab === 'regras' && (
-        <div className="space-y-5">
-          <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', p.readOnly ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
-            <Toggle checked={!!p.readOnly} onChange={(readOnly) => setP({ readOnly })} />
-            <span>
-              <span className="block text-[13px] font-medium">Somente leitura</span>
-              <span className="block text-xs text-mute">Entrou aqui, ninguém mexe mais: sem editar, comentar, rodar agente, aprovar ou tirar daqui. Bom para Concluída ou Arquivada. Só o dono consegue, como saída de emergência; as regras da etapa continuam rodando.</span>
-            </span>
-          </label>
-          <div className={clsx('flex flex-col gap-1.5', p.readOnly && 'pointer-events-none opacity-40')}>
-            <span className="text-xs font-medium text-dim">Travar nesta etapa <span className="font-normal text-mute">· ninguém altera enquanto a issue estiver aqui</span></span>
-            <Chips options={LOCKS} value={p.locked ?? []} onChange={(locked) => setP({ locked })} />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-dim">Para entrar aqui a issue precisa</span>
-            <Chips options={REQUIRES} value={p.requires ?? []} onChange={(requires) => setP({ requires })} />
-          </div>
-          <Field label="Limite de issues ao mesmo tempo" hint="0 = sem limite">
-            <input type="number" min={0} className="field-input w-32" value={p.wip ?? 0} onChange={(e) => setP({ wip: Math.max(0, Number(e.target.value)) })} />
-          </Field>
-        </div>
-      )}
-      {tab === 'aprovacao' && (
-        <div className="space-y-5">
-          <Field label="Aprovações necessárias" hint="0 = etapa sem aprovação">
-            <input type="number" min={0} max={10} className="field-input w-32" value={p.approvals ?? 0} onChange={(e) => setP({ approvals: Math.min(10, Math.max(0, Number(e.target.value))) })} />
-          </Field>
-          {!!p.approvals && <>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-dim">Quem aprova</span>
-              <WhoPicker value={p.approvers} onChange={(approvers) => setP({ approvers })} empty="quem tem a permissão de aprovar" />
-            </div>
-            <Field label="Aprovada, vai para">
-              <select className="field-input" value={p.approveTo || 'done'} onChange={(e) => setP({ approveTo: e.target.value })}>
-                {stages.filter((x) => x.id !== s.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-              </select>
-            </Field>
-            <p className="text-xs text-mute">Cada pessoa aprova uma vez. Com {p.approvals} aprovação(ões) diferentes a issue segue sozinha, e as regras da etapa de destino disparam.</p>
-          </>}
-        </div>
-      )}
     </Modal>
   );
 }
@@ -599,10 +560,10 @@ function StageModal({ stage, stages, onClose, onSaved }: { stage: Partial<Stage>
 // ---------- regra ----------
 
 // Assistente de regra em passos curtos: Quando → O que fazer → Detalhes →
-// Filtros (opcional). Escolher a ação já avança; "+ Regra" numa etapa abre
-// direto em "O que fazer", com o gatilho da etapa já preenchido.
+// Filtros (opcional). Escolher a ação já avança. Regras de acesso ("Sempre")
+// não têm filtros: valem para toda issue da etapa.
 type WizardStep = 0 | 1 | 2 | 3;
-const STEPS = ['Quando', 'O que fazer', 'Detalhes', 'Filtros'];
+const ACCESS_DEFAULTS: Partial<Record<RuleAction, RuleConfig>> = { approval: { approvals: 1, to: 'done' }, wip: { wip: 3 } };
 
 function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; stages: Stage[]; onClose: () => void; onSaved: () => void }) {
   const { ws } = useWs();
@@ -611,7 +572,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
   const { data: roles = [] } = useRoles();
   const { data: email } = useQuery({ queryKey: ['email-settings'], queryFn: () => api.get<{ enabled: boolean }>('/settings/email') });
   const [r, setR] = useState<Partial<Rule>>({ ...rule, config: { ...(rule.config ?? {}) }, conditions: { ...(rule.conditions ?? {}) } });
-  const [step, setStep] = useState<WizardStep>(rule.id ? 2 : rule.stage ? 1 : 0);
+  const [step, setStep] = useState<WizardStep>(rule.id ? 2 : 0);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const c = r.config ?? {};
@@ -623,11 +584,19 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
   const others = stages.filter((s) => s.id !== r.stage);
   const A = actionOf(r.action ?? 'notify');
   const nFilters = Object.values(cond).filter((v) => (Array.isArray(v) ? v.length : false)).length;
+  const access = isAccess(r.trigger);
+  const STEPS = access ? ['Quando', 'O que vale', 'Detalhes'] : ['Quando', 'O que fazer', 'Detalhes', 'Filtros'];
+  const pickTrigger = (id: RuleTrigger, stage: boolean) => {
+    const next: Partial<Rule> = { ...r, trigger: id, stage: stage ? (r.stage || stages[0]?.id) : '' };
+    // Trocar entre "acesso" e "automação" troca o catálogo de ações.
+    if (isAccess(id) !== access) Object.assign(next, isAccess(id) ? { action: 'allow_act', config: {}, conditions: {} } : { action: 'notify', config: { to: 'requester' } });
+    setR(next);
+  };
 
   const save = async () => {
     setBusy(true);
     try {
-      const body = { name: r.name ?? '', trigger: r.trigger, stage: t.stage ? r.stage : '', action: r.action, config: c, conditions: cond, enabled: r.enabled ?? true };
+      const body = { name: r.name ?? '', trigger: r.trigger, stage: t.stage ? r.stage : '', action: r.action, config: c, conditions: access ? {} : cond, enabled: r.enabled ?? true };
       if (r.id) await api.put(`/rules/${r.id}`, body);
       else await api.post(`/workspaces/${ws.id}/rules`, body);
       onSaved();
@@ -653,7 +622,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
       {step > 0 && <Button variant="ghost" onClick={() => setStep((step - 1) as WizardStep)}>Voltar</Button>}
       <span className="flex-1" />
       {step === 0 && <Button variant="primary" onClick={() => setStep(1)}>Continuar</Button>}
-      {step === 2 && <Button onClick={() => setStep(3)}>Filtros{nFilters ? ` (${nFilters})` : ''}</Button>}
+      {step === 2 && !access && <Button onClick={() => setStep(3)}>Filtros{nFilters ? ` (${nFilters})` : ''}</Button>}
       {step >= 2 && <Button variant="primary" loading={busy} onClick={save}>Salvar</Button>}
     </>
   );
@@ -677,7 +646,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
         <div className="space-y-3">
           <div className="grid gap-1">
             {TRIGGERS.map((x) => (
-              <button key={x.id} type="button" onClick={() => setR({ ...r, trigger: x.id, stage: x.stage ? (r.stage || stages[0]?.id) : '' })}
+              <button key={x.id} type="button" onClick={() => pickTrigger(x.id, !!x.stage)}
                 className={clsx('flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition', r.trigger === x.id ? 'border-accent/50 bg-accent/10' : 'border-transparent hover:bg-white/[0.04]')}>
                 <span className={clsx('grid size-4 place-items-center rounded-full border', r.trigger === x.id ? 'border-accent' : 'border-line')}>{r.trigger === x.id && <span className="size-2 rounded-full bg-accent" />}</span>
                 <span className="min-w-0"><span className="block text-[13px]">{x.label}</span><span className="block text-[11px] text-mute">{x.hint}</span></span>
@@ -706,9 +675,9 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
 
       {step === 1 && (
         <div className="grid grid-cols-2 gap-1.5">
-          {ACTIONS.map((a) => (
+          {(access ? ACCESS : ACTIONS).map((a) => (
             <button key={a.id} type="button" title={a.desc}
-              onClick={() => { setR({ ...r, action: a.id, config: a.id === r.action ? c : a.id === 'notify' ? { to: 'requester' } : {} }); setStep(2); }}
+              onClick={() => { setR({ ...r, action: a.id, config: a.id === r.action ? c : a.id === 'notify' ? { to: 'requester' } : { ...(ACCESS_DEFAULTS[a.id] ?? {}) } }); setStep(2); }}
               className={clsx('flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition', r.action === a.id ? 'border-accent/60 bg-accent/10' : 'border-line bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]')}>
               <span className={clsx('grid size-7 shrink-0 place-items-center rounded-lg', r.action === a.id ? 'bg-accent/20 text-accent' : 'bg-white/5 text-dim')}><a.icon className="size-3.5" /></span>
               <span className="min-w-0 truncate text-[13px] font-medium">{a.label}</span>
@@ -720,6 +689,35 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
       {step === 2 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-xs text-mute"><A.icon className="size-3.5 text-accent" /> {A.desc}</div>
+          {(r.action === 'allow_act' || r.action === 'allow_enter' || r.action === 'responsible') && <>
+            <WhoPicker value={{ roles: c.roles, users: c.users }} onChange={(w) => setC({ roles: w.roles, users: w.users })} empty="escolha perfis e/ou pessoas" />
+            {r.action !== 'responsible' && <p className="text-xs text-mute">Vale junto com as permissões do perfil, e o dono sempre pode. Ex.: estagiário e júnior com o mesmo perfil de permissões, mas só o estagiário mexe na Triagem e só o júnior no Desenvolvimento.</p>}
+          </>}
+          {r.action === 'approval' && <>
+            <Field label="Quantas pessoas diferentes precisam aprovar">
+              <input type="number" min={1} max={10} className="field-input w-32" value={c.approvals ?? 1} onChange={(e) => setC({ approvals: Math.min(10, Math.max(1, Number(e.target.value))) })} />
+            </Field>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-dim">Quem pode aprovar</span>
+              <WhoPicker value={{ roles: c.roles, users: c.users }} onChange={(w) => setC({ roles: w.roles, users: w.users })} empty="quem tem a permissão de aprovar" />
+            </div>
+            <Field label="Aprovada, vai para">
+              <select className="field-input" value={c.to || 'done'} onChange={(e) => setC({ to: e.target.value })}>
+                {others.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </Field>
+            <p className="rounded-lg bg-white/[0.03] px-3 py-2 text-xs text-mute">
+              Na issue aparece o botão <b className="font-medium text-dim">✓ Aprovar</b>. Cada pessoa aprova uma vez; com {c.approvals ?? 1} {(c.approvals ?? 1) > 1 ? 'aprovações diferentes' : 'aprovação'} a issue vai sozinha para {stages.find((x) => x.id === (c.to || 'done'))?.name ?? 'o destino'}, e as regras de lá disparam.
+              {(c.approvals ?? 1) > 1 && ' Ex.: com 2, o tech lead aprova (1 de 2) e a issue espera; o PO aprova (2 de 2) e ela segue.'}
+            </p>
+          </>}
+          {r.action === 'lock_fields' && <Chips options={LOCKS} value={c.fields ?? []} onChange={(fields) => setC({ fields })} />}
+          {r.action === 'require' && <Chips options={REQUIRES} value={c.requires ?? []} onChange={(requires) => setC({ requires })} />}
+          {r.action === 'wip' && (
+            <Field label="Máximo de issues ao mesmo tempo">
+              <input type="number" min={1} className="field-input w-32" value={c.wip ?? 3} onChange={(e) => setC({ wip: Math.max(1, Number(e.target.value)) })} />
+            </Field>
+          )}
           {r.action === 'notify' && <>
             {email && !email.enabled && <EmailOffAlert />}
             <Field label="Para quem">
@@ -811,7 +809,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
         </div>
       )}
 
-      {step === 3 && (
+      {step === 3 && !access && (
         <div className="space-y-4">
           <p className="text-xs text-mute">A regra só dispara se a issue atender a todos os filtros marcados. Sem filtros, vale para toda issue.</p>
           <div className="flex flex-col gap-1.5"><span className="text-xs font-medium text-dim">Prioridade é</span>
