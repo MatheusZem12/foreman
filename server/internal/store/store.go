@@ -128,6 +128,7 @@ type Issue struct {
 	UpdatedAt   time.Time  `db:"updated_at" json:"updatedAt"`
 	AllRepos    bool       `db:"all_repos" json:"allRepos"`
 	DoneAt      *time.Time `db:"done_at" json:"doneAt"`
+	Closed      string     `db:"closed" json:"closed"` // done | cancelled | vazio (aberta), pela regra "Encerrar" da etapa
 	AssigneeID  *string    `db:"assignee_id" json:"assigneeId"`
 	StageSince  time.Time  `db:"stage_entered_at" json:"stageSince"`
 	// Calculados na listagem.

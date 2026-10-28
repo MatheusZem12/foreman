@@ -74,7 +74,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 	defer func() {
 		if finished {
 			r.cleanupUnchanged(ctx, issue)
-			r.st.SetIssueStatus(ctx, issue.ID, "done")
+			r.st.Emit(ctx, store.Event{Kind: "merged", IssueID: issue.ID})
 			r.PublishIssue(ctx, issue.ID)
 		}
 	}()
@@ -146,7 +146,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 				lines = append(lines, fmt.Sprintf("- **%s** → `%s`: %s", p.w.Name, p.target, strings.Join(p.res.Files, ", ")))
 			}
 		}
-		r.st.SetIssueStatus(ctx, issue.ID, "blocked")
+		r.st.Emit(ctx, store.Event{Kind: "merge_conflict", IssueID: issue.ID})
 		r.systemComment(ctx, issue, nil, "Conflito no merge; nada foi publicado.\n"+strings.Join(lines, "\n")+
 			"\n\nUse **Resolver conflito com IA** ou resolva no worktree.")
 		r.PublishIssue(ctx, issue.ID)

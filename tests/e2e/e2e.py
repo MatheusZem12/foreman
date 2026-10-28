@@ -137,7 +137,13 @@ check(st == 200 and list(rmap(k2)) == ['api'] and not k2['allRepos'], 'trocar o 
 check(Bb('GET', '/git')[0] == 403 and C('GET', '/git')[0] == 200, 'status do git só para quem configura')
 # ---------- fluxo: direcionamento, resultado declarado, aprovação ----------
 W = ok(A('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'Cor do botão', 'description': 'PRECISA_DECISAO', 'status': 'todo', 'agentId': ag['id'], 'repoIds': [repos['api']['id']]}))['issue']
-check(ok(A('GET', f'/issues/{W["id"]}'))['issue']['status'] == 'in_progress', 'pedido novo vai direto para Em andamento')
+# o motor de regras roda em paralelo: "agente começou → Em andamento" leva um instante
+seen = set()
+for _ in range(40):
+    seen.add(ok(A('GET', f'/issues/{W["id"]}'))['issue']['status'])
+    if seen & {'in_progress', 'waiting'}: break
+    time.sleep(0.1)
+check('in_progress' in seen or 'waiting' in seen, 'pedido novo vai para Em andamento (regra "agente começou")')
 d = wait(A, W['id'], ['waiting', 'in_review', 'blocked'])
 check(d['issue']['status'] == 'waiting' and d['runs'][-1]['outcome'] == 'waiting' and d['runs'][-1]['outcomeNote'] == 'azul ou verde?', 'IA declara "aguardando" e a issue vai para Aguardando você')
 time.sleep(1.5)
@@ -145,7 +151,12 @@ coms = [c['body'] for c in ok(A('GET', f'/issues/{W["id"]}'))['comments']]
 check(any('A IA precisa de você' in c and 'azul ou verde?' in c for c in coms), 'a pergunta da IA vira comentário na issue')
 check(not any('Regra **Notificar**' in c for c in coms), 'com e-mail desligado, a regra de notificar não polui a issue')
 ok(A('POST', f'/issues/{W["id"]}/comments', {'body': 'azul', 'sendToAgent': True}))
-check(ok(A('GET', f'/issues/{W["id"]}'))['issue']['status'] == 'in_progress', 'resposta ao agente volta para Em andamento')
+seen = set()
+for _ in range(40):
+    seen.add(ok(A('GET', f'/issues/{W["id"]}'))['issue']['status'])
+    if seen & {'in_progress', 'in_review'}: break
+    time.sleep(0.1)
+check(seen & {'in_progress', 'in_review'}, 'resposta ao agente volta para Em andamento')
 d = wait(A, W['id'], ['in_review', 'waiting', 'blocked'])
 check(d['issue']['status'] == 'in_review' and d['runs'][-1]['outcome'] == 'done', 'IA declara "concluido" e vai para Em revisão')
 check(d['caps']['approve'] and d['caps']['approvals'] == 1, 'a issue diz que a pessoa pode aprovar')
@@ -186,7 +197,6 @@ ok(C('DELETE', f'/rules/{r_b["id"]}'))
 ok(C('DELETE', f'/workspaces/{ws["id"]}/stages/{qa["id"]}'))
 ok(C('DELETE', f'/workspaces/{ws["id"]}/stages/{loop["id"]}'))
 check('QA' not in [x['name'] for x in ok(A('GET', f'/workspaces/{ws["id"]}/stages'))], 'etapa personalizada pode ser removida')
-check(C('DELETE', f'/workspaces/{ws["id"]}/stages/todo')[0] == 400, 'etapa do sistema não pode ser removida')
 
 # ---------- empresa: mesmo perfil de permissões, papéis diferentes por etapa ----------
 base = ['issue.create', 'issue.edit', 'issue.move', 'issue.comment']
@@ -299,7 +309,7 @@ ria = ok(C('POST', f'/workspaces/{ws["id"]}/stages', {'name': 'Revisão por IA',
 mk_rule = lambda action, cfg: ok(C('POST', f'/workspaces/{ws["id"]}/rules', {'stage': ria['id'], 'action': action, 'config': cfg}))
 rD = mk_rule('move', {'to': 'in_review'})
 rC = mk_rule('comment', {'message': 'passo 3: depois da IA'})
-rB = mk_rule('run_agent', {'agentId': ag['id'], 'request': 'revise DEVAGAR'})
+rB = mk_rule('run_agent', {'agentId': ag['id'], 'request': 'revise DEVAGAR', 'wait': True})
 rA = mk_rule('comment', {'message': 'passo 1: chegou'})
 ordered = ok(C('PUT', f'/workspaces/{ws["id"]}/rules/order', {'ids': [rA['id'], rB['id'], rC['id'], rD['id']]}))
 seq = sorted([x for x in ordered if x['stage'] == ria['id']], key=lambda x: x['position'])
@@ -344,5 +354,30 @@ ids = [x['id'] for x in sts]
 check(next(x for x in sts if x['id'] == med['id'])['parallel'] and ids.index(med['id']) == ids.index(dif['id']) + 1, 'etapa em paralelo fica logo depois da anterior')
 ok(C('PUT', f'/workspaces/{ws2["id"]}/stages/{med["id"]}', {'name': 'Médio', 'parallel': False}))
 check(not next(x for x in ok(C('GET', f'/workspaces/{ws2["id"]}/stages')) if x['id'] == med['id'])['parallel'], 'dá para tirar a etapa do paralelo')
+# fluxo padrão: nada é fixo por etapa, tudo são regras editáveis
+ws3 = ok(own('POST', '/workspaces', {'name': 'Novo', 'key': 'NOVO'}))
+r3 = ok(own('GET', f'/workspaces/{ws3["id"]}/rules'))
+has = lambda trig, act, **cfg: any(r['trigger'] == trig and r['action'] == act and all(r['config'].get(k) == v for k, v in cfg.items()) for r in r3)
+check(has('run_started', 'move', to='in_progress') and has('run_finished', 'move', to='blocked') and has('merged', 'move', to='done')
+      and has('enter', 'run_agent') and has('access', 'close', kind='done'), 'workspace novo nasce com o fluxo padrão em regras')
+s3 = ok(own('GET', f'/workspaces/{ws3["id"]}/stages'))
+check(next(x for x in s3 if x['id'] == 'done')['policy'].get('close') == 'done', 'Concluída encerra a issue por regra, não por ser "do sistema"')
+N = ok(own('POST', f'/workspaces/{ws3["id"]}/issues', {'title': 'Sem repo', 'status': 'todo', 'agentId': ag['id']}))['issue']
+time.sleep(2)
+dn = ok(own('GET', f'/issues/{N["id"]}'))
+check(dn['issue']['status'] == 'todo' and any('não tem repositório' in c['body'] for c in dn['comments']), 'sem repositório a regra de rodar o agente avisa e a issue fica onde está')
+ok(own('PATCH', f'/issues/{N["id"]}', {'status': 'done'}))
+check(ok(own('GET', f'/issues/{N["id"]}'))['issue']['closed'] == 'done', 'entrar numa etapa com "Encerrar" conta como resolvida')
+ok(own('PUT', f'/workspaces/{ws3["id"]}/stages/backlog', {'name': 'Ideias'}))
+st_del = own('DELETE', f'/workspaces/{ws3["id"]}/stages/backlog')
+check(st_del[0] in (200, 204), f'qualquer etapa pode ser removida, inclusive as do fluxo padrão ({st_del})')
+for x in ok(own('GET', f'/workspaces/{ws3["id"]}/stages'))[1:]:
+    own('DELETE', f'/workspaces/{ws3["id"]}/stages/{x["id"]}')
+left = ok(own('GET', f'/workspaces/{ws3["id"]}/stages'))
+check(len(left) == 1 and own('DELETE', f'/workspaces/{ws3["id"]}/stages/{left[0]["id"]}')[0] == 400, 'o fluxo precisa de pelo menos uma etapa')
+check(ok(own('GET', f'/issues/{N["id"]}'))['issue']['status'] == left[0]['id'], 'issue de etapa removida vai para a primeira que sobra')
+an = ok(own('GET', f'/analytics?days=30&workspace={ws["id"]}'))
+kinds = {x['stage']: x['kind'] for x in an['stageTimes']}
+check(kinds.get('in_progress') == 'ai' and kinds.get('waiting') == 'people' and any(k['kind'] == 'ai' for k in an['kindTimes']), 'analytics classifica as etapas pelas regras: ' + str(kinds))
 print('FALHAS:', fails)
 

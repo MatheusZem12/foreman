@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -58,7 +60,7 @@ func Slugify(s string, max int) string {
 func (s *Store) ListIssues(ctx context.Context, wsID string) ([]Issue, error) {
 	// Encerradas antigas ficam de fora da listagem padrão para manter o board leve.
 	return many[Issue](ctx, s, issueSelect+` where i.workspace_id = $1
-		and (i.status not in ('done','cancelled') or i.updated_at > now() - interval '30 days')
+		and (i.closed = '' or i.updated_at > now() - interval '30 days')
 		order by i.position, i.number desc`, wsID)
 }
 
@@ -115,6 +117,7 @@ func (s *Store) CreateIssue(ctx context.Context, wsID, userID string, in NewIssu
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	s.syncClosed(ctx, id, in.Status)
 	is, err := s.Issue(ctx, id)
 	if err == nil {
 		s.DB.Exec(ctx, `insert into issue_stage_log(issue_id, workspace_id, stage) values($1, $2, $3)`, id, wsID, in.Status)
@@ -312,7 +315,7 @@ func (s *Store) SetRepoMerged(ctx context.Context, issueID, repoID, target, sha 
 func (s *Store) AddRepoToOpenIssues(ctx context.Context, repo *Repo) error {
 	_, err := s.DB.Exec(ctx, `insert into issue_repos(issue_id, repo_id, base_branch, target_branch)
 		select i.id, $1, $3, $4 from issues i
-		where i.workspace_id = $2 and i.all_repos and i.status not in ('done', 'cancelled') on conflict do nothing`,
+		where i.workspace_id = $2 and i.all_repos and i.closed = '' on conflict do nothing`,
 		repo.ID, repo.WorkspaceID, repo.DefaultBranch, repo.TargetBranch)
 	return err
 }
@@ -458,6 +461,7 @@ type PriorityPoint struct {
 type StageTime struct {
 	Stage    string  `json:"stage"`
 	Name     string  `json:"name"`
+	Kind     string  `json:"kind"` // o papel da etapa no fluxo (StageKind)
 	Passes   int64   `json:"passes"`
 	AvgHours float64 `json:"avgHours"`
 	MedHours float64 `json:"medHours"`
@@ -504,7 +508,77 @@ type Analytics struct {
 	Priorities []PriorityPoint `json:"priorities"`
 	Creators   []UserPoint     `json:"creators"`
 	StageTimes []StageTime     `json:"stageTimes"`
+	KindTimes  []KindTime      `json:"kindTimes"`
 	People     []PersonStat    `json:"people"`
+}
+
+// KindTime: tempo somado por tipo de etapa (IA, esperando pessoas…), conforme as regras.
+type KindTime struct {
+	Kind     string  `json:"kind"`
+	Hours    float64 `json:"hours"`
+	Passes   int64   `json:"passes"`
+	AvgHours float64 `json:"avgHours"`
+}
+
+// Tipos de etapa, tirados das regras de cada workspace (nada fixo por etapa):
+//   - ai: o agente trabalha ali (destino de "agente começou" ou passo "rodar agente e esperar");
+//   - people: esperando alguém responder (destino de "a IA precisa de você");
+//   - approval: tem regra de aprovação;
+//   - closed: tem regra "Encerrar a issue";
+//   - queue: o resto (fila, trabalho manual).
+func (s *Store) stageKinds(ctx context.Context, wsIDs []string) map[string]string {
+	out := map[string]string{}
+	rows, err := s.DB.Query(ctx, `select workspace_id::text, stage, trigger, action, config, conditions from rules
+		where enabled and ($1::uuid[] is null or workspace_id = any($1::uuid[]))`, wsIDs)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	rank := map[string]int{"ai": 4, "people": 3, "approval": 2, "closed": 1}
+	set := func(ws, stage, kind string) {
+		k := ws + "|" + stage
+		if rank[kind] > rank[out[k]] {
+			out[k] = kind
+		}
+	}
+	for rows.Next() {
+		var ws, stage, trigger, action string
+		var cfg struct {
+			To   string `json:"to"`
+			Wait bool   `json:"wait"`
+			Kind string `json:"kind"`
+		}
+		var cond Conditions
+		var rawCfg, rawCond []byte
+		if rows.Scan(&ws, &stage, &trigger, &action, &rawCfg, &rawCond) != nil {
+			continue
+		}
+		json.Unmarshal(rawCfg, &cfg)
+		json.Unmarshal(rawCond, &cond)
+		switch {
+		case trigger == "run_started" && action == "move":
+			set(ws, cfg.To, "ai")
+		case action == "run_agent" && cfg.Wait && stage != "":
+			set(ws, stage, "ai")
+		case trigger == "run_finished" && action == "move" && (slices.Contains(cond.Outcomes, "waiting") || slices.Contains(cond.Outcomes, "incomplete")):
+			set(ws, cfg.To, "people")
+		case trigger == "access" && action == "approval":
+			set(ws, stage, "approval")
+		case trigger == "access" && action == "close":
+			set(ws, stage, "closed")
+		}
+	}
+	return out
+}
+
+func kindKeys(kinds map[string]string, kind string) []string {
+	keys := []string{}
+	for k, v := range kinds {
+		if v == kind {
+			keys = append(keys, k)
+		}
+	}
+	return keys
 }
 
 // PersonStat: o desempenho de cada pessoa no período.
@@ -519,7 +593,7 @@ type PersonStat struct {
 	Approvals    int64   `json:"approvals"`
 	Runs         int64   `json:"runs"` // pedidos ao agente
 	CostUSD      float64 `json:"costUsd"`
-	ReplyHours   float64 `json:"replyHours"` // quanto as issues dela ficam em "Aguardando você"
+	ReplyHours   float64 `json:"replyHours"` // quanto as issues dela ficam esperando alguém (etapas "people")
 }
 
 const totalsCols = `coalesce(sum(cost_usd),0)::float8, coalesce(sum(input_tokens),0)::int8, coalesce(sum(cached_tokens),0)::int8,
@@ -532,7 +606,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	where := `where created_at >= $1 and started_at is not null and ($2::uuid[] is null or workspace_id = any($2::uuid[]))`
 	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
 	out := &Analytics{Daily: []DayPoint{}, Monthly: []MonthPoint{}, Status: []StatusCount{}, Agents: []AgentPoint{},
-		Models: []ModelPoint{}, Users: []UserPoint{}, Top: []TopIssue{}, Priorities: []PriorityPoint{}, Creators: []UserPoint{}, StageTimes: []StageTime{}, People: []PersonStat{}}
+		Models: []ModelPoint{}, Users: []UserPoint{}, Top: []TopIssue{}, Priorities: []PriorityPoint{}, Creators: []UserPoint{}, StageTimes: []StageTime{}, KindTimes: []KindTime{}, People: []PersonStat{}}
 	t := &out.Totals
 	if err := s.DB.QueryRow(ctx, `select `+totalsCols+` from runs `+where, since, wsIDs).
 		Scan(&t.CostUSD, &t.InputTokens, &t.CachedTokens, &t.OutputTokens, &t.Seconds, &t.Runs, &t.Failed); err != nil {
@@ -542,7 +616,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	if err := s.DB.QueryRow(ctx, `select
 			count(*) filter (where i.created_at >= $1),
 			count(*) filter (where i.done_at >= $1),
-			count(*) filter (where i.status not in ('done','cancelled')),
+			count(*) filter (where i.closed = ''),
 			coalesce(avg(extract(epoch from (i.done_at - i.created_at)) / 3600) filter (where i.done_at >= $1), 0)::float8
 		from issues i where `+wsOnly, since, wsIDs).Scan(&is.Created, &is.Resolved, &is.Open, &is.AvgResolveHours); err != nil {
 		return nil, err
@@ -585,7 +659,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	rows.Close()
 
 	rows, err = s.DB.Query(ctx, `select i.status, count(*) from issues i where `+wsOnly+`
-		and (i.status not in ('done','cancelled') or i.updated_at >= $1) group by 1`, since, wsIDs)
+		and (i.closed = '' or i.updated_at >= $1) group by 1`, since, wsIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -687,12 +761,14 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 	}
 	rows.Close()
 
-	// Passagens encerradas no período; o nome vem da etapa (o do sistema é igual em todos os workspaces).
-	// Etapas que já foram removidas viram uma linha só, "Etapa removida".
+	// Passagens encerradas no período, por etapa (mesmo id em vários workspaces vira uma
+	// linha). Etapas que já foram removidas viram uma linha só, "Etapa removida".
+	kinds := s.stageKinds(ctx, wsIDs)
 	rows, err = s.DB.Query(ctx, `select case when st.id is null then '' else l.stage end as k,
 		coalesce(max(st.name), 'Etapa removida'), count(*),
 		avg(extract(epoch from (l.left_at - l.entered_at)))/3600,
-		percentile_cont(0.5) within group (order by extract(epoch from (l.left_at - l.entered_at)))/3600
+		percentile_cont(0.5) within group (order by extract(epoch from (l.left_at - l.entered_at)))/3600,
+		array_agg(distinct l.workspace_id::text)
 		from issue_stage_log l left join stages st on st.workspace_id = l.workspace_id and st.id = l.stage
 		where l.left_at >= $1 and ($2::uuid[] is null or l.workspace_id = any($2::uuid[]))
 		group by k order by min(coalesce(st.position, 999))`, since, wsIDs)
@@ -701,24 +777,65 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 	}
 	for rows.Next() {
 		var p StageTime
-		rows.Scan(&p.Stage, &p.Name, &p.Passes, &p.AvgHours, &p.MedHours)
+		var wss []string
+		rows.Scan(&p.Stage, &p.Name, &p.Passes, &p.AvgHours, &p.MedHours, &wss)
+		p.Kind = "queue"
+		for _, ws := range wss {
+			if k := kinds[ws+"|"+p.Stage]; k != "" {
+				p.Kind = k
+				break
+			}
+		}
 		out.StageTimes = append(out.StageTimes, p)
 	}
 	rows.Close()
+
+	// Tempo somado por tipo de etapa.
+	rows, err = s.DB.Query(ctx, `select l.workspace_id::text || '|' || l.stage, count(*),
+		coalesce(sum(extract(epoch from (l.left_at - l.entered_at))), 0)/3600
+		from issue_stage_log l
+		where l.left_at >= $1 and ($2::uuid[] is null or l.workspace_id = any($2::uuid[])) group by 1`, since, wsIDs)
+	if err != nil {
+		return err
+	}
+	byKind := map[string]*KindTime{}
+	for rows.Next() {
+		var key string
+		var n int64
+		var h float64
+		rows.Scan(&key, &n, &h)
+		kind := kinds[key]
+		if kind == "" {
+			kind = "queue"
+		}
+		if byKind[kind] == nil {
+			byKind[kind] = &KindTime{Kind: kind}
+		}
+		byKind[kind].Passes += n
+		byKind[kind].Hours += h
+	}
+	rows.Close()
+	for _, k := range []string{"ai", "people", "approval", "queue"} {
+		if kt := byKind[k]; kt != nil {
+			kt.AvgHours = kt.Hours / float64(max(kt.Passes, 1))
+			out.KindTimes = append(out.KindTimes, *kt)
+		}
+	}
 
 	if err := s.DB.QueryRow(ctx, `select coalesce(percentile_cont(0.5) within group (order by extract(epoch from (i.done_at - i.created_at))), 0)/3600
 		from issues i where i.done_at >= $1 and `+wsOnly, since, wsIDs).Scan(&out.Issues.MedResolveHours); err != nil {
 		return err
 	}
-	return s.people(ctx, out, since, wsIDs)
+	return s.people(ctx, out, since, wsIDs, kindKeys(kinds, "people"))
 }
 
 // people: uma linha por pessoa com alguma atividade no período.
-func (s *Store) people(ctx context.Context, out *Analytics, since time.Time, wsIDs []string) error {
+// waitKeys: "workspace|etapa" das etapas em que a issue espera alguém (tempo de resposta).
+func (s *Store) people(ctx context.Context, out *Analytics, since time.Time, wsIDs []string, waitKeys []string) error {
 	w := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
 	rows, err := s.DB.Query(ctx, `select u.id::text, u.name,
 		(select count(*) from issues i where i.created_by = u.id and i.created_at >= $1 and `+w+`),
-		(select count(*) from issues i where i.assignee_id = u.id and i.status not in ('done', 'cancelled') and `+w+`),
+		(select count(*) from issues i where i.assignee_id = u.id and i.closed = '' and `+w+`),
 		(select count(*) from issues i where i.assignee_id = u.id and i.done_at >= $1 and `+w+`),
 		coalesce((select avg(extract(epoch from (i.done_at - i.created_at))) from issues i where i.assignee_id = u.id and i.done_at >= $1 and `+w+`), 0)/3600,
 		(select count(*) from comments c join issues i on i.id = c.issue_id where c.user_id = u.id and c.kind = 'comment' and c.created_at >= $1 and `+w+`),
@@ -726,8 +843,8 @@ func (s *Store) people(ctx context.Context, out *Analytics, since time.Time, wsI
 		(select count(*) from runs r join issues i on i.id = r.issue_id where r.created_by = u.id and r.created_at >= $1 and `+w+`),
 		coalesce((select sum(r.cost_usd) from runs r join issues i on i.id = r.issue_id where r.created_by = u.id and r.created_at >= $1 and `+w+`), 0)::float8,
 		coalesce((select avg(extract(epoch from (l.left_at - l.entered_at))) from issue_stage_log l join issues i on i.id = l.issue_id
-			where l.stage = 'waiting' and l.left_at >= $1 and (i.assignee_id = u.id or i.created_by = u.id) and `+w+`), 0)/3600
-		from users u order by u.name`, since, wsIDs)
+			where (l.workspace_id::text || '|' || l.stage) = any($3) and l.left_at >= $1 and (i.assignee_id = u.id or i.created_by = u.id) and `+w+`), 0)/3600
+		from users u order by u.name`, since, wsIDs, waitKeys)
 	if err != nil {
 		return err
 	}

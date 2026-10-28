@@ -74,8 +74,9 @@ func (r *Runner) Start(ctx context.Context) {
 	if err != nil {
 		log.Printf("runner: recuperar execuções: %v", err)
 	}
+	// Execução interrompida (servidor caiu) conta como falha: as regras decidem a etapa.
 	for _, id := range ids {
-		r.st.SetIssueStatus(ctx, id, "blocked")
+		r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: id, Outcome: "failed"})
 	}
 	go r.refreshModelsLoop(ctx)
 	go func() {
@@ -185,13 +186,20 @@ func (r *Runner) enqueue(ctx context.Context, issue *store.Issue, agentID, kind,
 	if kind == "followup" && strings.TrimSpace(request) == "" {
 		return nil, errors.New("descreva o ajuste")
 	}
+	// Sem repositório não há onde trabalhar: recusa já no pedido (a regra ou
+	// a tela mostram o motivo e a issue fica onde está).
+	r.st.SyncIssueRepos(ctx, issue.ID)
+	if scope, err := r.st.IssueRepos(ctx, issue.ID); err == nil && len(scope) == 0 {
+		return nil, errors.New("o workspace não tem repositório: cadastre um em Workspace e membros")
+	}
 	run, err := r.st.CreateRun(ctx, issue, agent, kind, request, userID, hold)
 	if err != nil {
 		return nil, err
 	}
-	// Todo pedido novo (issue criada, ajuste, resposta) entra em "Em andamento" na hora.
+	// Pedido ao agente (quadro, comentário, resposta, regra que não espera): as
+	// regras de "Agente começou" decidem a etapa. Passo de etapa (hold) não dispara.
 	if !hold {
-		r.st.SetIssueStatus(ctx, issue.ID, "in_progress")
+		r.st.Emit(ctx, store.Event{Kind: "run_started", IssueID: issue.ID, ActorID: userID})
 	}
 	r.publishRun(run)
 	r.PublishIssue(ctx, issue.ID)
@@ -522,9 +530,6 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		r.st.FinishRun(ctx, run.ID, store.RunResult{Status: "failed", Error: "issue não encontrada"})
 		return
 	}
-	if !run.HoldStage {
-		r.st.SetIssueStatus(ctx, issue.ID, "in_progress")
-	}
 	r.PublishIssue(ctx, issue.ID)
 
 	var works []*repoWork
@@ -538,34 +543,19 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 			r.logEvent(ctx, run, "error", res.Error)
 		}
 		final, _ := r.st.FinishRun(ctx, run.ID, res)
-		next := "blocked"
-		switch res.Status {
-		case "succeeded":
-			// A IA declara se terminou; sem declaração, vale como concluído.
-			next = "in_review"
-			if outcome.Kind == "waiting" || outcome.Kind == "incomplete" {
-				next = "waiting"
-			}
-		case "cancelled":
-			next = "backlog"
-			for _, w := range works {
-				if r.hasCommits(ctx, w) {
-					next = "in_review"
-				}
-			}
+		// O resultado vira o evento "execução terminou"; as regras do fluxo
+		// decidem para onde a issue vai. A IA declara se terminou; sem
+		// declaração, vale como concluído.
+		kind := outcome.Kind
+		switch {
+		case res.Status == "cancelled":
+			kind = "cancelled"
+		case res.Status == "failed":
+			kind = "failed"
+		case kind == "":
+			kind = "done"
 		}
-		if !run.HoldStage {
-			r.st.SetIssueStatus(ctx, issue.ID, next)
-		}
-		if res.Status != "cancelled" {
-			kind := outcome.Kind
-			if res.Status == "failed" {
-				kind = "failed"
-			} else if kind == "" {
-				kind = "done"
-			}
-			r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: issue.ID, Outcome: kind, ActorID: run.CreatedBy})
-		}
+		r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: issue.ID, Outcome: kind, ActorID: run.CreatedBy})
 		if res.Status == "failed" {
 			r.systemComment(ctx, issue, &run.ID, "A execução falhou: "+res.Error)
 		}

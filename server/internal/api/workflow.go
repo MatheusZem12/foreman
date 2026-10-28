@@ -114,14 +114,18 @@ func (a *API) saveStage(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		st.ID, st.Color, st.Position, st.System, st.Parallel = cur.ID, cur.Color, cur.Position, cur.System, cur.Parallel
+		st.ID, st.Color, st.Position, st.Parallel = cur.ID, cur.Color, cur.Position, cur.Parallel
 	}
 	if in.Parallel != nil {
 		st.Parallel = *in.Parallel
 	}
 	if st.ID == "" || in.After != "" {
 		all = slices.DeleteFunc(all, func(x store.Stage) bool { return x.ID == st.ID })
-		st.Position = positionAfter(all, firstNonEmptyStr(in.After, "in_review"))
+		after := in.After
+		if after == "" && len(all) > 0 {
+			after = all[len(all)-1].ID
+		}
+		st.Position = positionAfter(all, after)
 	}
 	return a.st.SaveStage(ctx, st)
 }
@@ -158,8 +162,8 @@ func (a *API) deleteStage(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if st.System {
-		return nil, bad("etapas do sistema não podem ser removidas (dá para renomear e reordenar)")
+	if all, _ := a.st.Stages(r.Context(), st.WorkspaceID); len(all) <= 1 {
+		return nil, bad("o fluxo precisa de pelo menos uma etapa")
 	}
 	return nil, a.st.DeleteStage(r.Context(), st)
 }
@@ -187,6 +191,7 @@ type ruleConfig struct {
 	URL     string   `json:"url"`
 	Script  string   `json:"script"`
 	OnFail  string   `json:"onFail"`
+	OnWait  string   `json:"onWaiting"`
 	AgentID string   `json:"agentId"`
 	LabelID string   `json:"labelId"`
 	Mode    string   `json:"mode"`
@@ -216,6 +221,11 @@ func (a *API) checkRule(ctx context.Context, in *store.Rule) error {
 	var cond store.Conditions
 	if len(in.Conditions) > 0 && json.Unmarshal(in.Conditions, &cond) != nil {
 		return bad("condições inválidas")
+	}
+	for _, st := range cond.Stages {
+		if !a.st.ValidStage(ctx, in.WorkspaceID, st) {
+			return bad("etapa inválida nos filtros")
+		}
 	}
 	if in.Trigger == "stale" && cond.Hours <= 0 {
 		return bad("informe depois de quantas horas parada")
@@ -275,6 +285,9 @@ func (a *API) checkRule(ctx context.Context, in *store.Rule) error {
 	if c.OnFail != "" && !a.st.ValidStage(ctx, in.WorkspaceID, c.OnFail) {
 		return bad("etapa de falha inválida")
 	}
+	if c.OnWait != "" && !a.st.ValidStage(ctx, in.WorkspaceID, c.OnWait) {
+		return bad("etapa inválida")
+	}
 	return nil
 }
 
@@ -312,6 +325,10 @@ func (a *API) checkAccess(ctx context.Context, in *store.Rule) error {
 	case "wip":
 		if c.WIP < 1 {
 			return bad("informe o limite de issues")
+		}
+	case "close":
+		if c.Kind != "done" && c.Kind != "cancelled" {
+			return bad("escolha se a issue fica concluída ou cancelada")
 		}
 	case "approval":
 		if c.Approvals < 1 || c.Approvals > 10 {
@@ -389,7 +406,7 @@ var actionNames = map[string]string{
 	"require": "requisitos", "wip": "limite de issues", "approval": "aprovação", "responsible": "responsáveis",
 	"notify": "notificar", "webhook": "webhook", "move": "mover", "run_agent": "rodar agente", "open_pr": "abrir PR", "merge": "merge",
 	"script": "script", "set_agent": "definir agente", "set_priority": "definir prioridade", "add_label": "adicionar label",
-	"assign": "definir responsável", "comment": "comentar",
+	"assign": "definir responsável", "comment": "comentar", "stop_agent": "parar o agente", "close": "encerrar a issue",
 }
 
 type warning struct {
@@ -605,7 +622,7 @@ func (a *API) approveIssue(w http.ResponseWriter, r *http.Request) (any, error) 
 		return nil, err
 	}
 	if n >= p.Approvals {
-		to := firstNonEmptyStr(p.ApproveTo, "done")
+		to := p.ApproveTo
 		if err := a.st.SetIssueStatus(store.WithActor(ctx, u.ID), is.ID, to); err != nil {
 			return nil, err
 		}
@@ -647,7 +664,7 @@ func (a *API) saveIntake(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if in.Stage == "" {
-		in.Stage = "backlog"
+		in.Stage = a.st.FirstStage(ctx, wsID)
 	}
 	if !a.st.ValidStage(ctx, wsID, in.Stage) {
 		return nil, bad("etapa inválida")

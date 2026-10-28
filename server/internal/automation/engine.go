@@ -1,8 +1,10 @@
 // Package automation roda as regras do fluxo. Gatilhos: entrar ou sair de uma
-// etapa, ficar parada nela, issue criada, comentário, execução terminada,
-// responsável ou prioridade trocados e custo acima de um valor. Cada regra
-// pode ter condições (prioridade, labels, agente, resultado, perfil de quem
-// causou) e faz uma ação. Cada ação vira um comentário de sistema na issue.
+// etapa, ficar parada nela, issue criada, comentário, agente começou ou
+// terminou, merge feito ou com conflito, responsável ou prioridade trocados e
+// custo acima de um valor. Cada regra pode ter condições (etapa atual,
+// prioridade, labels, agente, resultado, perfil de quem causou) e faz uma
+// ação. Nenhuma etapa tem comportamento embutido: até "pedido ao agente vai
+// para Em andamento" é uma regra do fluxo padrão (migração 016).
 package automation
 
 import (
@@ -56,20 +58,22 @@ func (e *Engine) Start(ctx context.Context) {
 
 // Config de cada ação (o JSON salvo em rules.config).
 type Config struct {
-	To       string   `json:"to,omitempty"`       // notify: creator|requester|assignee|responsible|team|admins|roles|users; move: etapa
-	Roles    []string `json:"roles,omitempty"`    // notify/assign: perfis
-	Users    []string `json:"users,omitempty"`    // notify/assign: usuários
-	Message  string   `json:"message,omitempty"`  // notify/webhook/comment
-	URL      string   `json:"url,omitempty"`      // webhook
-	AgentID  string   `json:"agentId,omitempty"`  // run_agent/set_agent
-	Request  string   `json:"request,omitempty"`  // run_agent
-	Base     string   `json:"base,omitempty"`     // open_pr/merge
-	Draft    bool     `json:"draft,omitempty"`    // open_pr
-	Script   string   `json:"script,omitempty"`   // script
-	OnFail   string   `json:"onFail,omitempty"`   // etapa para onde mandar se falhar
-	Priority *int     `json:"priority,omitempty"` // set_priority
-	LabelID  string   `json:"labelId,omitempty"`  // add_label
-	Mode     string   `json:"mode,omitempty"`     // assign: user|creator|requester|balance
+	To       string   `json:"to,omitempty"`        // notify: creator|requester|assignee|responsible|team|admins|roles|users; move: etapa
+	Roles    []string `json:"roles,omitempty"`     // notify/assign: perfis
+	Users    []string `json:"users,omitempty"`     // notify/assign: usuários
+	Message  string   `json:"message,omitempty"`   // notify/webhook/comment
+	URL      string   `json:"url,omitempty"`       // webhook
+	AgentID  string   `json:"agentId,omitempty"`   // run_agent/set_agent
+	Request  string   `json:"request,omitempty"`   // run_agent
+	Base     string   `json:"base,omitempty"`      // open_pr/merge
+	Draft    bool     `json:"draft,omitempty"`     // open_pr
+	Script   string   `json:"script,omitempty"`    // script
+	OnFail   string   `json:"onFail,omitempty"`    // etapa para onde mandar se falhar
+	Wait     bool     `json:"wait,omitempty"`      // run_agent: esperar terminar nesta etapa antes das próximas regras
+	OnWait   string   `json:"onWaiting,omitempty"` // run_agent com wait: se a IA precisar de alguém, mover para
+	Priority *int     `json:"priority,omitempty"`  // set_priority
+	LabelID  string   `json:"labelId,omitempty"`   // add_label
+	Mode     string   `json:"mode,omitempty"`      // assign: user|creator|requester|balance
 }
 
 const maxAutoMoves = 8 // por issue, por minuto
@@ -88,6 +92,12 @@ func (e *Engine) handle(ev store.Event) {
 			return
 		}
 		switch ev.Kind {
+		case "created":
+			// Criar numa etapa também é entrar nela.
+			e.fire(ctx, is, ev, "created", "")
+			if cur, err := e.st.Issue(ctx, is.ID); err == nil && cur.Status == is.Status {
+				e.fire(ctx, cur, store.Event{Kind: "stage", IssueID: is.ID, To: is.Status, ActorID: ev.ActorID}, "enter", is.Status)
+			}
 		case "stage":
 			if ev.From != "" {
 				e.fire(ctx, is, ev, "leave", ev.From)
@@ -162,6 +172,9 @@ func (e *Engine) fire(ctx context.Context, is *store.Issue, ev store.Event, trig
 
 // matches confere as condições da regra.
 func (e *Engine) matches(ctx context.Context, is *store.Issue, c store.Conditions, ev store.Event) bool {
+	if len(c.Stages) > 0 && !slices.Contains(c.Stages, is.Status) {
+		return false
+	}
 	if len(c.Priorities) > 0 && !slices.Contains(c.Priorities, int(is.Priority)) {
 		return false
 	}
@@ -203,7 +216,9 @@ func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r
 			e.move(ctx, is, cfg.OnFail)
 		}
 		return true
-	case msg != "":
+	case msg != "" && !(r.Action == "move" && routine[r.Trigger]):
+		// Encaminhar pelo resultado do agente ou do merge acontece em toda
+		// execução: não vira comentário (a etapa nova já mostra).
 		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Regra **%s**: %s", label, msg))
 	}
 	return false
@@ -213,18 +228,23 @@ func (e *Engine) triggerText(ctx context.Context, is *store.Issue, r store.Rule)
 	st := e.st.StageName(ctx, is.WorkspaceID, r.Stage)
 	return map[string]string{
 		"enter": "ao entrar em " + st, "leave": "ao sair de " + st, "stale": "parada em " + st,
-		"created": "issue criada", "commented": "comentário", "run_finished": "execução terminou",
+		"created": "issue criada", "commented": "comentário", "run_started": "agente começou", "run_finished": "execução terminou",
+		"merged": "merge feito", "merge_conflict": "conflito no merge",
 		"cost_over": "custo passou do limite", "assigned": "responsável definido", "priority_changed": "prioridade trocada",
 	}[r.Trigger]
 }
 
 var errSkip = errors.New("nada a fazer")
 
+// Gatilhos de rotina (toda execução passa por eles).
+var routine = map[string]bool{"run_started": true, "run_finished": true, "merged": true, "merge_conflict": true}
+
 func actionLabel(a string) string {
 	return map[string]string{
 		"notify": "Notificar", "webhook": "Webhook", "move": "Mover", "run_agent": "Rodar agente",
 		"open_pr": "Abrir PR", "merge": "Merge", "script": "Script", "set_agent": "Definir agente",
 		"set_priority": "Definir prioridade", "add_label": "Adicionar label", "assign": "Definir responsável", "comment": "Comentar",
+		"stop_agent": "Parar o agente",
 	}[a]
 }
 
@@ -243,7 +263,7 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 		to, who := e.recipients(ctx, is, cfg)
 		headline := e.headline(ref, stage, is, ev)
 		note := strings.TrimSpace(cfg.Message)
-		if is.Status == "waiting" || is.Status == "blocked" || ev.Kind == "run_finished" {
+		if ev.Kind == "run_finished" || ev.Kind == "stage" {
 			if n := e.lastOutcomeNote(ctx, is.ID); n != "" {
 				note = strings.TrimSpace(note + "\n\n" + n)
 			}
@@ -274,18 +294,33 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 		return "movida para " + e.st.StageName(ctx, is.WorkspaceID, cfg.To) + ".", nil
 
 	case "run_agent":
+		if cfg.AgentID == "" && is.AgentID == nil {
+			return "", errSkip // sem agente: fica como tarefa manual
+		}
+		if is.ActiveRun != nil {
+			return "", errSkip // já está trabalhando nela
+		}
 		kind, request := "followup", strings.TrimSpace(cfg.Request)
 		if request == "" {
 			kind = "initial"
 		}
-		// Gatilho sem etapa (issue criada, comentário…): pedido normal ao agente.
-		if !store.TriggerNeedsStage(ev.Kind) && ev.Kind != "stage" {
-			if _, err := e.run.Enqueue(ctx, is, cfg.AgentID, kind, request, nil); err != nil {
-				return "", err
-			}
-			return "pedido enviado ao agente.", nil
+		// Esperar só faz sentido numa etapa: a issue fica nela até o agente terminar.
+		if cfg.Wait && (ev.Kind == "stage" || ev.Kind == "stale") {
+			return e.agentStep(ctx, is, cfg, kind, request)
 		}
-		return e.agentStep(ctx, is, cfg, kind, request)
+		// Pedido normal: as regras de "agente começou/terminou" decidem a etapa.
+		if _, err := e.run.Enqueue(ctx, is, cfg.AgentID, kind, request, ev.ActorID); err != nil {
+			return "", err
+		}
+		return "pedido enviado ao agente.", nil
+
+	case "stop_agent":
+		run, err := e.st.ActiveRun(ctx, is.ID)
+		if err != nil {
+			return "", errSkip
+		}
+		e.run.Cancel(ctx, run.ID)
+		return "execução parada.", nil
 
 	case "set_agent":
 		if cfg.AgentID == "" || (is.AgentID != nil && *is.AgentID == cfg.AgentID) {
@@ -371,7 +406,7 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 			return "", err
 		}
 		if res.Conflict {
-			return "", errors.New("conflito; nada foi publicado. A issue foi para Bloqueada: use \"Resolver conflito com IA\"")
+			return "", errors.New("conflito; nada foi publicado: use \"Resolver conflito com IA\"")
 		}
 		var parts []string
 		for _, m := range res.Repos {
@@ -409,7 +444,13 @@ func (e *Engine) headline(ref, stage string, is *store.Issue, ev store.Event) st
 		return fmt.Sprintf("Novo comentário em %s", ref)
 	case "run_finished":
 		return fmt.Sprintf("O agente terminou %s: %s", ref, map[string]string{
-			"done": "concluído", "waiting": "aguardando você", "incomplete": "incompleto", "failed": "falhou"}[ev.Outcome])
+			"done": "concluído", "waiting": "aguardando você", "incomplete": "incompleto", "failed": "falhou", "cancelled": "cancelado"}[ev.Outcome])
+	case "run_started":
+		return fmt.Sprintf("O agente começou %s", ref)
+	case "merged":
+		return fmt.Sprintf("Merge feito em %s", ref)
+	case "merge_conflict":
+		return fmt.Sprintf("Conflito no merge de %s", ref)
 	case "stale":
 		return fmt.Sprintf("%s está parada em %s", ref, stage)
 	case "cost_over":
@@ -418,9 +459,6 @@ func (e *Engine) headline(ref, stage string, is *store.Issue, ev store.Event) st
 		return fmt.Sprintf("Você é responsável por %s", ref)
 	case "priority_changed":
 		return fmt.Sprintf("%s agora é %s", ref, priorityName[min(max(int(is.Priority), 0), 4)])
-	}
-	if is.Status == "waiting" {
-		return fmt.Sprintf("%s precisa de você", ref)
 	}
 	if ev.Kind == "stage" && ev.From == is.Status {
 		return fmt.Sprintf("%s saiu de %s", ref, stage)
@@ -433,8 +471,8 @@ var errStop = errors.New("sequência encerrada")
 
 // agentStep: passo de etapa que roda o agente e ESPERA terminar. A issue fica
 // na etapa enquanto isso. Concluído → segue para a próxima regra; aguardando
-// ou incompleto → Aguardando você (a sequência para); falha → erro da regra
-// (vai para "se falhar", ou Bloqueada).
+// ou incompleto → para a sequência (e vai para "se precisar de alguém", se
+// escolhida); falha → erro da regra (vai para "se falhar", se escolhida).
 func (e *Engine) agentStep(ctx context.Context, is *store.Issue, cfg Config, kind, request string) (string, error) {
 	run, err := e.run.EnqueueInStage(ctx, is, cfg.AgentID, kind, request)
 	if err != nil {
@@ -461,13 +499,12 @@ func (e *Engine) agentStep(ctx context.Context, is *store.Issue, cfg Config, kin
 		case "cancelled":
 			return "", errStop
 		case "failed":
-			if cfg.OnFail == "" {
-				e.move(ctx, is, "blocked")
-			}
 			return "", fmt.Errorf("o agente falhou: %s", firstNonEmpty(cur.Error, "sem detalhes"))
 		}
 		if cur.Outcome == "waiting" || cur.Outcome == "incomplete" {
-			e.move(ctx, is, "waiting")
+			if cfg.OnWait != "" && e.st.ValidStage(ctx, is.WorkspaceID, cfg.OnWait) {
+				e.move(ctx, is, cfg.OnWait)
+			}
 			return "", errStop
 		}
 		note := ""
@@ -503,19 +540,8 @@ func (e *Engine) move(ctx context.Context, is *store.Issue, to string) bool {
 	}
 	e.moves[is.ID] = append(recent, now)
 	e.mu.Unlock()
-	if to == "cancelled" || to == "backlog" {
-		if run, err := e.st.ActiveRun(ctx, is.ID); err == nil {
-			e.run.Cancel(ctx, run.ID)
-		}
-	}
 	e.st.SetIssueStatus(ctx, is.ID, to)
 	e.run.PublishIssue(ctx, is.ID)
-	// Entrar em "A fazer" com agente inicia a execução, como no quadro.
-	if to == "todo" && is.AgentID != nil {
-		if fresh, err := e.st.Issue(ctx, is.ID); err == nil && fresh.ActiveRun == nil {
-			e.run.Enqueue(ctx, fresh, "", "initial", "", nil)
-		}
-	}
 	return true
 }
 

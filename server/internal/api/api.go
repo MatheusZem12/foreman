@@ -813,10 +813,10 @@ func (a *API) createIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	if in.Title == "" {
 		return nil, bad("dê um título à issue")
 	}
-	if in.Status == "" {
-		in.Status = "backlog"
-	}
 	wsID := chi.URLParam(r, "ws")
+	if in.Status == "" {
+		in.Status = a.st.FirstStage(r.Context(), wsID)
+	}
 	if !a.st.ValidStage(r.Context(), wsID, in.Status) {
 		return nil, bad("etapa inválida")
 	}
@@ -846,15 +846,7 @@ func (a *API) createIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	a.publishIssue(is)
 	a.ntf.IssueCreated(is, u, origin(r))
-	// Criada direto em "A fazer" com agente: já entra na fila.
-	if is.Status == "todo" && is.AgentID != nil && u.Can("issue.run") {
-		if _, err := a.run.Enqueue(r.Context(), is, "", "initial", "", &u.ID); err != nil {
-			a.st.SetIssueStatus(r.Context(), is.ID, "backlog")
-			is, _ = a.st.Issue(r.Context(), is.ID)
-			a.publishIssue(is)
-			return map[string]any{"issue": is, "warning": err.Error()}, nil
-		}
-	}
+	// O que acontece ao entrar na etapa (ex.: rodar o agente) são as regras dela.
 	return map[string]any{"issue": is}, nil
 }
 
@@ -974,26 +966,8 @@ func (a *API) patchIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	a.publishIssue(is)
-
-	// Gatilhos do fluxo: mover para "A fazer" com agente inicia; cancelar para a execução.
-	var warning string
-	if is.Status != before.Status {
-		u := userOf(r)
-		switch is.Status {
-		case "todo":
-			if is.AgentID != nil && is.ActiveRun == nil && u.Can("issue.run") {
-				if _, err := a.run.Enqueue(r.Context(), is, "", "initial", "", &u.ID); err != nil {
-					warning = err.Error()
-				}
-			}
-		case "cancelled", "backlog":
-			if is.ActiveRun != nil {
-				a.run.Cancel(r.Context(), *is.ActiveRun)
-			}
-		}
-		is, _ = a.st.Issue(r.Context(), is.ID)
-	}
-	return map[string]any{"issue": is, "warning": warning}, nil
+	// Mudou de etapa: as regras dela (rodar agente, parar…) rodam pelo motor.
+	return map[string]any{"issue": is}, nil
 }
 
 func (a *API) deleteIssue(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1101,7 +1075,6 @@ func (a *API) discardIssue(w http.ResponseWriter, r *http.Request) (any, error) 
 		return nil, err
 	}
 	a.run.Discard(r.Context(), is)
-	a.st.SetIssueStatus(r.Context(), is.ID, "cancelled")
 	a.run.PublishIssue(r.Context(), is.ID)
 	return nil, nil
 }

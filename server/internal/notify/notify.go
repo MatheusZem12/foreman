@@ -141,6 +141,10 @@ func (n *Notifier) IssueCreated(is *store.Issue, author *store.User, origin stri
 			base = origin
 		}
 		ref := fmt.Sprintf("%s-%d", ws.Key, is.Number)
+		// No e-mail vai o nome da etapa como está no fluxo do workspace.
+		shown := *is
+		shown.Status = n.st.StageName(ctx, is.WorkspaceID, is.Status)
+		is := &shown
 		m := message{
 			threadID: "ws-" + ws.ID,
 			subject:  "[Multica] " + ws.Name,
@@ -227,10 +231,6 @@ type message struct {
 	html     string
 }
 
-var statusLabel = map[string]string{
-	"backlog": "Backlog", "todo": "A fazer", "in_progress": "Em andamento", "in_review": "Em revisão",
-	"blocked": "Bloqueada", "done": "Concluída", "cancelled": "Cancelada", "waiting": "Aguardando você",
-}
 var priorityLabel = []string{"Sem prioridade", "Urgente", "Alta", "Média", "Baixa"}
 
 func priority(p int16) string {
@@ -251,7 +251,7 @@ func excerpt(s string, max int) string {
 func issueText(ws *store.Workspace, is *store.Issue, ref, author, agent, base string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Nova issue em %s\n\n%s · %s\n", ws.Name, ref, is.Title)
-	fmt.Fprintf(&b, "Criada por %s · %s · %s", author, statusLabel[is.Status], priority(is.Priority))
+	fmt.Fprintf(&b, "Criada por %s · %s · %s", author, is.Status, priority(is.Priority))
 	if agent != "" {
 		fmt.Fprintf(&b, " · agente %s", agent)
 	}
@@ -275,7 +275,7 @@ func issueHTML(ws *store.Workspace, is *store.Issue, ref, author, agent, base st
 	if link != "" {
 		title = fmt.Sprintf(`<a href="%s" style="color:#5e6ad2;text-decoration:none">%s</a>`, e(link), title)
 	}
-	meta := fmt.Sprintf("Criada por %s · %s · %s", e(author), e(statusLabel[is.Status]), e(priority(is.Priority)))
+	meta := fmt.Sprintf("Criada por %s · %s · %s", e(author), e(is.Status), e(priority(is.Priority)))
 	if agent != "" {
 		meta += " · agente " + e(agent)
 	}
