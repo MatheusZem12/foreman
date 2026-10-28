@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { X, Check, Loader2 } from 'lucide-react';
@@ -131,38 +131,84 @@ export function Modal({
 
 // ---------- popover / seletor ----------
 
+// A lista abre num "portal" com posição fixa na tela: nunca fica cortada por
+// um diálogo ou painel com rolagem. Abre para cima quando não cabe embaixo e
+// acompanha a rolagem. No celular vira uma folha presa embaixo da tela.
 export function Popover({
   trigger, children, align = 'left', className, block
 }: { trigger: (open: boolean) => ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right'; className?: string; block?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const [style, setStyle] = useState<React.CSSProperties>({ top: -9999, left: -9999 });
+  const place = useCallback(() => {
+    const t = ref.current?.getBoundingClientRect();
+    const p = pop.current;
+    if (!t || !p) return;
+    if (window.innerWidth < 640) {
+      setStyle({});
+      return;
+    }
+    const vw = window.innerWidth, vh = window.innerHeight, gap = 4, margin = 8;
+    const below = vh - t.bottom - margin, above = t.top - margin;
+    const want = Math.min(p.scrollHeight, 360);
+    const up = below < want && above > below;
+    const maxHeight = Math.max(140, Math.min(up ? above : below, 360) - gap);
+    const w = p.offsetWidth;
+    let left = align === 'right' ? t.right - w : t.left;
+    left = Math.max(margin, Math.min(left, vw - w - margin));
+    setStyle({ left, maxHeight, ...(up ? { bottom: vh - t.top + gap } : { top: t.bottom + gap }) });
+  }, [align]);
+  useLayoutEffect(() => {
+    if (open) place();
+  }, [open, place]);
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      const n = e.target as Node;
+      if (!ref.current?.contains(n) && !pop.current?.contains(n)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation(); // fecha só a lista, não o diálogo por trás
+        setOpen(false);
+      }
+    };
+    const onMove = () => place();
     document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    const ro = new ResizeObserver(onMove);
+    if (pop.current) ro.observe(pop.current);
     return () => {
       document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+      ro.disconnect();
     };
+  }, [open, place]);
+  useEffect(() => {
+    if (!open) setStyle({ top: -9999, left: -9999 });
   }, [open]);
   return (
     <div ref={ref} className={clsx('relative', block ? 'flex w-full' : 'inline-flex')}>
       <div onClick={() => setOpen((o) => !o)} className={block ? 'flex w-full' : 'inline-flex'}>{trigger(open)}</div>
-      {open && (
+      {open && createPortal(
         <div
+          ref={pop}
+          style={style}
           className={clsx(
-            'z-40 min-w-[210px] animate-[pop_.12s_ease-out] rounded-xl border border-white/10 bg-panel/95 p-1 shadow-pop backdrop-blur-xl',
-            // No celular vira uma "folha" presa embaixo da tela.
-            'max-sm:fixed max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[60dvh] max-sm:overflow-y-auto',
-            'sm:absolute sm:top-full sm:mt-1 sm:max-h-80 sm:overflow-y-auto',
-            align === 'right' ? 'sm:right-0' : 'sm:left-0',
+            'z-[70] min-w-[210px] animate-[pop_.12s_ease-out] overflow-y-auto rounded-xl border border-white/10 bg-panel/95 p-1 shadow-pop backdrop-blur-xl',
+            'max-sm:fixed max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[60dvh]',
+            'sm:fixed',
             className
           )}
         >
           {children(() => setOpen(false))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
