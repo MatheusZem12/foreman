@@ -27,10 +27,11 @@ func (a *API) listStages(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 type stageInput struct {
-	Name   string             `json:"name"`
-	Color  string             `json:"color"`
-	After  string             `json:"after"` // etapa depois da qual a nova entra
-	Policy *store.StagePolicy `json:"policy"`
+	Name     string             `json:"name"`
+	Color    string             `json:"color"`
+	After    string             `json:"after"` // etapa depois da qual a nova entra
+	Policy   *store.StagePolicy `json:"policy"`
+	Parallel *bool              `json:"parallel"` // ao lado da etapa anterior
 }
 
 func positionAfter(stages []store.Stage, after string) float64 {
@@ -108,7 +109,10 @@ func (a *API) saveStage(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		st.ID, st.Position, st.System, st.Policy = cur.ID, cur.Position, cur.System, cur.Policy
+		st.ID, st.Position, st.System, st.Policy, st.Parallel = cur.ID, cur.Position, cur.System, cur.Policy, cur.Parallel
+	}
+	if in.Parallel != nil {
+		st.Parallel = *in.Parallel
 	}
 	if in.Policy != nil {
 		if err := a.checkPolicy(ctx, wsID, *in.Policy); err != nil {

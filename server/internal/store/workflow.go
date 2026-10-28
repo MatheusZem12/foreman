@@ -21,6 +21,7 @@ type Stage struct {
 	CreatedAt   time.Time   `db:"created_at" json:"-"`
 	System      bool        `db:"system" json:"system"`
 	Policy      StagePolicy `db:"policy" json:"policy"`
+	Parallel    bool        `db:"parallel" json:"parallel"` // ao lado da etapa anterior (mesma coluna no quadro)
 }
 
 // Who é um grupo de pessoas: perfis e/ou usuários. Vazio = sem restrição.
@@ -120,12 +121,12 @@ func (s *Store) ValidStage(ctx context.Context, wsID, id string) bool {
 
 func (s *Store) SaveStage(ctx context.Context, st Stage) (*Stage, error) {
 	if st.ID == "" {
-		return one[Stage](ctx, s, `insert into stages(workspace_id, id, name, color, position, policy)
-			values($1, gen_random_uuid()::text, $2, $3, $4, $5) returning *`,
-			st.WorkspaceID, st.Name, st.Color, st.Position, st.Policy)
+		return one[Stage](ctx, s, `insert into stages(workspace_id, id, name, color, position, policy, parallel)
+			values($1, gen_random_uuid()::text, $2, $3, $4, $5, $6) returning *`,
+			st.WorkspaceID, st.Name, st.Color, st.Position, st.Policy, st.Parallel)
 	}
-	return one[Stage](ctx, s, `update stages set name=$3, color=$4, position=$5, policy=$6 where workspace_id=$1 and id=$2 returning *`,
-		st.WorkspaceID, st.ID, st.Name, st.Color, st.Position, st.Policy)
+	return one[Stage](ctx, s, `update stages set name=$3, color=$4, position=$5, policy=$6, parallel=$7 where workspace_id=$1 and id=$2 returning *`,
+		st.WorkspaceID, st.ID, st.Name, st.Color, st.Position, st.Policy, st.Parallel)
 }
 
 // SetStageOrder grava a ordem das etapas (lista completa de ids).
@@ -328,8 +329,8 @@ func (s *Store) ReplaceWorkflow(ctx context.Context, wsID string, stages []Stage
 	ids := []string{}
 	for _, st := range stages {
 		ids = append(ids, st.ID)
-		if _, err := tx.Exec(ctx, `insert into stages(workspace_id, id, name, color, position, system, policy) values($1,$2,$3,$4,$5,$6,$7)`,
-			wsID, st.ID, st.Name, st.Color, st.Position, st.System, st.Policy); err != nil {
+		if _, err := tx.Exec(ctx, `insert into stages(workspace_id, id, name, color, position, system, policy, parallel) values($1,$2,$3,$4,$5,$6,$7,$8)`,
+			wsID, st.ID, st.Name, st.Color, st.Position, st.System, st.Policy, st.Parallel); err != nil {
 			return err
 		}
 	}
