@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderCog, FolderGit2, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { FolderCog, FolderGit2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Avatar, Button, Empty, Field, Modal, PageHeader, useToast } from '../components/ui';
 import { api } from '../lib/api';
-import { LABEL_COLORS } from '../lib/constants';
-import { can, useCan, useLabels, useMembers, useRepos, useUsers } from '../lib/queries';
-import type { Label, Repo } from '../lib/types';
+import { can, useCan, useMembers, useRepos, useUsers } from '../lib/queries';
+import type { Repo } from '../lib/types';
 import { t } from '../lib/i18n';
 
 export function WorkspaceSettings() {
   const { ws } = useWs();
   const { data: repos = [] } = useRepos(ws.id);
-  const { data: labels = [] } = useLabels(ws.id);
   const [editing, setEditing] = useState<Partial<Repo> | null>(null);
   const [name, setName] = useState(ws.name);
   const qc = useQueryClient();
@@ -35,7 +33,7 @@ export function WorkspaceSettings() {
     <div className="h-full overflow-y-auto">
       <div className="page space-y-8">
         <section>
-          <PageHeader icon={FolderCog} title={t('Workspace')} description={t('Nome, repositórios git, pessoas e labels deste workspace.')} />
+          <PageHeader icon={FolderCog} title={t('Workspace')} description={t('Nome, repositórios git e pessoas deste workspace.')} />
           <div className="flex items-end gap-2">
             <Field label={t('Nome')} className="flex-1"><input className="field-input" value={name} disabled={!canRename} onChange={(e) => setName(e.target.value)} onBlur={saveName} /></Field>
             <Field label={t('Chave')}><input className="field-input w-24 font-mono" value={ws.key} disabled /></Field>
@@ -80,7 +78,6 @@ export function WorkspaceSettings() {
 
         {canMembers && <MembersSection wsId={ws.id} />}
 
-        <LabelsSection wsId={ws.id} labels={labels} />
 
         {canDelWs && (
           <section className="rounded-xl border border-red-500/30 p-4">
@@ -143,35 +140,6 @@ function MembersSection({ wsId }: { wsId: string }) {
           <Button onClick={add} disabled={!pick}>{t('Vincular')}</Button>
         </div>
       )}
-    </section>
-  );
-}
-
-function LabelsSection({ wsId, labels }: { wsId: string; labels: Label[] }) {
-  const [name, setName] = useState('');
-  const qc = useQueryClient();
-  const add = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    await api.post(`/workspaces/${wsId}/labels`, { name, color: LABEL_COLORS[labels.length % LABEL_COLORS.length] });
-    setName('');
-    qc.invalidateQueries({ queryKey: ['labels', wsId] });
-  };
-  return (
-    <section>
-      <h2 className="mb-2 font-semibold">{t('Labels')}</h2>
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        {labels.map((l) => (
-          <span key={l.id} className="inline-flex items-center gap-1.5 rounded-full border border-line py-0.5 pl-2 pr-1 text-xs">
-            <span className="size-2 rounded-full" style={{ background: l.color }} /> {l.name}
-            <button onClick={async () => { await api.del(`/labels/${l.id}`); qc.invalidateQueries({ queryKey: ['labels', wsId] }); }} className="rounded-full p-0.5 text-mute hover:bg-hover hover:text-fg"><X className="size-3" /></button>
-          </span>
-        ))}
-      </div>
-      <form onSubmit={add} className="flex max-w-xs gap-2">
-        <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Nova label')} />
-        <Button type="submit">{t('Adicionar')}</Button>
-      </form>
     </section>
   );
 }

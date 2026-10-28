@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { Comment, Issue, IssueDetail, Run, RunEvent } from './types';
+import { removeIssue, upsertIssue } from './board';
 
 type Event =
   | { type: 'issue'; data: Issue }
@@ -21,15 +22,16 @@ function upsert<T extends { id: string | number }>(list: T[] | undefined, item: 
 function apply(qc: QueryClient, ws: string, ev: Event) {
   switch (ev.type) {
     case 'issue':
-      qc.setQueryData<Issue[]>(['issues', ws], (l) => upsert(l, ev.data));
+      upsertIssue(qc, ws, ev.data);
       qc.setQueryData<IssueDetail>(['issue', ev.data.id], (d) => (d ? { ...d, issue: ev.data } : d));
       break;
     case 'issue_deleted':
-      qc.setQueryData<Issue[]>(['issues', ws], (l) => l?.filter((i) => i.id !== ev.data.id));
+      removeIssue(qc, ws, ev.data.id);
       break;
     case 'run':
       qc.setQueryData<IssueDetail>(['issue', ev.data.issueId], (d) => (d ? { ...d, runs: upsert(d.runs, ev.data)! } : d));
       qc.invalidateQueries({ queryKey: ['analytics'] });
+      qc.invalidateQueries({ queryKey: ['working', ws] });
       break;
     case 'run_event':
       qc.setQueryData<RunEvent[]>(['events', ev.data.event.runId], (l) => (l ? upsert(l, ev.data.event) : l));

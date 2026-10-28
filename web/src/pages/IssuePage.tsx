@@ -15,6 +15,7 @@ import { useAgents, useCan, useUsers } from '../lib/queries';
 import type { Comment, Issue, IssueDetail, IssueRepo, RepoDiff, RepoMerge, Run, RunEvent } from '../lib/types';
 import { AgentIcon } from '../components/AgentIcon';
 import { locale, t } from '../lib/i18n';
+import { upsertIssue } from '../lib/board';
 
 type Tab = 'atividade' | 'resumo' | 'diff' | 'execucoes';
 
@@ -39,7 +40,7 @@ export function IssuePage() {
 
 function patchCache(qc: ReturnType<typeof useQueryClient>, issue: Issue) {
   qc.setQueryData<IssueDetail>(['issue', issue.id], (d) => (d ? { ...d, issue } : d));
-  qc.setQueryData<Issue[]>(['issues', issue.workspaceId], (l) => l?.map((i) => (i.id === issue.id ? issue : i)));
+  upsertIssue(qc, issue.workspaceId, issue);
 }
 
 function IssueView({ detail }: { detail: IssueDetail }) {

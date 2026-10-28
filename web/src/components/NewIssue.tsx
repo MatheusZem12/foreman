@@ -12,6 +12,7 @@ import { api } from '../lib/api';
 import { LAST_AGENT, STATUSES } from '../lib/constants';
 import type { Issue, Status } from '../lib/types';
 import { t } from '../lib/i18n';
+import { upsertIssue } from '../lib/board';
 
 function readLastAgent() {
   try {
@@ -82,7 +83,7 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus?: Stat
     setBusy(true);
     try {
       const res = await api.post<{ issue: Issue; warning?: string }>(`/workspaces/${ws.id}/issues`, form);
-      qc.setQueryData<Issue[]>(['issues', ws.id], (l) => (l && !l.some((i) => i.id === res.issue.id) ? [...l, res.issue] : l));
+      upsertIssue(qc, ws.id, res.issue);
       if (form.agentId) {
         try {
           localStorage.setItem(LAST_AGENT, form.agentId);

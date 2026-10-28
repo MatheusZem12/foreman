@@ -51,7 +51,7 @@ export interface Agent {
   id: string; name: string; avatar: string; runtime: 'claude' | 'codex'; model: string; effort: string;
   maxBudgetUsd: number | null; instructions: string; skillIds: string[]; extraArgs: string;
 }
-export interface Label { id: string; workspaceId: string; name: string; color: string }
+export interface Label { id: string; workspaceId: string; name: string; color: string; issues?: number; open?: number }
 export interface Issue {
   id: string; workspaceId: string; number: number; title: string; description: string; status: Status; priority: number;
   position: number; agentId: string | null; branch: string; allRepos: boolean; repos: IssueRepo[];

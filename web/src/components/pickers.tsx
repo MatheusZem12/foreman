@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Bot, FolderGit2, GitBranch, Plus, Tag, UserRound } from 'lucide-react';
 import { Avatar, Chip, MenuItem, Popover, PriorityIcon, StatusIcon } from './ui';
 import { LABEL_COLORS, PRIORITIES, STATUSES, statusOf } from '../lib/constants';
-import { useAgents, useBranches, useLabels, useMembers, useRepos, useStages } from '../lib/queries';
+import { useAgents, useBranches, useCan, useLabels, useMembers, useRepos, useStages } from '../lib/queries';
 import { useWs } from './Layout';
 import { api } from '../lib/api';
 import type { Label, Status } from '../lib/types';
@@ -187,6 +187,7 @@ export function LabelDots({ ids, labels }: { ids: string[]; labels: Label[] }) {
 export function LabelPicker({ ws, value, onChange, variant = 'chip' }: { ws: string; value: string[]; onChange: (ids: string[]) => void; variant?: Variant }) {
   const { data: labels = [] } = useLabels(ws);
   const qc = useQueryClient();
+  const canCreate = useCan('label.create');
   const [name, setName] = useState('');
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
   const create = async () => {
@@ -209,10 +210,10 @@ export function LabelPicker({ ws, value, onChange, variant = 'chip' }: { ws: str
     >
       {() => (
         <>
-          <form onSubmit={(e) => { e.preventDefault(); create(); }} className="mb-1 flex gap-1">
+          {canCreate && <form onSubmit={(e) => { e.preventDefault(); create(); }} className="mb-1 flex gap-1">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Nova label…')} className="field-input h-7" />
             <button type="submit" className="rounded-md px-1.5 text-mute hover:bg-hover hover:text-fg"><Plus className="size-4" /></button>
-          </form>
+          </form>}
           {labels.map((l) => (
             <MenuItem key={l.id} selected={value.includes(l.id)} onClick={() => toggle(l.id)}>
               <span className="size-2 rounded-full" style={{ background: l.color }} /> {l.name}

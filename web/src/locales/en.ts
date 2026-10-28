@@ -1,6 +1,26 @@
 // Inglês. A chave é o texto em português (o que está no código); o que
 // faltar aqui aparece em português. Gerado a partir de t('…') e revisado.
 const en: Record<string, string> = {
+  // labels e quadro paginado
+  "Apagar a label \"{0}\"? Ela sai de {1} issue(s).": "Delete the label \"{0}\"? It's removed from {1} issue(s).",
+  "Apagar a label \"{0}\"?": "Delete the label \"{0}\"?",
+  "Etiquetas para separar as issues deste workspace (ex.: bug, cliente, front). Servem de filtro no quadro e nas regras do fluxo.": "Tags to group this workspace's issues (e.g. bug, customer, front end). Use them to filter the board and in workflow rules.",
+  "Buscar label…": "Search labels…",
+  "Mais usadas": "Most used",
+  "Nenhuma label ainda": "No labels yet",
+  "Crie labels como “bug”, “cliente” ou “front” para filtrar o quadro e disparar regras (ex.: issue com a label cliente vira urgente).": "Create labels like “bug”, “customer” or “front end” to filter the board and fire rules (e.g. an issue with the customer label becomes urgent).",
+  "{0} aberta(s) · {1} no total": "{0} open · {1} total",
+  "Ver no quadro": "View on the board",
+  "Editar label": "Edit label",
+  "Ex.: bug, cliente, front": "E.g. bug, customer, front end",
+  "Prévia:": "Preview:",
+  "label": "label",
+  "Mais novas": "Newest",
+  "Mais antigas": "Oldest",
+  "{0} carregadas de {1}": "{0} loaded of {1}",
+  "Ordem desta etapa: {0}": "This stage's order: {0}",
+  "Ordem desta etapa": "This stage's order",
+  "Carregar mais ({0} de {1})": "Load more ({0} of {1})",
   // fluxo padrão em regras
   "Uma regra falhou": "A rule failed",
   "uma regra falhou": "a rule failed",

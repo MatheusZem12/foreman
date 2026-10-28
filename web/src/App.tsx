@@ -9,6 +9,7 @@ import { IssuePage } from './pages/IssuePage';
 import { SettingsPage } from './pages/Settings';
 import { WorkflowPage } from './pages/Workflow';
 import { WorkspaceSettings } from './pages/WorkspaceSettings';
+import { LabelsPage } from './pages/Labels';
 import { AgentsPage } from './pages/Agents';
 import { SkillsPage } from './pages/Skills';
 import { Landing } from './pages/Landing';
@@ -94,6 +95,7 @@ export default function App() {
               <Route path="config/:tab" element={<SettingsPage />} />
               <Route path="fluxo" element={<Need perms={[...SCREENS.fluxo]}><WorkflowPage /></Need>} />
               <Route path="workspace" element={<Need perms={[...SCREENS.workspace]}><WorkspaceSettings /></Need>} />
+              <Route path="labels" element={<Need perms={[...SCREENS.labels]}><LabelsPage /></Need>} />
               <Route path="agentes" element={<Need perms={[...SCREENS.agentes]}><AgentsPage /></Need>} />
               <Route path="skills" element={<Need perms={[...SCREENS.skills]}><SkillsPage /></Need>} />
               {/* Endereços antigos das telas gerais levam para a aba certa de Configurações gerais. */}

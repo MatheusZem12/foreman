@@ -3,13 +3,14 @@ import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from '
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  BarChart3, Bot, BookOpen, ChevronDown, CircleHelp, FolderCog, LayoutGrid, LogOut, Menu, Plus, Search, Settings, Workflow, X
+  BarChart3, Bot, BookOpen, ChevronDown, CircleHelp, FolderCog, Tags, LayoutGrid, LogOut, Menu, Plus, Search, Settings, Workflow, X
 } from 'lucide-react';
 import { Avatar, Modal, MenuItem, Popover, Spinner } from './ui';
 import { NewIssueModal } from './NewIssue';
 import { SearchModal } from './SearchModal';
 import { CreateWorkspaceForm } from '../pages/Onboarding';
-import { can, canSee, useIssues, useMe, useStages, useWorkspaces } from '../lib/queries';
+import { can, canSee, useMe, useStages, useWorkspaces } from '../lib/queries';
+import { useWorking } from '../lib/board';
 import { useRealtime } from '../lib/realtime';
 import { api } from '../lib/api';
 import { LAST_WS } from '../lib/constants';
@@ -110,8 +111,7 @@ export function Layout() {
 
 function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; workspaces: Workspace[]; onSearch: () => void; onNew: () => void; onClose: () => void }) {
   const { data: me } = useMe();
-  const { data: issues = [] } = useIssues(ws.id);
-  const working = issues.filter((i) => i.activeRun).length;
+  const working = useWorking(ws.id).data?.count ?? 0;
   const nav = useNavigate();
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -185,9 +185,10 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
         ) : null)}
         {canSee(me, 'analytics') && link(`${base}/analytics`, <BarChart3 className="size-4" />, t('Analytics'))}
 
-        {(canSee(me, 'fluxo') || canSee(me, 'workspace')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Workspace')}</div>}
+        {(canSee(me, 'fluxo') || canSee(me, 'workspace') || canSee(me, 'labels')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Workspace')}</div>}
         {canSee(me, 'fluxo') && link(`${base}/fluxo`, <Workflow className="size-4" />, t('Fluxo e automações'))}
         {canSee(me, 'workspace') && link(`${base}/workspace`, <FolderCog className="size-4" />, t('Repositórios e pessoas'))}
+        {canSee(me, 'labels') && link(`${base}/labels`, <Tags className="size-4" />, t('Labels'))}
 
         {(canSee(me, 'agentes') || canSee(me, 'skills')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('IA')}</div>}
         {canSee(me, 'agentes') && link(`${base}/agentes`, <Bot className="size-4" />, t('Agentes'))}

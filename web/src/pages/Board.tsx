@@ -1,24 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragStartEvent
 } from '@dnd-kit/core';
 import clsx from 'clsx';
-import { Columns3, List, ListFilter, Plus, Search } from 'lucide-react';
+import { ArrowUpDown, Columns3, List, ListFilter, Plus, Search } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Chip, MenuItem, Popover, PriorityIcon, Spinner, StatusIcon, useToast } from '../components/ui';
 import { LabelDots } from '../components/pickers';
 import { STATUSES, stageGroups, statusOf } from '../lib/constants';
-import { useAgents, useIssues, useLabels, useMe, useStages } from '../lib/queries';
+import { useAgents, useLabels, useMe, useStages } from '../lib/queries';
+import { PAGE_MORE, loadStage, sortIssues, upsertIssue, useBoard, type BoardFilters, type BoardSort } from '../lib/board';
 import { money, timeAgo } from '../lib/format';
 import { api } from '../lib/api';
 import type { Agent, Issue, Label, Status } from '../lib/types';
 import { AgentIcon } from '../components/AgentIcon';
 import { t } from '../lib/i18n';
-
-type Sort = 'manual' | 'priority' | 'updated';
 
 // Marca o fim de um arraste: o clique que vem logo depois não deve abrir a issue.
 let lastDragEnd = 0;
@@ -102,17 +101,44 @@ function useSideScroll(el: HTMLDivElement | null) {
   }, [el]);
 }
 
-function sortIssues(list: Issue[], sort: Sort) {
-  const copy = list.slice();
-  if (sort === 'priority') copy.sort((a, b) => (a.priority || 9) - (b.priority || 9) || a.position - b.position);
-  else if (sort === 'updated') copy.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  else copy.sort((a, b) => a.position - b.position || b.number - a.number);
-  return copy;
+const SORTS: [BoardSort, () => string][] = [
+  ['manual', () => t('Manual (arrastar)')],
+  ['newest', () => t('Mais novas')],
+  ['oldest', () => t('Mais antigas')],
+  ['updated', () => t('Atualização')],
+  ['priority', () => t('Prioridade')]
+];
+
+// Ordem de cada etapa, de cada pessoa (neste navegador). Encerradas: as mais recentes.
+function useStageSorts(wsId: string) {
+  const key = `mx.sorts.${wsId}`;
+  const [sorts, setSorts] = useState<Record<string, BoardSort>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(key) ?? '{}');
+    } catch {
+      return {};
+    }
+  });
+  const set = (stage: string, sort: BoardSort) => {
+    const next = { ...sorts, [stage]: sort };
+    setSorts(next);
+    writePref(key, JSON.stringify(next));
+  };
+  const of = (stage: string): BoardSort => sorts[stage] ?? (statusOf(stage).closes ? 'updated' : 'manual');
+  return [sorts, of, set] as const;
+}
+
+function useDebounced<T>(value: T, ms: number) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return v;
 }
 
 export function Board() {
   const { ws, openNewIssue } = useWs();
-  const { data: issues, isLoading } = useIssues(ws.id);
   const { data: agents = [] } = useAgents();
   const { data: labels = [] } = useLabels(ws.id);
   const { data: me } = useMe();
@@ -120,10 +146,40 @@ export function Board() {
   const toast = useToast();
 
   const [view, setView] = useState<View>(() => readPref('mx.view', 'board'));
-  const [sort, setSort] = useState<Sort>(() => readPref('mx.sort', 'manual'));
   const [who, setWho] = useState<'all' | 'mine' | string>('all');
-  const [labelFilter, setLabelFilter] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const [labelFilter, setLabelFilter] = useState<string | null>(() => params.get('label'));
   const [text, setText] = useState('');
+  // Filtros e busca vão para o servidor; o quadro só traz as primeiras de cada etapa.
+  const q = useDebounced(text.trim(), 300);
+  const filters: BoardFilters = { q, who, label: labelFilter ?? '' };
+  const [sorts, sortOf, setSort] = useStageSorts(ws.id);
+  const { data: board, isLoading } = useBoard(ws.id, filters, sorts);
+  const issues = board?.issues;
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const loadMore = async (stage: string) => {
+    const have = (issues ?? []).filter((i) => i.status === stage).length;
+    if (loading[stage] || have >= (board?.counts[stage] ?? 0)) return;
+    setLoading((l) => ({ ...l, [stage]: true }));
+    try {
+      await loadStage(qc, ws.id, filters, stage, sortOf(stage), have, PAGE_MORE);
+    } catch (err) {
+      toast('error', (err as Error).message);
+    } finally {
+      setLoading((l) => ({ ...l, [stage]: false }));
+    }
+  };
+  // Trocar a ordem de uma etapa recarrega só ela, com o tanto que já estava carregado.
+  const changeSort = async (stage: string, sort: BoardSort) => {
+    setSort(stage, sort);
+    const have = (issues ?? []).filter((i) => i.status === stage).length;
+    setLoading((l) => ({ ...l, [stage]: true }));
+    try {
+      await loadStage(qc, ws.id, filters, stage, sort, 0, Math.max(have, 30), true);
+    } finally {
+      setLoading((l) => ({ ...l, [stage]: false }));
+    }
+  };
   const [showCancelled, setShowCancelled] = useState(false);
   const [dragging, setDragging] = useState<Issue | null>(null);
   const [layout, saveLayout] = useBoardLayout(ws.id);
@@ -136,7 +192,7 @@ export function Board() {
       if (who === 'mine' && i.createdBy !== me?.id) return false;
       if (who !== 'all' && who !== 'mine' && i.agentId !== who) return false;
       if (labelFilter && !i.labelIds.includes(labelFilter)) return false;
-      if (tt && !`${ws.key}-${i.number} ${i.title}`.toLowerCase().includes(tt)) return false;
+      if (tt && !`${ws.key}-${i.number} ${i.title}`.toLowerCase().includes(tt) && !(q && q.toLowerCase() === tt)) return false;
       return true;
     });
   }, [issues, who, labelFilter, text, me, ws.key]);
@@ -146,25 +202,27 @@ export function Board() {
     const map = {} as Record<Status, Issue[]>;
     for (const s of STATUSES) map[s.id] = [];
     for (const i of filtered) (map[i.status] ??= []).push(i);
-    for (const s of STATUSES) map[s.id] = sortIssues(map[s.id], sort);
+    for (const s of STATUSES) map[s.id] = sortIssues(map[s.id], sortOf(s.id));
     return map;
-  }, [filtered, sort, stages]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filtered, sorts, stages]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const working = (issues ?? []).filter((i) => i.activeRun).length;
+  const working = board?.working ?? 0;
+  const colProps = (s: Status) => ({
+    status: s, issues: byStatus[s], total: board?.counts[s] ?? 0, sort: sortOf(s), loading: !!loading[s],
+    onSort: (v: BoardSort) => changeSort(s, v), onMore: () => loadMore(s), agents, labels, onAdd: () => openNewIssue(s)
+  });
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } })
   );
 
   const move = async (issue: Issue, status: Status, position: number) => {
-    const key = ['issues', ws.id];
-    const prev = qc.getQueryData<Issue[]>(key);
-    qc.setQueryData<Issue[]>(key, (l) => l?.map((i) => (i.id === issue.id ? { ...i, status, position } : i)));
+    upsertIssue(qc, ws.id, { ...issue, status, position });
     try {
       const res = await api.patch<{ issue: Issue; warning?: string }>(`/issues/${issue.id}`, { status, position });
       if (res.warning) toast('error', res.warning);
     } catch (err) {
-      qc.setQueryData(key, prev);
+      upsertIssue(qc, ws.id, issue);
       toast('error', (err as Error).message);
     }
   };
@@ -196,7 +254,7 @@ export function Board() {
     const position =
       before === undefined && after === undefined ? 0 : before === undefined ? after! - 1024 : after === undefined ? before + 1024 : (before + after) / 2;
     if (status === issue.status && position === issue.position) return;
-    if (sort !== 'manual' && status === issue.status) return; // reordenar só vale na ordem manual
+    if (sortOf(status) !== 'manual' && status === issue.status) return; // reordenar só vale na ordem manual
     move(issue, status, position);
   };
 
@@ -231,19 +289,8 @@ export function Board() {
             align="right"
             trigger={() => <Chip><ListFilter className="size-3.5" /> <span className="hidden sm:inline">{t('Exibir')}</span></Chip>}
           >
-            {(close) => (
+            {() => (
               <>
-                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Ordenar')}</div>
-                {(
-                  [
-                    ['manual', t('Manual (arrastar)')],
-                    ['priority', t('Prioridade')],
-                    ['updated', t('Atualização')]
-                  ] as [Sort, string][]
-                ).map(([id, label]) => (
-                  <MenuItem key={id} selected={sort === id} onClick={() => { setSort(id); writePref('mx.sort', id); close(); }}>{label}</MenuItem>
-                ))}
-                <div className="my-1 border-t border-line" />
                 <MenuItem selected={showCancelled} onClick={() => setShowCancelled(!showCancelled)}>{t('Mostrar canceladas')}</MenuItem>
                 <div className="my-1 border-t border-line" />
                 <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Colunas (só para você)')}</div>
@@ -271,7 +318,7 @@ export function Board() {
       {isLoading ? (
         <div className="grid flex-1 place-items-center"><Spinner /></div>
       ) : view === 'list' ? (
-        <ListView byStatus={byStatus} columns={columns} agents={agents} labels={labels} />
+        <ListView byStatus={byStatus} columns={columns} agents={agents} labels={labels} counts={board?.counts ?? {}} loading={loading} onMore={loadMore} />
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
           {layout.mode === 'grid' ? (
@@ -281,10 +328,10 @@ export function Board() {
                 style={{ '--per-row': layout.perRow } as React.CSSProperties}
               >
                 {groups.map((g) => g.length === 1
-                  ? <Column key={g[0]} status={g[0]} grid issues={byStatus[g[0]]} agents={agents} labels={labels} onAdd={() => openNewIssue(g[0])} />
+                  ? <Column key={g[0]} grid {...colProps(g[0])} />
                   : (
                     <div key={g[0]} className="flex h-[clamp(20rem,60vh,40rem)] min-w-0 flex-col gap-2">
-                      {g.map((s) => <Column key={s} status={s} stacked issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />)}
+                      {g.map((s) => <Column key={s} stacked {...colProps(s)} />)}
                     </div>
                   ))}
               </div>
@@ -292,10 +339,10 @@ export function Board() {
           ) : (
             <div ref={setScroller} className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto p-3 md:snap-none md:p-4">
               {groups.map((g) => g.length === 1
-                ? <Column key={g[0]} status={g[0]} issues={byStatus[g[0]]} agents={agents} labels={labels} onAdd={() => openNewIssue(g[0])} />
+                ? <Column key={g[0]} {...colProps(g[0])} />
                 : (
                   <div key={g[0]} className="flex w-[85vw] shrink-0 snap-center flex-col gap-2 sm:w-[19rem]">
-                    {g.map((s) => <Column key={s} status={s} stacked issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />)}
+                    {g.map((s) => <Column key={s} stacked {...colProps(s)} />)}
                   </div>
                 ))}
             </div>
@@ -347,9 +394,22 @@ function LabelFilter({ labels, value, onChange }: { labels: Label[]; value: stri
   );
 }
 
-function Column({ status, issues, agents, labels, onAdd, grid, stacked }: { status: Status; issues: Issue[]; agents: Agent[]; labels: Label[]; onAdd: () => void; grid?: boolean; stacked?: boolean }) {
+function Column({ status, issues, total, sort, loading, onSort, onMore, agents, labels, onAdd, grid, stacked }: {
+  status: Status; issues: Issue[]; total: number; sort: BoardSort; loading: boolean; onSort: (s: BoardSort) => void; onMore: () => void;
+  agents: Agent[]; labels: Label[]; onAdd: () => void; grid?: boolean; stacked?: boolean;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${status}` });
   const s = statusOf(status);
+  // Chegou perto do fim da coluna: busca a próxima página só desta etapa.
+  const sentinel = useRef<HTMLDivElement>(null);
+  const more = issues.length < total;
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || !more) return;
+    const io = new IntersectionObserver((e) => e[0].isIntersecting && onMore(), { rootMargin: '200px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [more, issues.length]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <section
       ref={setNodeRef}
@@ -363,12 +423,29 @@ function Column({ status, issues, agents, labels, onAdd, grid, stacked }: { stat
         <StatusIcon status={status} />
         <span className="font-medium">{s.label}</span>
         {s.parallel && <span className="rounded bg-white/[0.06] px-1 text-[10px] text-mute" title={t('Em paralelo com a etapa de cima')}>{t('paralela')}</span>}
-        <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute">{issues.length}</span>
-        <button onClick={onAdd} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg" title={t('Nova issue nesta coluna')}><Plus className="size-3.5" /></button>
+        <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute" title={more ? t('{0} carregadas de {1}', issues.length, total) : undefined}>{total}</span>
+        <Popover align="right" trigger={() => (
+          <button className={clsx('ml-auto rounded p-1 hover:bg-hover hover:text-fg', sort === 'manual' ? 'text-mute' : 'text-accent')} title={t('Ordem desta etapa: {0}', SORTS.find(([k]) => k === sort)![1]())}><ArrowUpDown className="size-3.5" /></button>
+        )}>
+          {(close) => (
+            <>
+              <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Ordem desta etapa')}</div>
+              {SORTS.map(([k, label]) => <MenuItem key={k} selected={sort === k} onClick={() => { onSort(k); close(); }}>{label()}</MenuItem>)}
+            </>
+          )}
+        </Popover>
+        <button onClick={onAdd} className="rounded p-1 text-mute hover:bg-hover hover:text-fg" title={t('Nova issue nesta coluna')}><Plus className="size-3.5" /></button>
       </header>
       <div data-col-body className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2.5">
         {issues.map((i) => <Card key={i.id} issue={i} agents={agents} labels={labels} />)}
         {!issues.length && <div className="mx-1 rounded-xl border border-dashed border-white/[0.07] py-8 text-center text-xs text-mute">{t('Arraste uma issue para cá')}</div>}
+        {more && (
+          <div ref={sentinel}>
+            <button onClick={onMore} disabled={loading} className="w-full rounded-lg py-2 text-xs text-mute hover:bg-white/[0.04] hover:text-fg">
+              {loading ? <Spinner /> : t('Carregar mais ({0} de {1})', issues.length, total)}
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -451,7 +528,10 @@ function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[
   );
 }
 
-function ListView({ byStatus, columns, agents, labels }: { byStatus: Record<Status, Issue[]>; columns: Status[]; agents: Agent[]; labels: Label[] }) {
+function ListView({ byStatus, columns, agents, labels, counts, loading, onMore }: {
+  byStatus: Record<Status, Issue[]>; columns: Status[]; agents: Agent[]; labels: Label[];
+  counts: Record<string, number>; loading: Record<string, boolean>; onMore: (s: string) => void;
+}) {
   const { ws } = useWs();
   return (
     <div className="flex-1 overflow-y-auto pb-20">
@@ -459,7 +539,7 @@ function ListView({ byStatus, columns, agents, labels }: { byStatus: Record<Stat
         byStatus[s].length ? (
           <div key={s}>
             <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-panel px-4 py-1.5 text-xs font-medium">
-              <StatusIcon status={s} /> {statusOf(s).label} <span className="text-mute">{byStatus[s].length}</span>
+              <StatusIcon status={s} /> {statusOf(s).label} <span className="text-mute">{counts[s] ?? byStatus[s].length}</span>
             </div>
             {byStatus[s].map((i) => {
               const agent = agents.find((a) => a.id === i.agentId);
@@ -476,6 +556,11 @@ function ListView({ byStatus, columns, agents, labels }: { byStatus: Record<Stat
                 </Link>
               );
             })}
+            {byStatus[s].length < (counts[s] ?? 0) && (
+              <button onClick={() => onMore(s)} disabled={loading[s]} className="w-full border-b border-line/50 py-2 text-xs text-mute hover:bg-hover hover:text-fg">
+                {loading[s] ? <Spinner /> : t('Carregar mais ({0} de {1})', byStatus[s].length, counts[s])}
+              </button>
+            )}
           </div>
         ) : null
       )}

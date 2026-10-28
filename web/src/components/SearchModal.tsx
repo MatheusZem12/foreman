@@ -1,25 +1,30 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { StatusIcon } from './ui';
 import { useWs } from './Layout';
-import { useIssues } from '../lib/queries';
+import { searchIssues } from '../lib/board';
+import type { Issue } from '../lib/types';
 import { t } from '../lib/i18n';
 
 export function SearchModal({ onClose }: { onClose: () => void }) {
   const { ws } = useWs();
-  const { data: issues = [] } = useIssues(ws.id);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
+  const [results, setResults] = useState<Issue[]>([]);
   const nav = useNavigate();
-  const results = useMemo(() => {
-    const tt = q.trim().toLowerCase();
-    const list = tt
-      ? issues.filter((i) => `${ws.key}-${i.number} ${i.title} ${i.description}`.toLowerCase().includes(tt))
-      : [...issues].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return list.slice(0, 30);
-  }, [q, issues, ws.key]);
+  // A busca roda no servidor (título ou número), um instante depois de parar de digitar.
+  useEffect(() => {
+    let alive = true;
+    const id = setTimeout(() => {
+      searchIssues(ws.id, q.trim()).then((r) => alive && setResults(r)).catch(() => alive && setResults([]));
+    }, q ? 200 : 0);
+    return () => {
+      alive = false;
+      clearTimeout(id);
+    };
+  }, [q, ws.id]);
   const open = (n: number) => {
     nav(`/w/${ws.key}/issues/${ws.key}-${n}`);
     onClose();

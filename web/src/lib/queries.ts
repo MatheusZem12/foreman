@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
-import type { Agent, Issue, Label, Member, ModelOption, Permission, Repo, Role, Rule, RuntimeModels, Skill, Stage, User, Workspace } from './types';
+import type { Agent, Label, Member, ModelOption, Permission, Repo, Role, Rule, RuntimeModels, Skill, Stage, User, Workspace } from './types';
 import { localizeStages, registerStages } from './constants';
 import { t } from './i18n';
 
@@ -17,7 +17,8 @@ export const useCan = (...perms: string[]) => can(useMe().data, ...perms);
 export const SCREENS = {
   analytics: ['analytics.view'],
   fluxo: ['workflow.view', 'workflow.manage'],
-  workspace: ['workspace.view', 'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete', 'label.manage'],
+  workspace: ['workspace.view', 'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete'],
+  labels: ['label.view', 'label.create', 'label.update', 'label.delete'],
   agentes: ['agent.view', 'agent.create', 'agent.update', 'agent.delete'],
   skills: ['skill.view', 'skill.create', 'skill.update', 'skill.delete'],
   usuarios: ['user.view', 'user.create', 'user.update', 'user.delete']
@@ -35,8 +36,6 @@ export const useRepos = (ws?: string) =>
   useQuery({ queryKey: ['repos', ws], queryFn: () => api.get<Repo[]>(`/workspaces/${ws}/repos`), enabled: !!ws });
 export const useLabels = (ws?: string) =>
   useQuery({ queryKey: ['labels', ws], queryFn: () => api.get<Label[]>(`/workspaces/${ws}/labels`), enabled: !!ws });
-export const useIssues = (ws?: string) =>
-  useQuery({ queryKey: ['issues', ws], queryFn: () => api.get<Issue[]>(`/workspaces/${ws}/issues`), enabled: !!ws });
 export const useBranches = (repoId?: string | null) =>
   useQuery({
     queryKey: ['branches', repoId],
