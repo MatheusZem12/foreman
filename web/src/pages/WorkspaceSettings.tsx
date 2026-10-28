@@ -7,6 +7,7 @@ import { api } from '../lib/api';
 import { LABEL_COLORS } from '../lib/constants';
 import { can, useCan, useLabels, useMembers, useRepos, useUsers } from '../lib/queries';
 import type { Label, Repo } from '../lib/types';
+import { t } from '../lib/i18n';
 
 export function WorkspaceSettings() {
   const { ws } = useWs();
@@ -27,28 +28,27 @@ export function WorkspaceSettings() {
     if (!name.trim() || name === ws.name) return;
     await api.patch(`/workspaces/${ws.id}`, { name });
     qc.invalidateQueries({ queryKey: ['workspaces'] });
-    toast('success', 'Nome salvo');
+    toast('success', t('Nome salvo'));
   };
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl space-y-8 p-4 pb-24 md:p-8">
         <section>
-          <PageHeader icon={FolderCog} title="Workspace" description="Nome, repositórios git, pessoas e labels deste workspace." />
+          <PageHeader icon={FolderCog} title={t('Workspace')} description={t('Nome, repositórios git, pessoas e labels deste workspace.')} />
           <div className="flex items-end gap-2">
-            <Field label="Nome" className="flex-1"><input className="field-input" value={name} disabled={!canRename} onChange={(e) => setName(e.target.value)} onBlur={saveName} /></Field>
-            <Field label="Chave"><input className="field-input w-24 font-mono" value={ws.key} disabled /></Field>
+            <Field label={t('Nome')} className="flex-1"><input className="field-input" value={name} disabled={!canRename} onChange={(e) => setName(e.target.value)} onBlur={saveName} /></Field>
+            <Field label={t('Chave')}><input className="field-input w-24 font-mono" value={ws.key} disabled /></Field>
           </div>
         </section>
 
         <section>
           <div className="mb-2 flex items-center">
-            <h2 className="font-semibold">Repositórios</h2>
-            {canAddRepo && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({ defaultBranch: 'main', targetBranch: '' })}><Plus className="size-3.5" /> Adicionar</Button>}
+            <h2 className="font-semibold">{t('Repositórios')}</h2>
+            {canAddRepo && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({ defaultBranch: 'main', targetBranch: '' })}><Plus className="size-3.5" /> {t('Adicionar')}</Button>}
           </div>
           <p className="mb-3 text-xs text-mute">
-            Um workspace pode ter vários repositórios (front, back, mobile…). Cada issue recebe um worktree de cada um e a IA mexe só nos que o pedido exige;
-            a <b>descrição</b> de cada repositório é o que ela usa para decidir. Só são aceitas URLs git acessíveis pelo servidor (SSH ou HTTPS com token).
+            {t('Um workspace pode ter vários repositórios (front, back, mobile…). Cada issue recebe um worktree de cada um e a IA mexe só nos que o pedido exige; a')} <b>{t('descrição')}</b> {t('de cada repositório é o que ela usa para decidir. Só são aceitas URLs git acessíveis pelo servidor (SSH ou HTTPS com token).')}
           </p>
           <div className="space-y-2">
             {repos.map((r) => (
@@ -59,14 +59,14 @@ export function WorkspaceSettings() {
                   {r.description && <div className="text-xs text-dim">{r.description}</div>}
                   <div className="truncate font-mono text-xs text-mute">{r.url.replace(/\/\/[^@/]+@/, '//***@')}</div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
-                    <span className="rounded bg-hover px-1.5 py-0.5 text-dim">desenvolve a partir de {r.defaultBranch}</span>
-                    <span className="rounded bg-hover px-1.5 py-0.5 text-dim">merge em {r.targetBranch}</span>
+                    <span className="rounded bg-hover px-1.5 py-0.5 text-dim">{t('desenvolve a partir de')} {r.defaultBranch}</span>
+                    <span className="rounded bg-hover px-1.5 py-0.5 text-dim">{t('merge em')} {r.targetBranch}</span>
                   </div>
                 </div>
                 {canEditRepo && <button onClick={() => setEditing(r)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
                 {canDelRepo && <button
                   onClick={async () => {
-                    if (!confirm(`Remover ${r.name} do workspace? As issues continuam, sem este repositório.`)) return;
+                    if (!confirm(t('Remover {0} do workspace? As issues continuam, sem este repositório.', r.name))) return;
                     await api.del(`/repos/${r.id}`);
                     qc.invalidateQueries({ queryKey: ['repos', ws.id] });
                   }}
@@ -74,7 +74,7 @@ export function WorkspaceSettings() {
                 ><Trash2 className="size-4" /></button>}
               </div>
             ))}
-            {!repos.length && <Empty className="rounded-lg border border-dashed border-line">Nenhum repositório. Adicione um para os agentes trabalharem.</Empty>}
+            {!repos.length && <Empty className="rounded-lg border border-dashed border-line">{t('Nenhum repositório. Adicione um para os agentes trabalharem.')}</Empty>}
           </div>
         </section>
 
@@ -84,14 +84,14 @@ export function WorkspaceSettings() {
 
         {canDelWs && (
           <section className="rounded-xl border border-red-500/30 p-4">
-            <h2 className="font-semibold text-red-400">Excluir workspace</h2>
-            <p className="mb-3 mt-1 text-xs text-mute">Apaga as issues, o histórico e os vínculos. Os repositórios remotos não são tocados.</p>
+            <h2 className="font-semibold text-red-400">{t('Excluir workspace')}</h2>
+            <p className="mb-3 mt-1 text-xs text-mute">{t('Apaga as issues, o histórico e os vínculos. Os repositórios remotos não são tocados.')}</p>
             <Button variant="danger" onClick={async () => {
               if (prompt(`Digite ${ws.key} para excluir o workspace "${ws.name}"`) !== ws.key) return;
               await api.del(`/workspaces/${ws.id}`);
               qc.invalidateQueries({ queryKey: ['workspaces'] });
               location.href = '/';
-            }}><Trash2 className="size-3.5" /> Excluir</Button>
+            }}><Trash2 className="size-3.5" /> {t('Excluir')}</Button>
           </section>
         )}
       </div>
@@ -117,19 +117,19 @@ function MembersSection({ wsId }: { wsId: string }) {
     await api.put(`/workspaces/${wsId}/members/${pick}`, {});
     setPick('');
     refresh();
-    toast('success', 'Pessoa vinculada ao workspace');
+    toast('success', t('Pessoa vinculada ao workspace'));
   };
   return (
     <section>
-      <h2 className="mb-1 font-semibold">Membros</h2>
-      <p className="mb-3 text-xs text-mute">Quem está vinculado vê e trabalha nas issues deste workspace. Perfis com "ver todos os workspaces" já têm acesso. Usuários novos se criam em Usuários.</p>
+      <h2 className="mb-1 font-semibold">{t('Membros')}</h2>
+      <p className="mb-3 text-xs text-mute">{t('Quem está vinculado vê e trabalha nas issues deste workspace. Perfis com "ver todos os workspaces" já têm acesso. Usuários novos se criam em Usuários.')}</p>
       <div className="mb-3 divide-y divide-line rounded-lg border border-line bg-panel">
         {members.map((m) => (
           <div key={m.id} className="flex items-center gap-3 p-2.5">
             <Avatar name={m.name} size={26} />
             <div className="min-w-0 flex-1"><div className="font-medium">{m.name}</div><div className="truncate text-xs text-mute">{m.email}</div></div>
-            {can(m, 'workspace.all') ? <span className="text-xs text-mute">{m.isOwner ? 'dono' : m.roleName} · acesso a todos</span> : (
-              <button onClick={async () => { await api.del(`/workspaces/${wsId}/members/${m.id}`); refresh(); }} className="rounded px-2 py-1 text-xs text-mute hover:bg-hover hover:text-red-400">Desvincular</button>
+            {can(m, 'workspace.all') ? <span className="text-xs text-mute">{m.isOwner ? t('dono') : m.roleName} {t('· acesso a todos')}</span> : (
+              <button onClick={async () => { await api.del(`/workspaces/${wsId}/members/${m.id}`); refresh(); }} className="rounded px-2 py-1 text-xs text-mute hover:bg-hover hover:text-red-400">{t('Desvincular')}</button>
             )}
           </div>
         ))}
@@ -137,10 +137,10 @@ function MembersSection({ wsId }: { wsId: string }) {
       {available.length > 0 && (
         <div className="flex max-w-md gap-2">
           <select className="field-input" value={pick} onChange={(e) => setPick(e.target.value)}>
-            <option value="">Vincular pessoa…</option>
+            <option value="">{t('Vincular pessoa…')}</option>
             {available.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
           </select>
-          <Button onClick={add} disabled={!pick}>Vincular</Button>
+          <Button onClick={add} disabled={!pick}>{t('Vincular')}</Button>
         </div>
       )}
     </section>
@@ -159,7 +159,7 @@ function LabelsSection({ wsId, labels }: { wsId: string; labels: Label[] }) {
   };
   return (
     <section>
-      <h2 className="mb-2 font-semibold">Labels</h2>
+      <h2 className="mb-2 font-semibold">{t('Labels')}</h2>
       <div className="mb-3 flex flex-wrap gap-1.5">
         {labels.map((l) => (
           <span key={l.id} className="inline-flex items-center gap-1.5 rounded-full border border-line py-0.5 pl-2 pr-1 text-xs">
@@ -169,8 +169,8 @@ function LabelsSection({ wsId, labels }: { wsId: string; labels: Label[] }) {
         ))}
       </div>
       <form onSubmit={add} className="flex max-w-xs gap-2">
-        <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nova label" />
-        <Button type="submit">Adicionar</Button>
+        <input className="field-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Nova label')} />
+        <Button type="submit">{t('Adicionar')}</Button>
       </form>
     </section>
   );
@@ -193,9 +193,9 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
       // O servidor já validou com git ls-remote; aqui clona e lista as branches.
       try {
         const branches = await api.get<string[]>(`/repos/${saved.id}/branches`);
-        toast('success', `Repositório ok: ${branches.length} branch(es) encontradas`);
+        toast('success', t('Repositório ok: {0} branch(es) encontradas', branches.length));
       } catch (err) {
-        toast('error', `Salvo, mas o clone falhou: ${(err as Error).message}`);
+        toast('error', t('Salvo, mas o clone falhou: {0}', (err as Error).message));
       }
       onClose();
     } catch (err) {
@@ -206,23 +206,23 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
   };
 
   return (
-    <Modal open wide onClose={onClose} title={r.id ? `Editar ${repo.name}` : 'Adicionar repositório'} footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="primary" loading={busy} onClick={save}>Salvar e testar</Button></>}>
+    <Modal open wide onClose={onClose} title={r.id ? t('Editar {0}', repo.name) : t('Adicionar repositório')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancelar')}</Button><Button variant="primary" loading={busy} onClick={save}>{t('Salvar e testar')}</Button></>}>
       <div className="space-y-4">
-        <Field label="URL do git" hint="SSH ou HTTPS; o servidor clona com as credenciais git dele">
-          <input autoFocus className="field-input font-mono text-xs" value={r.url ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder="git@github.com:org/projeto.git" />
+        <Field label={t('URL do git')} hint={t('SSH ou HTTPS; o servidor clona com as credenciais git dele')}>
+          <input autoFocus className="field-input font-mono text-xs" value={r.url ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder={t('git@github.com:org/projeto.git')} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Desenvolver a partir de" hint="cada issue cria a branch dela daqui">
-            <input className="field-input font-mono text-xs" value={r.defaultBranch ?? ''} onChange={(e) => set({ defaultBranch: e.target.value })} placeholder="dev" />
+          <Field label={t('Desenvolver a partir de')} hint={t('cada issue cria a branch dela daqui')}>
+            <input className="field-input font-mono text-xs" value={r.defaultBranch ?? ''} onChange={(e) => set({ defaultBranch: e.target.value })} placeholder={t('dev')} />
           </Field>
-          <Field label="Fazer merge em" hint="dá para trocar em cada issue">
-            <input className="field-input font-mono text-xs" value={r.targetBranch ?? ''} onChange={(e) => set({ targetBranch: e.target.value })} placeholder="igual à de cima" />
+          <Field label={t('Fazer merge em')} hint={t('dá para trocar em cada issue')}>
+            <input className="field-input font-mono text-xs" value={r.targetBranch ?? ''} onChange={(e) => set({ targetBranch: e.target.value })} placeholder={t('igual à de cima')} />
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
-          <Field label="Nome" hint="opcional"><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder="do URL" /></Field>
-          <Field label="Descrição" hint="opcional; ajuda a IA a escolher o repositório">
-            <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder="Ex.: API em Go (pedidos, pagamentos)" />
+          <Field label={t('Nome')} hint={t('opcional')}><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('do URL')} /></Field>
+          <Field label={t('Descrição')} hint={t('opcional; ajuda a IA a escolher o repositório')}>
+            <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('Ex.: API em Go (pedidos, pagamentos)')} />
           </Field>
         </div>
       </div>

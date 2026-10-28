@@ -11,6 +11,7 @@ import { useAgents, useCan, useRepos } from '../lib/queries';
 import { api } from '../lib/api';
 import { LAST_AGENT } from '../lib/constants';
 import type { Issue, Status } from '../lib/types';
+import { t } from '../lib/i18n';
 
 function readLastAgent() {
   try {
@@ -69,8 +70,8 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
           /* sem storage */
         }
       }
-      if (res.warning) toast('error', `Criada, mas não iniciou: ${res.warning}`);
-      else toast('success', `${ws.key}-${res.issue.number} criada${willStart ? ' e na fila do agente' : ''}`);
+      if (res.warning) toast('error', t('Criada, mas não iniciou: {0}', res.warning));
+      else toast('success', t('{0}-{1} criada{2}', ws.key, res.issue.number, willStart ? t(' e na fila do agente') : ''));
       if (another) {
         set({ title: '', description: '' });
         titleRef.current?.focus();
@@ -93,25 +94,25 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
         className={clsx('flex max-h-[95dvh] w-full animate-[pop_.18s_ease-out] flex-col rounded-t-2xl border border-white/10 bg-panel shadow-pop sm:rounded-2xl', big ? 'sm:h-[80vh] sm:max-w-4xl' : 'sm:max-w-2xl')}
       >
         <div className="flex items-center gap-2 px-6 pt-5 text-xs text-mute">
-          <span className="rounded-md bg-white/5 px-1.5 py-0.5 font-medium text-dim">{ws.key}</span><span>›</span><span className="text-dim">Nova issue</span>
+          <span className="rounded-md bg-white/5 px-1.5 py-0.5 font-medium text-dim">{ws.key}</span><span>›</span><span className="text-dim">{t('Nova issue')}</span>
           <button type="button" onClick={() => setBig(!big)} className="ml-auto hidden rounded p-1 hover:bg-hover sm:block">{big ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}</button>
           <button type="button" onClick={onClose} className="rounded p-1 hover:bg-hover"><X className="size-4" /></button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col px-6 pt-3">
-          <input ref={titleRef} autoFocus value={form.title} onChange={(e) => set({ title: e.target.value })} placeholder="Título da issue" className="text-xl font-semibold tracking-tight placeholder:text-mute/70" />
+          <input ref={titleRef} autoFocus value={form.title} onChange={(e) => set({ title: e.target.value })} placeholder={t('Título da issue')} className="text-xl font-semibold tracking-tight placeholder:text-mute/70" />
           <textarea
             value={form.description}
             onChange={(e) => set({ description: e.target.value })}
-            placeholder="Descrição: o que fazer, critérios de aceite, links… (markdown)"
+            placeholder={t('Descrição: o que fazer, critérios de aceite, links… (markdown)')}
             className={clsx('mt-2 flex-1 resize-none text-[14px] leading-relaxed text-dim placeholder:text-mute/70', big ? 'min-h-[40vh]' : 'min-h-[120px]')}
           />
         </div>
         <div className="px-6 pb-2.5 text-xs text-mute">
           {form.agentId
-            ? willStart ? 'Atribuída: o agente começa assim que você criar.' : 'Atribuída: só começa quando for para "A fazer".'
-            : 'Sem agente: fica como tarefa manual.'}
-          {repos.length > 1 && !form.repoIds.length && ' A IA recebe todos os repositórios e mexe só nos necessários.'}
-          {!repos.length && <span className="text-amber-400"> · {canRepos ? 'Cadastre um repositório em Workspace para o agente poder trabalhar.' : 'Este workspace ainda não tem repositório; peça ao administrador.'}</span>}
+            ? willStart ? t('Atribuída: o agente começa assim que você criar.') : t('Atribuída: só começa quando for para "A fazer".')
+            : t('Sem agente: fica como tarefa manual.')}
+          {repos.length > 1 && !form.repoIds.length && t(' A IA recebe todos os repositórios e mexe só nos necessários.')}
+          {!repos.length && <span className="text-amber-400"> · {canRepos ? t('Cadastre um repositório em Workspace para o agente poder trabalhar.') : t('Este workspace ainda não tem repositório; peça ao administrador.')}</span>}
         </div>
         <div className="flex flex-wrap gap-1.5 px-6 pb-5">
           <StatusPicker value={form.status} onChange={(status) => set({ status })} />
@@ -122,9 +123,9 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
           {may.repos && repos.length > 1 && <RepoScopePicker ws={ws.id} value={form.repoIds} onChange={(repoIds) => set({ repoIds })} />}
         </div>
         <div className="flex items-center gap-3 rounded-b-2xl border-t border-white/[0.06] bg-black/20 px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <Toggle checked={another} onChange={setAnother} label="Criar outra" />
+          <Toggle checked={another} onChange={setAnother} label={t('Criar outra')} />
           <Button variant="primary" type="submit" loading={busy} className="ml-auto">
-            Criar issue <kbd className="hidden rounded-md bg-white/15 px-1.5 py-px font-sans text-[10px] font-medium sm:inline">Ctrl ↵</kbd>
+            {t('Criar issue')} <kbd className="hidden rounded-md bg-white/15 px-1.5 py-px font-sans text-[10px] font-medium sm:inline">{t('Ctrl ↵')}</kbd>
           </Button>
         </div>
       </form>

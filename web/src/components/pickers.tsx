@@ -8,6 +8,7 @@ import { useWs } from './Layout';
 import { api } from '../lib/api';
 import type { Label, Status } from '../lib/types';
 import { AgentIcon } from './AgentIcon';
+import { t } from '../lib/i18n';
 
 type Variant = 'chip' | 'row';
 
@@ -58,17 +59,17 @@ export function AssigneePicker({ ws, value, onChange, variant = 'chip' }: { ws: 
       trigger={() => (
         <Trigger variant={variant}>
           {current ? <Avatar name={current.name} /> : <UserRound className="size-3.5 text-mute" />}
-          <span className="truncate">{current ? current.name : 'Sem responsável'}</span>
+          <span className="truncate">{current ? current.name : t('Sem responsável')}</span>
         </Trigger>
       )}
     >
       {(close) => (
         <>
-          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><UserRound className="size-3.5 text-mute" /> Sem responsável</MenuItem>
+          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><UserRound className="size-3.5 text-mute" /> {t('Sem responsável')}</MenuItem>
           {members.map((m) => (
             <MenuItem key={m.id} selected={m.id === value} onClick={() => { onChange(m.id); close(); }}>
               <Avatar name={m.name} /> <span className="truncate">{m.name}</span>
-              <span className="ml-auto pl-2 text-xs text-mute">{m.isOwner ? 'dono' : m.roleName}</span>
+              <span className="ml-auto pl-2 text-xs text-mute">{m.isOwner ? t('dono') : m.roleName}</span>
             </MenuItem>
           ))}
         </>
@@ -85,20 +86,20 @@ export function AgentPicker({ value, onChange, variant = 'chip', allowNone = tru
       trigger={() => (
         <Trigger variant={variant}>
           {current ? <AgentIcon avatar={current.avatar} /> : <Bot className="size-3.5 text-mute" />}
-          <span className="truncate">{current ? current.name : 'Sem agente'}</span>
+          <span className="truncate">{current ? current.name : t('Sem agente')}</span>
         </Trigger>
       )}
     >
       {(close) => (
         <>
-          {allowNone && <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><Bot className="size-3.5 text-mute" /> Sem agente</MenuItem>}
+          {allowNone && <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><Bot className="size-3.5 text-mute" /> {t('Sem agente')}</MenuItem>}
           {agents.map((a) => (
             <MenuItem key={a.id} selected={a.id === value} onClick={() => { onChange(a.id); close(); }}>
               <AgentIcon avatar={a.avatar} /> <span className="truncate">{a.name}</span>
               <span className="ml-auto pl-2 text-xs text-mute">{a.model || a.runtime}</span>
             </MenuItem>
           ))}
-          {!agents.length && <div className="px-2 py-1.5 text-mute">Crie agentes em Ajustes.</div>}
+          {!agents.length && <div className="px-2 py-1.5 text-mute">{t('Crie agentes em Ajustes.')}</div>}
         </>
       )}
     </Popover>
@@ -115,14 +116,14 @@ export function RepoScopePicker({ ws, value, onChange, variant = 'chip' }: { ws:
       trigger={() => (
         <Trigger variant={variant}>
           <FolderGit2 className="size-3.5 text-mute" />
-          <span className="truncate">{names.length ? names.join(', ') : repos.length > 1 ? 'Todos os repositórios' : repos[0]?.name ?? 'Repositório'}</span>
+          <span className="truncate">{names.length ? names.join(', ') : repos.length > 1 ? t('Todos os repositórios') : repos[0]?.name ?? t('Repositório')}</span>
         </Trigger>
       )}
     >
       {() => (
         <>
           <MenuItem selected={!value.length} onClick={() => onChange([])}>
-            <FolderGit2 className="size-3.5 text-mute" /> <span>Todos <span className="text-xs text-mute">· a IA escolhe</span></span>
+            <FolderGit2 className="size-3.5 text-mute" /> <span>{t('Todos')} <span className="text-xs text-mute">{t('· a IA escolhe')}</span></span>
           </MenuItem>
           {repos.length > 0 && <div className="my-1 border-t border-line" />}
           {repos.map((r) => (
@@ -131,7 +132,7 @@ export function RepoScopePicker({ ws, value, onChange, variant = 'chip' }: { ws:
               <span className="min-w-0"><span className="block truncate">{r.name}</span>{r.description && <span className="block truncate text-xs text-mute">{r.description}</span>}</span>
             </MenuItem>
           ))}
-          {!repos.length && <div className="px-2 py-1.5 text-mute">Cadastre repositórios em Workspace.</div>}
+          {!repos.length && <div className="px-2 py-1.5 text-mute">{t('Cadastre repositórios em Workspace.')}</div>}
         </>
       )}
     </Popover>
@@ -139,7 +140,7 @@ export function RepoScopePicker({ ws, value, onChange, variant = 'chip' }: { ws:
 }
 
 export function BranchPicker({
-  repoId, value, onChange, variant = 'chip', placeholder = 'Branch'
+  repoId, value, onChange, variant = 'chip', placeholder = t('Branch')
 }: { repoId: string | null; value: string; onChange: (b: string) => void; variant?: Variant; placeholder?: string }) {
   const { data: branches, isLoading, error } = useBranches(repoId);
   const [filter, setFilter] = useState('');
@@ -155,8 +156,8 @@ export function BranchPicker({
     >
       {(close) => (
         <>
-          <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrar…" className="field-input mb-1 h-7" />
-          {isLoading && <div className="px-2 py-1.5 text-mute">Carregando branches…</div>}
+          <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('Filtrar…')} className="field-input mb-1 h-7" />
+          {isLoading && <div className="px-2 py-1.5 text-mute">{t('Carregando branches…')}</div>}
           {error && <div className="px-2 py-1.5 text-red-400">{(error as Error).message}</div>}
           {list.slice(0, 60).map((b) => (
             <MenuItem key={b} selected={b === value} onClick={() => { onChange(b); close(); }}>
@@ -202,14 +203,14 @@ export function LabelPicker({ ws, value, onChange, variant = 'chip' }: { ws: str
       trigger={() => (
         <Trigger variant={variant}>
           <Tag className="size-3.5 text-mute" />
-          <span className="truncate">{selected.length ? selected.map((l) => l.name).join(', ') : 'Labels'}</span>
+          <span className="truncate">{selected.length ? selected.map((l) => l.name).join(', ') : t('Labels')}</span>
         </Trigger>
       )}
     >
       {() => (
         <>
           <form onSubmit={(e) => { e.preventDefault(); create(); }} className="mb-1 flex gap-1">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nova label…" className="field-input h-7" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Nova label…')} className="field-input h-7" />
             <button type="submit" className="rounded-md px-1.5 text-mute hover:bg-hover hover:text-fg"><Plus className="size-4" /></button>
           </form>
           {labels.map((l) => (

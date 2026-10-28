@@ -15,6 +15,7 @@ import { Landing } from './pages/Landing';
 import { Onboarding } from './pages/Onboarding';
 import { SCREENS, can, useMe, useWorkspaces } from './lib/queries';
 import { LAST_WS } from './lib/constants';
+import { t } from './lib/i18n';
 
 // Analytics carrega os gráficos (Recharts) só quando a tela é aberta.
 const AnalyticsPage = lazy(() => import('./pages/Analytics').then((m) => ({ default: m.AnalyticsPage })));
@@ -45,9 +46,9 @@ function NoWorkspace() {
     <div className="grid min-h-full place-items-center p-4">
       <div className="max-w-sm space-y-3 rounded-xl border border-line bg-panel p-6 text-center">
         <img src="/icon.svg" className="mx-auto size-8" alt="" />
-        <p className="font-medium">Olá, {me?.name}!</p>
-        <p className="text-dim">Você ainda não foi adicionado a nenhum workspace. Peça ao administrador para vincular você.</p>
-        <button onClick={async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; }} className="text-xs text-mute hover:text-fg">Sair</button>
+        <p className="font-medium">{t('Olá,')} {me?.name}!</p>
+        <p className="text-dim">{t('Você ainda não foi adicionado a nenhum workspace. Peça ao administrador para vincular você.')}</p>
+        <button onClick={async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; }} className="text-xs text-mute hover:text-fg">{t('Sair')}</button>
       </div>
     </div>
   );
@@ -96,11 +97,11 @@ export default function App() {
               <Route path="agentes" element={<Need perms={[...SCREENS.agentes]}><AgentsPage /></Need>} />
               <Route path="skills" element={<Need perms={[...SCREENS.skills]}><SkillsPage /></Need>} />
               {/* Endereços antigos das telas gerais levam para a aba certa de Configurações gerais. */}
-              {['usuarios', 'permissoes', 'servidor', 'conta'].map((t) => (
-                <Route key={t} path={t} element={<Navigate to={`../config/${t}`} replace />} />
+              {['usuarios', 'permissoes', 'servidor', 'conta'].map((tt) => (
+                <Route key={tt} path={tt} element={<Navigate to={`../config/${tt}`} replace />} />
               ))}
-              {['config/fluxo', 'config/workspace', 'config/agentes', 'config/skills'].map((t) => (
-                <Route key={t} path={t} element={<Navigate to={`../${t.slice(7)}`} replace />} />
+              {['config/fluxo', 'config/workspace', 'config/agentes', 'config/skills'].map((tt) => (
+                <Route key={tt} path={tt} element={<Navigate to={`../${tt.slice(7)}`} replace />} />
               ))}
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

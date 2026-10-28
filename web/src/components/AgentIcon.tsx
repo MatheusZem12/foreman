@@ -42,7 +42,7 @@ export function AgentIcon({ avatar, size = 18, className }: { avatar?: string; s
   const [from, to] = AGENT_COLORS[color];
   return (
     <span
-      className={clsx('inline-grid shrink-0 place-items-center text-white', className)}
+      className={clsx('inline-grid shrink-0 place-items-center text-snow', className)}
       style={{
         width: size, height: size,
         borderRadius: Math.max(4, size * 0.3),

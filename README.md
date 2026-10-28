@@ -108,6 +108,12 @@ Quando alguém cria uma issue, todo mundo do workspace recebe um e-mail.
 - **Ligar e desligar:** começa desligado, e desligado ninguém recebe. Quando o admin liga, passa a avisar todos que não desligaram no próprio perfil.
 - **Gmail:** use uma [senha de app](https://myaccount.google.com/apppasswords).
 
+## Idioma e tema
+
+- **Português (Brasil) e inglês.** Na primeira visita vale o idioma do navegador. Dá para trocar no rodapé do menu, no login, na página inicial ou em *Minha conta → Aparência e idioma*. As mensagens de erro do servidor seguem o idioma da tela (o front manda `X-Lang`).
+- **Tema claro, escuro ou do sistema**, nos mesmos lugares. Fica guardado no navegador e é aplicado antes de a página carregar, sem piscar.
+- **Para traduzir um texto novo:** no front, use `t('texto em português')`, com `{0}`, `{1}` para valores, e coloque a tradução em `web/src/locales/en.ts`. No servidor, use `bad(...)` ou `forbidden(...)` e coloque a tradução em `server/internal/api/i18n.go`. O que não tiver tradução aparece em português.
+
 ## Stack
 
 - **Go**: servidor HTTP, fila de execuções no Postgres (`FOR UPDATE SKIP LOCKED`, sobrevive a reinícios), processos dos agentes em grupo próprio (cancelamento mata a árvore inteira), git via binário do sistema. Tudo vira um binário único, com o front embutido.

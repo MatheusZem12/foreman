@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { StatusIcon } from './ui';
 import { useWs } from './Layout';
 import { useIssues } from '../lib/queries';
+import { t } from '../lib/i18n';
 
 export function SearchModal({ onClose }: { onClose: () => void }) {
   const { ws } = useWs();
@@ -13,9 +14,9 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
   const [sel, setSel] = useState(0);
   const nav = useNavigate();
   const results = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    const list = t
-      ? issues.filter((i) => `${ws.key}-${i.number} ${i.title} ${i.description}`.toLowerCase().includes(t))
+    const tt = q.trim().toLowerCase();
+    const list = tt
+      ? issues.filter((i) => `${ws.key}-${i.number} ${i.title} ${i.description}`.toLowerCase().includes(tt))
       : [...issues].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return list.slice(0, 30);
   }, [q, issues, ws.key]);
@@ -38,7 +39,7 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
               if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
               if (e.key === 'Enter' && results[sel]) open(results[sel].number);
             }}
-            placeholder="Buscar issues…"
+            placeholder={t('Buscar issues…')}
             className="h-11 flex-1"
           />
         </div>
@@ -55,7 +56,7 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
               <span className="truncate">{i.title}</span>
             </button>
           ))}
-          {!results.length && <div className="p-6 text-center text-mute">Nada encontrado.</div>}
+          {!results.length && <div className="p-6 text-center text-mute">{t('Nada encontrado.')}</div>}
         </div>
       </div>
     </div>,

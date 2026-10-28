@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import type { Agent, Issue, Label, Member, ModelOption, Permission, Repo, Role, Rule, RuntimeModels, Skill, Stage, User, Workspace } from './types';
-import { registerStages } from './constants';
+import { localizeStages, registerStages } from './constants';
+import { t } from './i18n';
 
 // retryOnMount: false — sem login, /me dá 401; outro componente que monte não
 // pode refazer a consulta (o "carregando" de novo desmontava a tela num loop).
@@ -53,9 +54,9 @@ export function modelStatus(catalog: RuntimeModels[] | undefined, runtime: strin
   const rt = catalog?.find((c) => c.runtime === runtime);
   if (!rt?.installed || !rt.models.length) return {};
   const option = rt.models.find((m) => m.id === model);
-  if (model && !option && !(runtime === 'claude' && model.startsWith('claude-'))) return { warning: `"${model}" não está no catálogo do ${runtime === 'claude' ? 'Claude Code' : 'Codex'}` };
+  if (model && !option && !(runtime === 'claude' && model.startsWith('claude-'))) return { warning: t('"{0}" não está no catálogo do {1}', model, runtime === 'claude' ? t('Claude Code') : t('Codex')) };
   const efforts = option?.efforts ?? rt.efforts;
-  if (effort && efforts.length && !efforts.includes(effort)) return { option, warning: `esforço "${effort}" não é aceito por este modelo` };
+  if (effort && efforts.length && !efforts.includes(effort)) return { option, warning: t('esforço "{0}" não é aceito por este modelo', effort) };
   return { option };
 }
 
@@ -63,7 +64,7 @@ export function modelStatus(catalog: RuntimeModels[] | undefined, runtime: strin
 export const useStages = (wsId: string) => useQuery({
   queryKey: ['stages', wsId],
   queryFn: async () => {
-    const list = await api.get<Stage[]>(`/workspaces/${wsId}/stages`);
+    const list = localizeStages(await api.get<Stage[]>(`/workspaces/${wsId}/stages`));
     registerStages(list);
     return list;
   },

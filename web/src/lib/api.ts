@@ -1,3 +1,5 @@
+import { lang } from './i18n';
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -8,7 +10,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   const res = await fetch(`/api${url}`, {
     method,
     credentials: 'same-origin',
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    // X-Lang: o servidor responde as mensagens de erro no idioma da pessoa.
+    headers: { 'X-Lang': lang, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined
   });
   if (res.status === 204) return undefined as T;

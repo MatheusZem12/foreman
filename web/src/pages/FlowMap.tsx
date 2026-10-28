@@ -4,6 +4,7 @@ import { Lock, Sparkles, UserCheck, Zap } from 'lucide-react';
 import { StatusIcon, Toggle } from '../components/ui';
 import { PRIORITIES, stageGroups } from '../lib/constants';
 import type { Rule, Stage } from '../lib/types';
+import { t } from '../lib/i18n';
 
 // Mapa do fluxo em grade, de cima para baixo. As etapas ficam numa coluna
 // central na ordem do quadro (paralelas lado a lado na mesma linha). Seta entre
@@ -20,27 +21,27 @@ type Face = 'L' | 'R' | 'T' | 'B';
 
 const NODE_W = 180, NODE_H = 52, START_W = 124, START_H = 34;
 const COL_GAP = 28, ROW_GAP = 64, LANE_PAD = 36, LANE_GAP = 26, PILL_H = 20, MARGIN = 20;
-const COLORS: Record<Kind, string> = { seq: 'rgb(255 255 255 / 0.22)', rule: '#9d8cff', approve: '#34d399', system: '#e0a43a' };
+const COLORS: Record<Kind, string> = { seq: 'rgb(var(--ink) / 0.22)', rule: '#9d8cff', approve: '#34d399', system: '#e0a43a' };
 const START = '__start';
 
 const SYSTEM_EDGES: Edge[] = [
-  { from: 'todo', to: 'in_progress', kind: 'system', label: 'agente começa' },
-  { from: 'in_progress', to: 'in_review', kind: 'system', label: 'IA concluiu' },
-  { from: 'in_progress', to: 'waiting', kind: 'system', label: 'IA precisa de você' },
-  { from: 'in_progress', to: 'blocked', kind: 'system', label: 'falhou' },
-  { from: 'waiting', to: 'in_progress', kind: 'system', label: 'você respondeu' }
+  { from: 'todo', to: 'in_progress', kind: 'system', label: t('agente começa') },
+  { from: 'in_progress', to: 'in_review', kind: 'system', label: t('IA concluiu') },
+  { from: 'in_progress', to: 'waiting', kind: 'system', label: t('IA precisa de você') },
+  { from: 'in_progress', to: 'blocked', kind: 'system', label: t('falhou') },
+  { from: 'waiting', to: 'in_progress', kind: 'system', label: t('você respondeu') }
 ];
 
 function condLabel(r: Rule) {
   const c = r.conditions ?? {};
   const parts: string[] = [];
-  if (r.trigger === 'leave') parts.push('ao sair');
-  if (r.trigger === 'stale') parts.push(`parada ${c.hours ?? '?'}h`);
+  if (r.trigger === 'leave') parts.push(t('ao sair'));
+  if (r.trigger === 'stale') parts.push(t('parada {0}h', c.hours ?? '?'));
   if (c.priorities?.length) parts.push(c.priorities.map((p) => PRIORITIES.find((x) => x.id === p)?.label).join('/'));
-  if (c.labels?.length) parts.push(`${c.labels.length} label(s)`);
-  if (c.agents?.length) parts.push('por agente');
-  if (c.actorRoles?.length) parts.push('por perfil');
-  return parts.join(' · ') || r.name || 'sempre';
+  if (c.labels?.length) parts.push(t('{0} label(s)', c.labels.length));
+  if (c.agents?.length) parts.push(t('por agente'));
+  if (c.actorRoles?.length) parts.push(t('por perfil'));
+  return parts.join(' · ') || r.name || t('sempre');
 }
 
 const pillW = (text: string) => text.length * 6.1 + 18;
@@ -71,13 +72,13 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
     for (const r of rules) {
       if (!r.enabled || r.action !== 'move' || !r.config?.to || !ids.has(r.config.to)) continue;
       if (['enter', 'leave', 'stale'].includes(r.trigger) && ids.has(r.stage)) edges.push({ from: r.stage, to: r.config.to, kind: 'rule', label: condLabel(r) });
-      else if (r.trigger === 'created') edges.push({ from: START, to: r.config.to, kind: 'rule', label: condLabel(r) === 'sempre' ? 'issue criada' : condLabel(r) });
+      else if (r.trigger === 'created') edges.push({ from: START, to: r.config.to, kind: 'rule', label: condLabel(r) === t('sempre') ? t('issue criada') : condLabel(r) });
       else loose.push(r);
     }
     for (const s of stages) {
       const p = s.policy;
       if (p?.approvals && ids.has(p.approveTo || 'done')) {
-        edges.push({ from: s.id, to: p.approveTo || 'done', kind: 'approve', label: `✓ ${p.approvals} aprovação${p.approvals > 1 ? 'ões' : ''}` });
+        edges.push({ from: s.id, to: p.approveTo || 'done', kind: 'approve', label: p.approvals > 1 ? t('✓ {0} aprovações', p.approvals) : t('✓ {0} aprovação', p.approvals) });
       }
     }
     if (system) edges.push(...SYSTEM_EDGES.filter((e) => ids.has(e.from) && ids.has(e.to)));
@@ -120,10 +121,10 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       if (b.row === a.row + 1 && !used.has(key)) {
         // Vizinhos: desce reto (ou em "garfo" quando há paralelas).
         used.add(key);
-        const s = { x: cx(a), y: a.y + a.h }, t = { x: cx(b), y: b.y }, mid = s.y + ROW_GAP / 2;
-        const pts = s.x === t.x ? [s, t] : [s, { x: s.x, y: mid }, { x: t.x, y: mid }, t];
-        const up = { x: s.x, y1: s.y, y2: mid }, down = { x: t.x, y1: mid, y2: t.y };
-        out.push({ e, pts, segs: s.x === t.x ? [{ x: s.x, y1: s.y, y2: t.y }] : b.n > 1 ? [down, up] : [up, down] });
+        const s = { x: cx(a), y: a.y + a.h }, tt = { x: cx(b), y: b.y }, mid = s.y + ROW_GAP / 2;
+        const pts = s.x === tt.x ? [s, tt] : [s, { x: s.x, y: mid }, { x: tt.x, y: mid }, tt];
+        const up = { x: s.x, y1: s.y, y2: mid }, down = { x: tt.x, y1: mid, y2: tt.y };
+        out.push({ e, pts, segs: s.x === tt.x ? [{ x: s.x, y1: s.y, y2: tt.y }] : b.n > 1 ? [down, up] : [up, down] });
       } else {
         const side = b.row > a.row || b.row === a.row ? 'R' : 'L';
         lanes.push({ e, a, b, side, lo: Math.min(a.row, b.row), hi: Math.max(a.row, b.row), k: 0 });
@@ -136,7 +137,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       const taken: { lo: number; hi: number; k: number }[] = [];
       for (const l of lanes.filter((x) => x.side === side).sort((p, q) => p.hi - p.lo - (q.hi - q.lo) || p.lo - q.lo)) {
         let k = 0;
-        while (taken.some((t) => t.k === k && !(t.hi < l.lo || l.hi < t.lo))) k++;
+        while (taken.some((tt) => tt.k === k && !(tt.hi < l.lo || l.hi < tt.lo))) k++;
         l.k = k;
         taken.push({ lo: l.lo, hi: l.hi, k });
       }
@@ -172,12 +173,12 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
     };
     for (const { l, fa, fb } of plan) {
       const laneX = (l.side === 'R' ? 1 : -1) * (half + LANE_PAD + l.k * LANE_GAP);
-      const s = port(l.a, fa, l.side), t = port(l.b, fb, l.side);
+      const s = port(l.a, fa, l.side), tt = port(l.b, fb, l.side);
       const gap = (f: Face, n: Box, i: number) => (f === 'B' ? n.y + n.h + 14 + i * 6 : n.y - 14 - i * 6);
       const head: Pt[] = fa === 'L' || fa === 'R' ? [s.p, { x: laneX, y: s.p.y }]
         : [s.p, { x: s.p.x, y: gap(fa, l.a, s.i) }, { x: laneX, y: gap(fa, l.a, s.i) }];
-      const tail: Pt[] = fb === 'L' || fb === 'R' ? [{ x: laneX, y: t.p.y }, t.p]
-        : [{ x: laneX, y: gap(fb, l.b, t.i) }, { x: t.p.x, y: gap(fb, l.b, t.i) }, t.p];
+      const tail: Pt[] = fb === 'L' || fb === 'R' ? [{ x: laneX, y: tt.p.y }, tt.p]
+        : [{ x: laneX, y: gap(fb, l.b, tt.i) }, { x: tt.p.x, y: gap(fb, l.b, tt.i) }, tt.p];
       const y1 = head[head.length - 1].y, y2 = tail[0].y;
       out.push({ e: l.e, pts: [...head, ...tail], segs: [{ x: laneX, y1: Math.min(y1, y2), y2: Math.max(y1, y2) }] });
     }
@@ -230,14 +231,14 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-mute">
-        {([['seq', 'ordem do quadro'], ['rule', 'regra de mover'], ['approve', 'aprovação'], ['system', 'automático do sistema']] as [Kind, string][]).map(([k, label]) => (
+        {([['seq', t('ordem do quadro')], ['rule', t('regra de mover')], ['approve', t('aprovação')], ['system', t('automático do sistema')]] as [Kind, string][]).map(([k, label]) => (
           <span key={k} className="inline-flex items-center gap-1.5">
-            <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke={k === 'seq' ? 'rgb(255 255 255 / 0.4)' : COLORS[k]} strokeWidth="2" strokeDasharray={k === 'seq' ? '2 3' : k === 'system' ? '5 3' : undefined} /></svg>{label}
+            <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" style={{ stroke: k === 'seq' ? 'rgb(var(--ink) / 0.4)' : COLORS[k] }} strokeWidth="2" strokeDasharray={k === 'seq' ? '2 3' : k === 'system' ? '5 3' : undefined} /></svg>{label}
           </span>
         ))}
         <span className="ml-auto flex flex-wrap items-center gap-4">
-          <Toggle checked={showSeq} onChange={setShowSeq} label="Ordem do quadro" />
-          <Toggle checked={system} onChange={setSystem} label="O que o sistema faz sozinho" />
+          <Toggle checked={showSeq} onChange={setShowSeq} label={t('Ordem do quadro')} />
+          <Toggle checked={system} onChange={setSystem} label={t('O que o sistema faz sozinho')} />
         </span>
       </div>
       <div className="surface overflow-auto">
@@ -246,14 +247,14 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
             <defs>
               {(Object.keys(COLORS) as Kind[]).map((k) => (
                 <marker key={k} id={`fm-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-                  <path d="M1,1.5 L9,5 L1,8.5 Z" fill={k === 'seq' ? 'rgb(255 255 255 / 0.35)' : COLORS[k]} />
+                  <path d="M1,1.5 L9,5 L1,8.5 Z" style={{ fill: k === 'seq' ? 'rgb(var(--ink) / 0.35)' : COLORS[k] }} />
                 </marker>
               ))}
             </defs>
             <g transform={`translate(${ox},${oy})`}>
               {/* Ordem do quadro por baixo, o resto por cima. */}
               {[...shown].sort((a, b) => Number(b.e.kind === 'seq') - Number(a.e.kind === 'seq')).map(({ e, pts }, i) => (
-                <path key={i} d={rounded(pts)} fill="none" stroke={COLORS[e.kind]}
+                <path key={i} d={rounded(pts)} fill="none" style={{ stroke: COLORS[e.kind] }}
                   strokeWidth={e.kind === 'seq' ? 1.25 : 1.6} strokeLinecap="round" strokeLinejoin="round"
                   strokeDasharray={e.kind === 'seq' ? '2 4' : e.kind === 'system' ? '5 4' : undefined}
                   markerEnd={`url(#fm-${e.kind})`} />
@@ -269,24 +270,24 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
           {layout.boxes.map((n) => {
             const style = { left: n.x + ox, top: n.y + oy, width: n.w, height: n.h };
             if (n.id === START) {
-              return <div key={n.id} className="absolute flex items-center justify-center rounded-full border border-dashed border-white/25 bg-panel text-[12px] text-dim" style={style}>Nova issue</div>;
+              return <div key={n.id} className="absolute flex items-center justify-center rounded-full border border-dashed border-white/25 bg-panel text-[12px] text-dim" style={style}>{t('Nova issue')}</div>;
             }
             const s = byId.get(n.id)!;
             const rs = stageRules(s.id);
             const ai = rs.some((r) => r.action === 'run_agent');
             const locked = !!(s.policy?.act?.roles?.length || s.policy?.act?.users?.length || s.policy?.readOnly);
             return (
-              <div key={n.id} title={rs.length ? `${rs.length} regra(s) nesta etapa` : undefined}
+              <div key={n.id} title={rs.length ? t('{0} regra(s) nesta etapa', rs.length) : undefined}
                 className={clsx('absolute flex flex-col justify-center rounded-xl border bg-card px-3 shadow-[0_8px_24px_-14px_rgb(0_0_0/0.9)]', s.parallel ? 'border-white/15' : 'border-white/[0.09]')}
                 style={{ ...style, boxShadow: `inset 3px 0 0 0 ${s.color}` }}>
                 <div className="flex items-center gap-1.5 text-[13px] font-medium"><StatusIcon status={s.id} /><span className="truncate">{s.name}</span></div>
                 <div className="mt-0.5 flex h-3.5 items-center gap-2 text-[10px] text-mute">
                   {rs.length > 0 && <span className="inline-flex items-center gap-0.5"><Zap className="size-2.5" />{rs.length}</span>}
-                  {ai && <span className="inline-flex items-center gap-0.5 text-accent"><Sparkles className="size-2.5" />IA</span>}
+                  {ai && <span className="inline-flex items-center gap-0.5 text-accent"><Sparkles className="size-2.5" />{t('IA')}</span>}
                   {!!s.policy?.approvals && <span className="inline-flex items-center gap-0.5 text-emerald-400"><UserCheck className="size-2.5" />{s.policy.approvals}</span>}
                   {locked && <Lock className="size-2.5" />}
-                  {s.parallel && <span>paralela</span>}
-                  {s.system && <span className="ml-auto">sistema</span>}
+                  {s.parallel && <span>{t('paralela')}</span>}
+                  {s.system && <span className="ml-auto">{t('sistema')}</span>}
                 </div>
               </div>
             );
@@ -295,7 +296,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       </div>
       {layout.loose.length > 0 && (
         <p className="text-xs text-mute">
-          Também movem issues, de qualquer etapa: {layout.loose.map((r) => `${r.name || 'regra'} → ${stages.find((s) => s.id === r.config.to)?.name}`).join(' · ')}
+          {t('Também movem issues, de qualquer etapa:')} {layout.loose.map((r) => `${r.name || t('regra')} → ${stages.find((s) => s.id === r.config.to)?.name}`).join(' · ')}
         </p>
       )}
     </div>

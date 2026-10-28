@@ -16,6 +16,7 @@ import { money, timeAgo } from '../lib/format';
 import { api } from '../lib/api';
 import type { Agent, Issue, Label, Status } from '../lib/types';
 import { AgentIcon } from '../components/AgentIcon';
+import { t } from '../lib/i18n';
 
 type Sort = 'manual' | 'priority' | 'updated';
 
@@ -130,12 +131,12 @@ export function Board() {
   useSideScroll(layout.mode === 'side' ? scroller : null);
 
   const filtered = useMemo(() => {
-    const t = text.trim().toLowerCase();
+    const tt = text.trim().toLowerCase();
     return (issues ?? []).filter((i) => {
       if (who === 'mine' && i.createdBy !== me?.id) return false;
       if (who !== 'all' && who !== 'mine' && i.agentId !== who) return false;
       if (labelFilter && !i.labelIds.includes(labelFilter)) return false;
-      if (t && !`${ws.key}-${i.number} ${i.title}`.toLowerCase().includes(t)) return false;
+      if (tt && !`${ws.key}-${i.number} ${i.title}`.toLowerCase().includes(tt)) return false;
       return true;
     });
   }, [issues, who, labelFilter, text, me, ws.key]);
@@ -162,7 +163,7 @@ export function Board() {
     try {
       const res = await api.patch<{ issue: Issue; warning?: string }>(`/issues/${issue.id}`, { status, position });
       if (res.warning) toast('error', res.warning);
-      else if (status === 'todo' && issue.status !== 'todo' && issue.agentId) toast('info', `${ws.key}-${issue.number} foi para a fila do agente`);
+      else if (status === 'todo' && issue.status !== 'todo' && issue.agentId) toast('info', t('{0}-{1} foi para a fila do agente', ws.key, issue.number));
     } catch (err) {
       qc.setQueryData(key, prev);
       toast('error', (err as Error).message);
@@ -207,11 +208,11 @@ export function Board() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-line/70 bg-panel/40 px-3 py-2.5 backdrop-blur md:px-5">
-        <h1 className="mr-2 hidden text-[15px] font-semibold tracking-tight md:block">Issues</h1>
+        <h1 className="mr-2 hidden text-[15px] font-semibold tracking-tight md:block">{t('Issues')}</h1>
         <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
           {[
-            ['all', 'Todas'],
-            ['mine', 'Minhas']
+            ['all', t('Todas')],
+            ['mine', t('Minhas')]
           ].map(([id, label]) => (
             <button key={id} onClick={() => setWho(id)} className={clsx('rounded-md px-2.5 py-1 text-xs transition', who === id ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{label}</button>
           ))}
@@ -219,50 +220,50 @@ export function Board() {
         </div>
         <div className="relative hidden sm:block">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Filtrar…" className="field-input h-8 w-52 py-1 pl-8" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('Filtrar…')} className="field-input h-8 w-52 py-1 pl-8" />
         </div>
         <LabelFilter labels={labels} value={labelFilter} onChange={setLabelFilter} />
         <div className="ml-auto flex items-center gap-1.5">
           <span className={clsx('hidden items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs sm:flex', working ? 'text-amber-400' : 'text-mute')}>
-            <span className={clsx('size-1.5 rounded-full', working ? 'animate-pulse-soft bg-amber-400' : 'bg-mute')} /> {working} {working === 1 ? 'agente trabalhando' : 'agentes trabalhando'}
+            <span className={clsx('size-1.5 rounded-full', working ? 'animate-pulse-soft bg-amber-400' : 'bg-mute')} /> {working} {working === 1 ? t('agente trabalhando') : t('agentes trabalhando')}
           </span>
           <Popover
             align="right"
-            trigger={() => <Chip><ListFilter className="size-3.5" /> <span className="hidden sm:inline">Exibir</span></Chip>}
+            trigger={() => <Chip><ListFilter className="size-3.5" /> <span className="hidden sm:inline">{t('Exibir')}</span></Chip>}
           >
             {(close) => (
               <>
-                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">Ordenar</div>
+                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Ordenar')}</div>
                 {(
                   [
-                    ['manual', 'Manual (arrastar)'],
-                    ['priority', 'Prioridade'],
-                    ['updated', 'Atualização']
+                    ['manual', t('Manual (arrastar)')],
+                    ['priority', t('Prioridade')],
+                    ['updated', t('Atualização')]
                   ] as [Sort, string][]
                 ).map(([id, label]) => (
                   <MenuItem key={id} selected={sort === id} onClick={() => { setSort(id); writePref('mx.sort', id); close(); }}>{label}</MenuItem>
                 ))}
                 <div className="my-1 border-t border-line" />
-                <MenuItem selected={showCancelled} onClick={() => setShowCancelled(!showCancelled)}>Mostrar canceladas</MenuItem>
+                <MenuItem selected={showCancelled} onClick={() => setShowCancelled(!showCancelled)}>{t('Mostrar canceladas')}</MenuItem>
                 <div className="my-1 border-t border-line" />
-                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">Colunas (só para você)</div>
-                <MenuItem selected={layout.mode === 'side'} onClick={() => saveLayout({ mode: 'side' })}>Lado a lado</MenuItem>
-                <MenuItem selected={layout.mode === 'grid'} onClick={() => saveLayout({ mode: 'grid' })}>Uma embaixo da outra</MenuItem>
+                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Colunas (só para você)')}</div>
+                <MenuItem selected={layout.mode === 'side'} onClick={() => saveLayout({ mode: 'side' })}>{t('Lado a lado')}</MenuItem>
+                <MenuItem selected={layout.mode === 'grid'} onClick={() => saveLayout({ mode: 'grid' })}>{t('Uma embaixo da outra')}</MenuItem>
                 {layout.mode === 'grid' && (
                   <div className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-mute">
-                    Por linha
+                    {t('Por linha')}
                     {[1, 2, 3, 4].map((n) => (
                       <button key={n} onClick={() => saveLayout({ perRow: n })} className={clsx('ml-1 rounded-md px-2 py-0.5', layout.perRow === n ? 'bg-white/10 text-fg' : 'hover:text-fg')}>{n}</button>
                     ))}
                   </div>
                 )}
-                <div className="px-2.5 pb-1 pt-0.5 text-[11px] leading-snug text-mute">A ordem das colunas segue o fluxo (Fluxo e automações).</div>
+                <div className="px-2.5 pb-1 pt-0.5 text-[11px] leading-snug text-mute">{t('A ordem das colunas segue o fluxo (Fluxo e automações).')}</div>
               </>
             )}
           </Popover>
           <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
-            <button onClick={() => { setView('board'); writePref('mx.view', 'board'); }} className={clsx('rounded-md p-1.5', view === 'board' ? 'bg-white/10 text-fg' : 'text-mute')} title="Quadro"><Columns3 className="size-3.5" /></button>
-            <button onClick={() => { setView('list'); writePref('mx.view', 'list'); }} className={clsx('rounded-md p-1.5', view === 'list' ? 'bg-white/10 text-fg' : 'text-mute')} title="Lista"><List className="size-3.5" /></button>
+            <button onClick={() => { setView('board'); writePref('mx.view', 'board'); }} className={clsx('rounded-md p-1.5', view === 'board' ? 'bg-white/10 text-fg' : 'text-mute')} title={t('Quadro')}><Columns3 className="size-3.5" /></button>
+            <button onClick={() => { setView('list'); writePref('mx.view', 'list'); }} className={clsx('rounded-md p-1.5', view === 'list' ? 'bg-white/10 text-fg' : 'text-mute')} title={t('Lista')}><List className="size-3.5" /></button>
           </div>
         </div>
       </div>
@@ -313,7 +314,7 @@ function AgentFilter({ agents, value, onChange }: { agents: Agent[]; value: stri
   return (
     <Popover
       trigger={() => (
-        <button className={clsx('rounded-md px-2.5 py-1 text-xs transition', current ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{current ? <span className="inline-flex items-center gap-1.5"><AgentIcon avatar={current.avatar} size={14} />{current.name}</span> : 'Agentes'}</button>
+        <button className={clsx('rounded-md px-2.5 py-1 text-xs transition', current ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{current ? <span className="inline-flex items-center gap-1.5"><AgentIcon avatar={current.avatar} size={14} />{current.name}</span> : t('Agentes')}</button>
       )}
     >
       {(close) =>
@@ -331,10 +332,10 @@ function LabelFilter({ labels, value, onChange }: { labels: Label[]; value: stri
   if (!labels.length) return null;
   const current = labels.find((l) => l.id === value);
   return (
-    <Popover trigger={() => <Chip className={current ? 'text-fg' : ''}>{current ? <><span className="size-2 rounded-full" style={{ background: current.color }} />{current.name}</> : 'Label'}</Chip>}>
+    <Popover trigger={() => <Chip className={current ? 'text-fg' : ''}>{current ? <><span className="size-2 rounded-full" style={{ background: current.color }} />{current.name}</> : t('Label')}</Chip>}>
       {(close) => (
         <>
-          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}>Todas</MenuItem>
+          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}>{t('Todas')}</MenuItem>
           {labels.map((l) => (
             <MenuItem key={l.id} selected={l.id === value} onClick={() => { onChange(l.id); close(); }}>
               <span className="size-2 rounded-full" style={{ background: l.color }} /> {l.name}
@@ -361,13 +362,13 @@ function Column({ status, issues, agents, labels, onAdd, grid, stacked }: { stat
       <header data-col-head className="flex items-center gap-2 px-3.5 py-3">
         <StatusIcon status={status} />
         <span className="font-medium">{s.label}</span>
-        {s.parallel && <span className="rounded bg-white/[0.06] px-1 text-[10px] text-mute" title="Em paralelo com a etapa de cima">paralela</span>}
+        {s.parallel && <span className="rounded bg-white/[0.06] px-1 text-[10px] text-mute" title={t('Em paralelo com a etapa de cima')}>{t('paralela')}</span>}
         <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute">{issues.length}</span>
-        <button onClick={onAdd} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg" title="Nova issue nesta coluna"><Plus className="size-3.5" /></button>
+        <button onClick={onAdd} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg" title={t('Nova issue nesta coluna')}><Plus className="size-3.5" /></button>
       </header>
       <div data-col-body className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2.5">
         {issues.map((i) => <Card key={i.id} issue={i} agents={agents} labels={labels} />)}
-        {!issues.length && <div className="mx-1 rounded-xl border border-dashed border-white/[0.07] py-8 text-center text-xs text-mute">Arraste uma issue para cá</div>}
+        {!issues.length && <div className="mx-1 rounded-xl border border-dashed border-white/[0.07] py-8 text-center text-xs text-mute">{t('Arraste uma issue para cá')}</div>}
       </div>
     </section>
   );
@@ -428,7 +429,7 @@ function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[
       {...drag.attributes}
       onClick={(e) => Date.now() - lastDragEnd < 300 && e.preventDefault()}
       className={clsx(
-        'block select-none rounded-xl border bg-gradient-to-b from-card to-panel p-3 shadow-[0_1px_0_0_rgb(255_255_255/0.04)_inset,0_2px_8px_-4px_rgb(0_0_0/0.6)] transition hover:-translate-y-px hover:border-white/15',
+        'block select-none rounded-xl border bg-gradient-to-b from-card to-panel p-3 shadow-[0_1px_0_0_rgb(var(--ink)/0.04)_inset,0_2px_8px_-4px_rgb(0_0_0/0.6)] transition hover:-translate-y-px hover:border-white/15',
         drop.isOver ? 'border-accent/60' : 'border-white/[0.07]',
         drag.isDragging && 'opacity-30',
         overlay && 'shadow-pop'
@@ -436,13 +437,13 @@ function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[
     >
       <div className="flex items-center gap-1.5 text-[11px] text-mute">
         <span className="font-mono">{ws.key}-{issue.number}</span>
-        {running && <span className="flex items-center gap-1 rounded-full bg-amber-400/10 px-1.5 text-amber-300"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> trabalhando</span>}
+        {running && <span className="flex items-center gap-1 rounded-full bg-amber-400/10 px-1.5 text-amber-300"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {t('trabalhando')}</span>}
         <span className="ml-auto"><PriorityIcon priority={issue.priority} /></span>
       </div>
       <div className="mt-1.5 font-medium leading-snug">{issue.title}</div>
       {issue.labelIds.length > 0 && <div className="mt-1.5"><LabelDots ids={issue.labelIds} labels={labels} /></div>}
       <div className="mt-2 flex items-center gap-1.5 text-[11px] text-mute">
-        {agent ? <><AgentIcon avatar={agent.avatar} size={16} /><span className="truncate">{agent.name}</span></> : <span>Sem agente</span>}
+        {agent ? <><AgentIcon avatar={agent.avatar} size={16} /><span className="truncate">{agent.name}</span></> : <span>{t('Sem agente')}</span>}
         {issue.costUsd > 0 && <span>· {money(issue.costUsd)}</span>}
         <span className="ml-auto shrink-0">{timeAgo(issue.updatedAt)}</span>
       </div>
@@ -478,7 +479,7 @@ function ListView({ byStatus, columns, agents, labels }: { byStatus: Record<Stat
           </div>
         ) : null
       )}
-      {columns.every((s) => !byStatus[s].length) && <div className="p-10 text-center text-mute">Nenhuma issue. Aperte <kbd className="rounded border border-line px-1">C</kbd> para criar.</div>}
+      {columns.every((s) => !byStatus[s].length) && <div className="p-10 text-center text-mute">{t('Nenhuma issue. Aperte')} <kbd className="rounded border border-line px-1">{t('C')}</kbd> {t('para criar.')}</div>}
     </div>
   );
 }

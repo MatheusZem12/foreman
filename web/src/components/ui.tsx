@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { X, Check, Loader2 } from 'lucide-react';
 import { statusOf } from '../lib/constants';
 import type { Status } from '../lib/types';
+import { t } from '../lib/i18n';
 
 // ---------- botões e campos ----------
 
@@ -19,9 +20,9 @@ export function Button({
       className={clsx(
         'relative inline-flex select-none items-center justify-center gap-2 rounded-[10px] font-medium whitespace-nowrap transition-all duration-150 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
         size === 'sm' ? 'h-7 rounded-lg px-2.5 text-xs' : 'h-9 px-4 text-[13px]',
-        variant === 'primary' && 'bg-gradient-to-b from-[#8f80ff] to-accent text-white shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25),0_0_0_1px_rgb(var(--accent)/0.6),0_6px_16px_-6px_rgb(var(--accent)/0.7)] hover:brightness-110 hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.3),0_0_0_1px_rgb(var(--accent)/0.8),0_8px_22px_-6px_rgb(var(--accent)/0.85)]',
+        variant === 'primary' && 'bg-gradient-to-b from-[#8f80ff] to-accent text-snow shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25),0_0_0_1px_rgb(var(--accent)/0.6),0_6px_16px_-6px_rgb(var(--accent)/0.7)] hover:brightness-110 hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.3),0_0_0_1px_rgb(var(--accent)/0.8),0_8px_22px_-6px_rgb(var(--accent)/0.85)]',
         variant === 'ghost' && 'text-dim hover:bg-white/[0.06] hover:text-fg',
-        variant === 'outline' && 'bg-white/[0.04] text-fg shadow-[inset_0_1px_0_0_rgb(255_255_255/0.05),0_0_0_1px_rgb(255_255_255/0.09)] hover:bg-white/[0.07] hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.06),0_0_0_1px_rgb(255_255_255/0.16)]',
+        variant === 'outline' && 'bg-white/[0.04] text-fg shadow-[inset_0_1px_0_0_rgb(var(--ink)/0.05),0_0_0_1px_rgb(var(--ink)/0.09)] hover:bg-white/[0.07] hover:shadow-[inset_0_1px_0_0_rgb(var(--ink)/0.06),0_0_0_1px_rgb(var(--ink)/0.16)]',
         variant === 'danger' && 'bg-red-500/10 text-red-300 shadow-[0_0_0_1px_rgb(239_68_68/0.3)] hover:bg-red-500/[0.18] hover:text-red-200',
         variant === 'success' && 'bg-emerald-500/10 text-emerald-300 shadow-[0_0_0_1px_rgb(16_185_129/0.3)] hover:bg-emerald-500/[0.18]',
         className
@@ -47,8 +48,8 @@ export function Field({ label, hint, children, className }: { label: string; hin
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
     <button type="button" onClick={() => onChange(!checked)} className="inline-flex items-center gap-2 text-left text-dim">
-      <span className={clsx('relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200', checked ? 'bg-accent shadow-[0_0_12px_-2px_rgb(var(--accent)/0.7)]' : 'bg-white/10 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]')}>
-        <span className={clsx('absolute top-0.5 size-4 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.4)] transition-all duration-200', checked ? 'left-[18px]' : 'left-0.5')} />
+      <span className={clsx('relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200', checked ? 'bg-accent shadow-[0_0_12px_-2px_rgb(var(--accent)/0.7)]' : 'bg-white/10 shadow-[inset_0_0_0_1px_rgb(var(--ink)/0.08)]')}>
+        <span className={clsx('absolute top-0.5 size-4 rounded-full bg-snow shadow-[0_1px_3px_rgb(0_0_0/0.4)] transition-all duration-200', checked ? 'left-[18px]' : 'left-0.5')} />
       </span>
       {label}
     </button>
@@ -118,7 +119,7 @@ export function Modal({
         {title && (
           <div className="flex items-center justify-between gap-3 px-6 pb-3 pt-5">
             <div className="text-base font-semibold tracking-tight">{title}</div>
-            <button onClick={onClose} aria-label="Fechar" className="-mr-1.5 grid size-8 place-items-center rounded-lg text-mute transition hover:bg-white/[0.06] hover:text-fg"><X className="size-4" /></button>
+            <button onClick={onClose} aria-label={t('Fechar')} className="-mr-1.5 grid size-8 place-items-center rounded-lg text-mute transition hover:bg-white/[0.06] hover:text-fg"><X className="size-4" /></button>
           </div>
         )}
         <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">{children}</div>
@@ -142,22 +143,22 @@ export function Popover({
   const pop = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<React.CSSProperties>({ top: -9999, left: -9999 });
   const place = useCallback(() => {
-    const t = ref.current?.getBoundingClientRect();
+    const tt = ref.current?.getBoundingClientRect();
     const p = pop.current;
-    if (!t || !p) return;
+    if (!tt || !p) return;
     if (window.innerWidth < 640) {
       setStyle({});
       return;
     }
     const vw = window.innerWidth, vh = window.innerHeight, gap = 4, margin = 8;
-    const below = vh - t.bottom - margin, above = t.top - margin;
+    const below = vh - tt.bottom - margin, above = tt.top - margin;
     const want = Math.min(p.scrollHeight, 360);
     const up = below < want && above > below;
     const maxHeight = Math.max(140, Math.min(up ? above : below, 360) - gap);
     const w = p.offsetWidth;
-    let left = align === 'right' ? t.right - w : t.left;
+    let left = align === 'right' ? tt.right - w : tt.left;
     left = Math.max(margin, Math.min(left, vw - w - margin));
-    setStyle({ left, maxHeight, ...(up ? { bottom: vh - t.top + gap } : { top: t.bottom + gap }) });
+    setStyle({ left, maxHeight, ...(up ? { bottom: vh - tt.top + gap } : { top: tt.bottom + gap }) });
   }, [align]);
   useLayoutEffect(() => {
     if (open) place();
@@ -309,22 +310,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const push = useCallback((kind: Toast['kind'], text: string) => {
     const id = Date.now() + Math.random();
-    setToasts((t) => [...t.slice(-2), { id, kind, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 7000 : 3500);
+    setToasts((tt) => [...tt.slice(-2), { id, kind, text }]);
+    setTimeout(() => setToasts((tt) => tt.filter((x) => x.id !== id)), kind === 'error' ? 7000 : 3500);
   }, []);
   return (
     <ToastCtx.Provider value={push}>
       {children}
       <div className="pointer-events-none fixed inset-x-3 bottom-3 z-[60] flex flex-col items-center gap-2 sm:inset-x-auto sm:right-4 sm:items-end">
-        {toasts.map((t) => (
+        {toasts.map((tt) => (
           <div
-            key={t.id}
+            key={tt.id}
             className={clsx(
               'pointer-events-auto flex max-w-sm animate-[pop_.18s_ease-out] items-start gap-2.5 rounded-xl border border-white/10 bg-panel/95 px-3.5 py-2.5 shadow-pop backdrop-blur-xl'
             )}
           >
-            <span className={clsx('mt-1 size-2 shrink-0 rounded-full', t.kind === 'error' ? 'bg-red-400' : t.kind === 'success' ? 'bg-emerald-400' : 'bg-accent')} />
-            <span className={t.kind === 'error' ? 'text-red-200' : ''}>{t.text}</span>
+            <span className={clsx('mt-1 size-2 shrink-0 rounded-full', tt.kind === 'error' ? 'bg-red-400' : tt.kind === 'success' ? 'bg-emerald-400' : 'bg-accent')} />
+            <span className={tt.kind === 'error' ? 'text-red-200' : ''}>{tt.text}</span>
           </div>
         ))}
       </div>
