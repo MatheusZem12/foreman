@@ -38,7 +38,7 @@ export function RolesPage() {
 function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string | null) => void }) {
   const { data: perms = [] } = usePermissions();
   const [name, setName] = useState(role?.name ?? '');
-  const [on, setOn] = useState<string[]>(role?.permissions ?? ['issue.create', 'issue.update']);
+  const [on, setOn] = useState<string[]>(role?.permissions ?? ['issue.create', 'issue.comment']);
   const [busy, setBusy] = useState(false);
   const qc = useQueryClient();
   const toast = useToast();

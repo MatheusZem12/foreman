@@ -3,11 +3,11 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  ArrowLeft, Check, ChevronDown, ChevronRight, CircleStop, GitMerge, Hand, MoreHorizontal, Play, Send, Swords, Trash2, Undo2, Wand2
+  ArrowLeft, Check, ChevronDown, ChevronRight, CircleStop, GitMerge, Hand, Lock, MoreHorizontal, Play, Send, Swords, Trash2, Undo2, Wand2
 } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Avatar, Button, Empty, MenuItem, Modal, Popover, Spinner, StatusIcon, Toggle, useToast } from '../components/ui';
-import { AgentPicker, BranchPicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from '../components/pickers';
+import { AgentPicker, AssigneePicker, BranchPicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from '../components/pickers';
 import { api } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
 import { compact, duration, money, runSeconds, timeAgo } from '../lib/format';
@@ -43,14 +43,16 @@ function patchCache(qc: ReturnType<typeof useQueryClient>, issue: Issue) {
 
 function IssueView({ detail }: { detail: IssueDetail }) {
   const { issue, runs, comments } = detail;
+  // O que esta pessoa pode fazer aqui: permissão do perfil + política da etapa atual.
+  const caps = detail.caps;
   const { ws } = useWs();
   const qc = useQueryClient();
   const toast = useToast();
   const nav = useNavigate();
-  const canEdit = useCan('issue.update');
-  const canRun = useCan('issue.run');
-  const canMerge = useCan('issue.merge');
-  const canDelete = useCan('issue.delete');
+  const canEdit = caps.repos;
+  const canRun = caps.run;
+  const canMerge = caps.merge;
+  const canDelete = caps.delete;
   const [tab, setTab] = useState<Tab>('atividade');
   const [merging, setMerging] = useState(false);
   const [showProps, setShowProps] = useState(false);
@@ -96,13 +98,15 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 
   const properties = (
     <div className="space-y-0.5">
-      <PropRow label="Status"><StatusPicker variant="row" value={issue.status} onChange={(status) => patch({ status })} /></PropRow>
-      <PropRow label="Prioridade"><PriorityPicker variant="row" value={issue.priority} onChange={(priority) => patch({ priority })} /></PropRow>
-      <PropRow label="Agente"><AgentPicker variant="row" value={issue.agentId} onChange={(agentId) => patch({ agentId })} /></PropRow>
-      <PropRow label="Labels"><LabelPicker variant="row" ws={ws.id} value={issue.labelIds} onChange={(labelIds) => patch({ labelIds })} /></PropRow>
+      {caps.reason && <div className="mb-2 flex items-start gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1.5 text-[11px] text-mute"><Lock className="mt-px size-3 shrink-0" /> {caps.reason}</div>}
+      <PropRow label="Status"><Gate on={caps.move}><StatusPicker variant="row" value={issue.status} onChange={(status) => patch({ status })} /></Gate></PropRow>
+      <PropRow label="Responsável"><Gate on={caps.assign}><AssigneePicker variant="row" ws={ws.id} value={issue.assigneeId} onChange={(assigneeId) => patch({ assigneeId })} /></Gate></PropRow>
+      <PropRow label="Prioridade"><Gate on={caps.priority}><PriorityPicker variant="row" value={issue.priority} onChange={(priority) => patch({ priority })} /></Gate></PropRow>
+      <PropRow label="Agente"><Gate on={caps.agent}><AgentPicker variant="row" value={issue.agentId} onChange={(agentId) => patch({ agentId })} /></Gate></PropRow>
+      <PropRow label="Labels"><Gate on={caps.labels}><LabelPicker variant="row" ws={ws.id} value={issue.labelIds} onChange={(labelIds) => patch({ labelIds })} /></Gate></PropRow>
       <PropRow label="Repositórios">
-        <RepoScopePicker variant="row" ws={ws.id} value={issue.allRepos ? [] : issue.repos.map((r) => r.repoId)}
-          onChange={(ids) => saveRepos(!ids.length, ids.map((repoId) => ({ repoId, ...pick(issue.repos.find((r) => r.repoId === repoId)) })))} />
+        <Gate on={caps.repos}><RepoScopePicker variant="row" ws={ws.id} value={issue.allRepos ? [] : issue.repos.map((r) => r.repoId)}
+          onChange={(ids) => saveRepos(!ids.length, ids.map((repoId) => ({ repoId, ...pick(issue.repos.find((r) => r.repoId === repoId)) })))} /></Gate>
       </PropRow>
       {issue.repos.map((r) => <IssueRepoRow key={r.repoId} r={r} locked={!canEdit || issue.status === 'done' || issue.status === 'cancelled'} onChange={(b) => setBranch(r.repoId, b)} />)}
       <div className="space-y-1 px-2 pt-3 text-xs text-mute">
@@ -131,13 +135,14 @@ function IssueView({ detail }: { detail: IssueDetail }) {
           {canRun && conflict && !active && (
             <Button size="sm" variant="outline" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: 'conflict' }), 'IA resolvendo o conflito')}><Swords className="size-3.5" /> Resolver conflito com IA</Button>
           )}
-          {canMerge && !active && issue.status === 'in_review' && (
-            <Button size="sm" variant="success" title="Aprovar: vai para Concluída e as regras da etapa rodam (por padrão, o merge)"
-              onClick={() => act(() => api.post(`/issues/${issue.id}/approve`), 'Aprovada: indo para Concluída')}>
-              <Check className="size-3.5" /> Aprovar
+          {caps.approvals > 0 && !active && (caps.approve || issue.approvals.length > 0) && (
+            <Button size="sm" variant="success" disabled={!caps.approve}
+              title={caps.approve ? 'Aprovar: com as aprovações necessárias a issue segue e as regras da etapa de destino rodam' : 'Você já aprovou ou não aprova nesta etapa'}
+              onClick={() => act(() => api.post(`/issues/${issue.id}/approve`), 'Aprovação registrada')}>
+              <Check className="size-3.5" /> Aprovar{caps.approvals > 1 && <span className="opacity-80"> {issue.approvals.length}/{caps.approvals}</span>}
             </Button>
           )}
-          {canMerge && !active && !closed && hasCommits && !conflict && issue.status !== 'in_review' && issue.status !== 'waiting' && (
+          {canMerge && !active && !closed && hasCommits && !conflict && caps.approvals === 0 && issue.status !== 'waiting' && (
             <Button size="sm" variant="success" onClick={() => setMerging(true)}>
               <GitMerge className="size-3.5" /> Merge{pendingRepos.length > 1 ? ` (${pendingRepos.length} repos)` : <span className="hidden sm:inline"> em {pendingRepos[0].targetBranch}</span>}
             </Button>
@@ -145,7 +150,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
           <Popover align="right" trigger={() => <button className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><MoreHorizontal className="size-4" /></button>}>
             {(close) => (
               <>
-                {canMerge && !active && issue.status === 'in_review' && hasCommits && !conflict && (
+                {canMerge && !active && caps.approvals > 0 && hasCommits && !conflict && (
                   <MenuItem onClick={() => { close(); setMerging(true); }}><GitMerge className="size-4" /> Fazer merge escolhendo a branch</MenuItem>
                 )}
                 {canMerge && !closed && hasCommits && (
@@ -167,8 +172,8 @@ function IssueView({ detail }: { detail: IssueDetail }) {
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-4 pb-10 pt-5 md:px-6">
-            <TitleEditor issue={issue} onSave={(title) => patch({ title })} />
-            <DescriptionEditor issue={issue} onSave={(description) => patch({ description })} />
+            <Gate on={caps.edit} block><TitleEditor issue={issue} onSave={(title) => patch({ title })} /></Gate>
+            <Gate on={caps.edit} block><DescriptionEditor issue={issue} onSave={(description) => patch({ description })} /></Gate>
 
             <button onClick={() => setShowProps(!showProps)} className="mt-4 flex w-full items-center gap-1 rounded-md border border-line px-2 py-1.5 text-xs text-dim lg:hidden">
               {showProps ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />} Propriedades
@@ -188,7 +193,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
               ))}
             </div>
             <div className="pt-4">
-              {tab === 'atividade' && <Activity issue={issue} runs={runs} comments={comments} />}
+              {tab === 'atividade' && <Activity issue={issue} runs={runs} comments={comments} canComment={caps.comment} />}
               {tab === 'resumo' && <SummaryTab issue={issue} runs={runs} onSave={(summary) => patch({ summary })} />}
               {tab === 'diff' && <DiffTab issue={issue} />}
               {tab === 'execucoes' && <RunsTable runs={runs} />}
@@ -287,7 +292,7 @@ function DescriptionEditor({ issue, onSave }: { issue: Issue; onSave: (d: string
 
 type TimelineItem = { at: string; comment?: Comment; run?: Run };
 
-function Activity({ issue, runs, comments }: { issue: Issue; runs: Run[]; comments: Comment[] }) {
+function Activity({ issue, runs, comments, canComment }: { issue: Issue; runs: Run[]; comments: Comment[]; canComment: boolean }) {
   const items = useMemo<TimelineItem[]>(() => {
     const all: TimelineItem[] = [...comments.map((c) => ({ at: c.createdAt, comment: c })), ...runs.map((r) => ({ at: r.createdAt, run: r }))];
     return all.sort((a, b) => a.at.localeCompare(b.at));
@@ -300,7 +305,7 @@ function Activity({ issue, runs, comments }: { issue: Issue; runs: Run[]; commen
           : <CommentItem key={it.comment!.id} comment={it.comment!} />
       )}
       {!items.length && <p className="text-mute">Sem atividade ainda.</p>}
-      <Composer issue={issue} hasRuns={runs.length > 0} />
+      {canComment && <Composer issue={issue} hasRuns={runs.length > 0} />}
     </div>
   );
 }
@@ -682,4 +687,10 @@ function MergeModal({ issue, onClose }: { issue: Issue; onClose: () => void }) {
       </div>
     </Modal>
   );
+}
+
+// Gate trava um controle quando a pessoa não pode alterá-lo aqui (o servidor confere de novo).
+function Gate({ on, block, children }: { on: boolean; block?: boolean; children: React.ReactNode }) {
+  if (on) return <>{children}</>;
+  return <div className={clsx('pointer-events-none select-none opacity-60', !block && 'w-full')} aria-disabled>{children}</div>;
 }

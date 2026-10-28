@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { BookOpen, FileCode2, Plus, Trash2 } from 'lucide-react';
-import { Button, Empty, EmptyState, Field, Toggle, useToast } from '../components/ui';
+import { BookOpen, Check, CheckCircle2, Circle, FileCode2, Plus, Trash2 } from 'lucide-react';
+import { Button, Empty, EmptyState, Field, useToast } from '../components/ui';
 import { api } from '../lib/api';
-import { useCan, useSkills } from '../lib/queries';
+import { useAgents, useCan, useSkills } from '../lib/queries';
+import { AgentIcon } from '../components/AgentIcon';
 import type { FileEntry, Skill } from '../lib/types';
 
 const TEMPLATE = `Quando usar: …
@@ -56,14 +57,27 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
   const canSave = useCan(skill ? 'skill.update' : 'skill.create');
   const canDelete = useCan('skill.delete');
   const files = s.files ?? [];
+  const { data: agents = [] } = useAgents();
+  // Vínculo: todas as issues (qualquer agente), agentes escolhidos ou nenhum ainda.
+  const linked = agents.filter((a) => skill && a.skillIds.includes(skill.id)).map((a) => a.id);
+  const [scope, setScope] = useState<'all' | 'agents' | 'none'>(skill?.always ? 'all' : linked.length ? 'agents' : 'none');
+  const [agentIds, setAgentIds] = useState<string[] | null>(null);
+  const chosen = agentIds ?? linked;
+  // Os agentes chegam depois: se a skill já estava vinculada a algum, mostra isso.
+  useEffect(() => {
+    if (agentIds === null && scope === 'none' && linked.length) setScope('agents');
+  }, [linked.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (p: Partial<Skill>) => setS((x) => ({ ...x, ...p }));
   const setFile = (i: number, p: Partial<FileEntry>) => set({ files: files.map((f, j) => (j === i ? { ...f, ...p } : f)) });
 
   const save = async () => {
     setBusy(true);
     try {
-      const saved = s.id ? await api.put<Skill>(`/skills/${s.id}`, s) : await api.post<Skill>('/skills', s);
+      const body = { ...s, always: scope === 'all' };
+      const saved = s.id ? await api.put<Skill>(`/skills/${s.id}`, body) : await api.post<Skill>('/skills', body);
+      await api.put(`/skills/${saved.id}/agents`, { agentIds: scope === 'agents' ? chosen : [] });
       qc.invalidateQueries({ queryKey: ['skills'] });
+      qc.invalidateQueries({ queryKey: ['agents'] });
       toast('success', 'Skill salva');
       onDone(saved.id);
     } catch (err) {
@@ -89,9 +103,34 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
           {canSave && <Button size="sm" variant="primary" loading={busy} onClick={save}>Salvar</Button>}
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-        <Field label="Nome"><input className="field-input" autoFocus={!s.id} value={s.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder="deploy-hmg, padrao-de-commits…" /></Field>
-        <div className="flex items-end pb-1.5"><Toggle checked={!!s.always} onChange={(always) => set({ always })} label="Anexar a todas as issues" /></div>
+      {/* Sem permissão de salvar: a skill aparece só para leitura. */}
+      <fieldset disabled={!canSave} className="contents">
+      <Field label="Nome"><input className="field-input" autoFocus={!s.id} value={s.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder="deploy-hmg, padrao-de-commits…" /></Field>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-dim">Vincular a <span className="font-normal text-mute">· a skill é uma instrução; vai junto em toda execução de quem estiver vinculado</span></span>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {([['all', 'Todas as issues', 'Qualquer agente, em qualquer issue'], ['agents', 'Agentes escolhidos', 'Só quando estes agentes rodarem'], ['none', 'Nenhum por enquanto', 'Fica guardada para vincular depois']] as const).map(([id, title, desc]) => (
+            <button key={id} type="button" onClick={() => setScope(id)}
+              className={clsx('rounded-xl border p-3 text-left transition', scope === id ? 'border-accent/60 bg-accent/10' : 'border-line bg-white/[0.02] hover:border-white/15')}>
+              <div className="flex items-center gap-1.5 text-[13px] font-medium">{scope === id ? <CheckCircle2 className="size-3.5 text-accent" /> : <Circle className="size-3.5 text-mute" />} {title}</div>
+              <div className="mt-0.5 text-[11px] text-mute">{desc}</div>
+            </button>
+          ))}
+        </div>
+        {scope === 'agents' && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {agents.map((a) => {
+              const on = chosen.includes(a.id);
+              return (
+                <button key={a.id} type="button" onClick={() => setAgentIds(on ? chosen.filter((x) => x !== a.id) : [...chosen, a.id])}
+                  className={clsx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition', on ? 'border-accent/50 bg-accent/15 text-fg' : 'border-line text-dim hover:bg-hover')}>
+                  <AgentIcon avatar={a.avatar} size={14} /> {a.name} {on && <Check className="size-3 text-accent" />}
+                </button>
+              );
+            })}
+            {!agents.length && <span className="text-xs text-mute">Nenhum agente criado ainda.</span>}
+          </div>
+        )}
       </div>
       <Field label="Descrição" hint="o agente decide pela descrição se deve ler a skill; seja específico">
         <input className="field-input" value={s.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder="Como publicar em homologação. Use quando a issue pedir deploy." />
@@ -118,6 +157,7 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
           ))}
         </div>
       </div>
+      </fieldset>
     </div>
   );
 }

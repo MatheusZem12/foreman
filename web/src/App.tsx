@@ -6,15 +6,14 @@ import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Board } from './pages/Board';
 import { IssuePage } from './pages/IssuePage';
+import { SettingsPage } from './pages/Settings';
+import { WorkflowPage } from './pages/Workflow';
+import { WorkspaceSettings } from './pages/WorkspaceSettings';
 import { AgentsPage } from './pages/Agents';
 import { SkillsPage } from './pages/Skills';
-import { WorkspaceSettings } from './pages/WorkspaceSettings';
-import { AccountPage, ServerPage, UsersPage } from './pages/Account';
-import { RolesPage } from './pages/Roles';
-import { WorkflowPage } from './pages/Workflow';
 import { Landing } from './pages/Landing';
 import { Onboarding } from './pages/Onboarding';
-import { can, useMe, useWorkspaces } from './lib/queries';
+import { SCREENS, can, useMe, useWorkspaces } from './lib/queries';
 import { LAST_WS } from './lib/constants';
 
 // Analytics carrega os gráficos (Recharts) só quando a tela é aberta.
@@ -89,15 +88,20 @@ export default function App() {
             <Route path="/w/:key" element={<Authed><Layout /></Authed>}>
               <Route index element={<Board />} />
               <Route path="issues/:ref" element={<IssuePage />} />
-              <Route path="analytics" element={<Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage /></Suspense>} />
-              <Route path="agentes" element={<Need perms={['agent.create', 'agent.update', 'agent.delete']}><AgentsPage /></Need>} />
-              <Route path="skills" element={<Need perms={['skill.create', 'skill.update', 'skill.delete']}><SkillsPage /></Need>} />
-              <Route path="workspace" element={<Need perms={['repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete']}><WorkspaceSettings /></Need>} />
-              <Route path="fluxo" element={<Need perms={['workflow.manage']}><WorkflowPage /></Need>} />
-              <Route path="usuarios" element={<Need perms={['user.create', 'user.update', 'user.delete']}><UsersPage /></Need>} />
-              <Route path="permissoes" element={<Need owner><RolesPage /></Need>} />
-              <Route path="servidor" element={<Need perms={['settings.manage', 'repo.create']}><ServerPage /></Need>} />
-              <Route path="conta" element={<AccountPage />} />
+              <Route path="analytics" element={<Need perms={[...SCREENS.analytics]}><Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage /></Suspense></Need>} />
+              <Route path="config" element={<SettingsPage />} />
+              <Route path="config/:tab" element={<SettingsPage />} />
+              <Route path="fluxo" element={<Need perms={[...SCREENS.fluxo]}><WorkflowPage /></Need>} />
+              <Route path="workspace" element={<Need perms={[...SCREENS.workspace]}><WorkspaceSettings /></Need>} />
+              <Route path="agentes" element={<Need perms={[...SCREENS.agentes]}><AgentsPage /></Need>} />
+              <Route path="skills" element={<Need perms={[...SCREENS.skills]}><SkillsPage /></Need>} />
+              {/* Endereços antigos das telas gerais levam para a aba certa de Configurações gerais. */}
+              {['usuarios', 'permissoes', 'servidor', 'conta'].map((t) => (
+                <Route key={t} path={t} element={<Navigate to={`../config/${t}`} replace />} />
+              ))}
+              {['config/fluxo', 'config/workspace', 'config/agentes', 'config/skills'].map((t) => (
+                <Route key={t} path={t} element={<Navigate to={`../${t.slice(7)}`} replace />} />
+              ))}
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

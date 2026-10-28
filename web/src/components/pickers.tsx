@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Bot, FolderGit2, GitBranch, Plus, Tag } from 'lucide-react';
-import { Chip, MenuItem, Popover, PriorityIcon, StatusIcon } from './ui';
+import { Bot, FolderGit2, GitBranch, Plus, Tag, UserRound } from 'lucide-react';
+import { Avatar, Chip, MenuItem, Popover, PriorityIcon, StatusIcon } from './ui';
 import { LABEL_COLORS, PRIORITIES, STATUSES, statusOf } from '../lib/constants';
-import { useAgents, useBranches, useLabels, useRepos, useStages } from '../lib/queries';
+import { useAgents, useBranches, useLabels, useMembers, useRepos, useStages } from '../lib/queries';
 import { useWs } from './Layout';
 import { api } from '../lib/api';
 import type { Label, Status } from '../lib/types';
@@ -45,6 +45,34 @@ export function PriorityPicker({ value, onChange, variant = 'chip' }: { value: n
           </MenuItem>
         ))
       }
+    </Popover>
+  );
+}
+
+// Responsável humano: só quem tem acesso ao workspace.
+export function AssigneePicker({ ws, value, onChange, variant = 'chip' }: { ws: string; value: string | null; onChange: (id: string | null) => void; variant?: Variant }) {
+  const { data: members = [] } = useMembers(ws);
+  const current = members.find((m) => m.id === value);
+  return (
+    <Popover
+      trigger={() => (
+        <Trigger variant={variant}>
+          {current ? <Avatar name={current.name} /> : <UserRound className="size-3.5 text-mute" />}
+          <span className="truncate">{current ? current.name : 'Sem responsável'}</span>
+        </Trigger>
+      )}
+    >
+      {(close) => (
+        <>
+          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><UserRound className="size-3.5 text-mute" /> Sem responsável</MenuItem>
+          {members.map((m) => (
+            <MenuItem key={m.id} selected={m.id === value} onClick={() => { onChange(m.id); close(); }}>
+              <Avatar name={m.name} /> <span className="truncate">{m.name}</span>
+              <span className="ml-auto pl-2 text-xs text-mute">{m.isOwner ? 'dono' : m.roleName}</span>
+            </MenuItem>
+          ))}
+        </>
+      )}
     </Popover>
   );
 }

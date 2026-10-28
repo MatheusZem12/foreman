@@ -10,6 +10,18 @@ export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => api.get<U
 export const can = (u: User | undefined, ...perms: string[]) =>
   !!u && (u.permissions.includes('*') || perms.some((p) => u.permissions.includes(p)));
 export const useCan = (...perms: string[]) => can(useMe().data, ...perms);
+
+// Quem vê cada tela: o "ver" dela ou qualquer permissão de mexer nela.
+// Sem nenhuma, a tela some do menu; só com o "ver", abre em modo leitura.
+export const SCREENS = {
+  analytics: ['analytics.view'],
+  fluxo: ['workflow.view', 'workflow.manage'],
+  workspace: ['workspace.view', 'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete', 'label.manage'],
+  agentes: ['agent.view', 'agent.create', 'agent.update', 'agent.delete'],
+  skills: ['skill.view', 'skill.create', 'skill.update', 'skill.delete'],
+  usuarios: ['user.view', 'user.create', 'user.update', 'user.delete']
+} as const;
+export const canSee = (u: User | undefined, screen: keyof typeof SCREENS) => can(u, ...SCREENS[screen]);
 export const useRoles = () => useQuery({ queryKey: ['roles'], queryFn: () => api.get<Role[]>('/roles') });
 export const usePermissions = () => useQuery({ queryKey: ['permissions'], queryFn: () => api.get<Permission[]>('/permissions'), staleTime: Infinity });
 export const useMembers = (ws?: string) =>

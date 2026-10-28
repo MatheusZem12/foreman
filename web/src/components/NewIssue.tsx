@@ -5,7 +5,7 @@ import { Maximize2, Minimize2, X } from 'lucide-react';
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import { Button, Toggle, useToast } from './ui';
-import { AgentPicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from './pickers';
+import { AgentPicker, AssigneePicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from './pickers';
 import { useWs } from './Layout';
 import { useAgents, useCan, useRepos } from '../lib/queries';
 import { api } from '../lib/api';
@@ -26,6 +26,8 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
   const { data: repos = [] } = useRepos(ws.id);
   const canRepos = useCan('repo.create');
   const canRun = useCan('issue.run');
+  // O perfil define o que quem cria pode escolher (ex.: estagiário cria, mas sem agente).
+  const may = { agent: useCan('issue.agent'), priority: useCan('issue.priority'), labels: useCan('issue.labels'), repos: useCan('issue.repos'), assign: useCan('issue.assign') };
   const qc = useQueryClient();
   const toast = useToast();
   const nav = useNavigate();
@@ -35,13 +37,13 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     title: '', description: '', status: initialStatus, priority: 0,
-    agentId: null as string | null, repoIds: [] as string[], labelIds: [] as string[]
+    agentId: null as string | null, assigneeId: null as string | null, repoIds: [] as string[], labelIds: [] as string[]
   });
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
   // Padrão: último agente usado.
   useEffect(() => {
-    if (!form.agentId && agents.length) {
+    if (!form.agentId && agents.length && may.agent) {
       const last = readLastAgent();
       set({ agentId: agents.find((a) => a.id === last)?.id ?? agents[0].id });
     }
@@ -113,10 +115,11 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus: Statu
         </div>
         <div className="flex flex-wrap gap-1.5 px-6 pb-5">
           <StatusPicker value={form.status} onChange={(status) => set({ status })} />
-          <PriorityPicker value={form.priority} onChange={(priority) => set({ priority })} />
-          <AgentPicker value={form.agentId} onChange={(agentId) => set({ agentId })} />
-          <LabelPicker ws={ws.id} value={form.labelIds} onChange={(labelIds) => set({ labelIds })} />
-          {repos.length > 1 && <RepoScopePicker ws={ws.id} value={form.repoIds} onChange={(repoIds) => set({ repoIds })} />}
+          {may.priority && <PriorityPicker value={form.priority} onChange={(priority) => set({ priority })} />}
+          {may.assign && <AssigneePicker ws={ws.id} value={form.assigneeId} onChange={(assigneeId) => set({ assigneeId })} />}
+          {may.agent && <AgentPicker value={form.agentId} onChange={(agentId) => set({ agentId })} />}
+          {may.labels && <LabelPicker ws={ws.id} value={form.labelIds} onChange={(labelIds) => set({ labelIds })} />}
+          {may.repos && repos.length > 1 && <RepoScopePicker ws={ws.id} value={form.repoIds} onChange={(repoIds) => set({ repoIds })} />}
         </div>
         <div className="flex items-center gap-3 rounded-b-2xl border-t border-white/[0.06] bg-black/20 px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <Toggle checked={another} onChange={setAnother} label="Criar outra" />

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Mail, Pencil, Plus, Send, Server, Trash2, UserRound, Users, XCircle } from 'lucide-react';
-import { Avatar, Button, Field, Modal, PageHeader, Toggle, useToast } from '../components/ui';
+import { AlertTriangle, Check, CheckCircle2, IdCard, Mail, Pencil, Plus, Send, Server, Trash2, UserRound, Users, XCircle } from 'lucide-react';
+import { Avatar, Button, Field, Modal, PageHeader, Spinner, Toggle, useToast } from '../components/ui';
 import { api } from '../lib/api';
-import { can, useCan, useMe, useRoles, useUsers, useWorkspaces } from '../lib/queries';
+import { can, useCan, useMe, usePermissions, useRoles, useUsers, useWorkspaces } from '../lib/queries';
 import type { EmailSettings, GitInfo, Runtime, User } from '../lib/types';
 import { timeAgo } from '../lib/format';
 
@@ -174,6 +174,15 @@ function EmailForm({ initial }: { initial: EmailSettings }) {
       </p>
       <div className="space-y-4 surface p-4">
         <Toggle checked={f.enabled} onChange={(enabled) => up({ enabled })} label={f.enabled ? 'Ligado: avisa todo mundo' : 'Desligado: ninguém recebe'} />
+        {!f.enabled && (initial.notifyRules ?? 0) > 0 && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2 text-xs text-amber-200">
+            <AlertTriangle className="mt-px size-3.5 shrink-0 text-amber-400" />
+            Há {initial.notifyRules} regra(s) de e-mail nos fluxos que não enviam nada enquanto o envio estiver desligado. Ligue e configure abaixo.
+          </div>
+        )}
+        {!f.enabled ? (
+          initial.enabled && <div className="flex justify-end"><Button variant="primary" loading={busy === 'save'} onClick={() => run('save', f)}>Salvar (desligar)</Button></div>
+        ) : <>
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <span className="text-mute">Preencher:</span>
           {Object.entries(EMAIL_PRESETS).map(([name, p]) => (
@@ -210,6 +219,7 @@ function EmailForm({ initial }: { initial: EmailSettings }) {
           <Button loading={busy === 'test'} onClick={() => run('test', f)}><Send className="size-3.5" /> Enviar teste para mim</Button>
           <Button variant="primary" loading={busy === 'save'} onClick={() => run('save', f)}>Salvar</Button>
         </div>
+        </>}
       </div>
     </section>
   );
@@ -241,11 +251,12 @@ function Members({ me }: { me: User }) {
   const { data: users = [] } = useUsers();
   const { data: workspaces = [] } = useWorkspaces();
   const [editing, setEditing] = useState<Partial<User> | null>(null);
+  const [viewing, setViewing] = useState<User | null>(null);
   const qc = useQueryClient();
   const canCreate = can(me, 'user.create');
   const canUpdate = can(me, 'user.update');
   const canDelete = can(me, 'user.delete');
-  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? '?';
+  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? 'outro workspace';
   return (
     <section>
       <PageHeader icon={Users} title="Usuários" description='Cada pessoa tem um perfil (o que pode fazer) e os workspaces em que trabalha. Quem tem "ver todos os workspaces" não precisa de vínculo.'
@@ -264,6 +275,7 @@ function Members({ me }: { me: User }) {
                   : <span className="text-amber-400">sem workspace</span>}
               </div>
             </div>
+            <Button size="sm" variant="ghost" onClick={() => setViewing(u)}><IdCard className="size-3.5" /> <span className="hidden sm:inline">Ver perfil</span></Button>
             {canUpdate && (!u.isOwner || me.isOwner) && <button onClick={() => setEditing(u)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
             {canDelete && u.id !== me.id && !u.isOwner && (
               <button onClick={async () => { if (confirm(`Remover ${u.name}?`)) { await api.del(`/users/${u.id}`); qc.invalidateQueries({ queryKey: ['users'] }); } }} className="rounded p-1.5 text-mute hover:bg-hover hover:text-red-400"><Trash2 className="size-4" /></button>
@@ -272,7 +284,85 @@ function Members({ me }: { me: User }) {
         ))}
       </div>
       {editing && <UserModal user={editing} isSelf={editing.id === me.id} onClose={() => setEditing(null)} />}
+      {viewing && <ProfileModal user={viewing} onClose={() => setViewing(null)} />}
     </section>
+  );
+}
+
+interface ProfileData {
+  user: User;
+  allWorkspaces: boolean;
+  workspaces: { id: string; name: string; key: string; roles: string[]; rules: number; open: number; created: number; resolved: number }[];
+}
+
+// Perfil de uma pessoa: quem é, o que pode fazer e onde atua em cada workspace.
+function ProfileModal({ user, onClose }: { user: User; onClose: () => void }) {
+  const { data } = useQuery({ queryKey: ['profile', user.id], queryFn: () => api.get<ProfileData>(`/users/${user.id}/profile`) });
+  const { data: catalog = [] } = usePermissions();
+  const u = data?.user ?? user;
+  const owner = u.isOwner || u.permissions.includes('*');
+  const groups = [...new Set(catalog.map((p) => p.group))]
+    .map((g) => ({ g, items: catalog.filter((p) => p.group === g && (owner || u.permissions.includes(p.id))) }))
+    .filter((x) => x.items.length);
+  return (
+    <Modal open wide onClose={onClose} title="Perfil">
+      <div className="space-y-5">
+        <div className="flex items-start gap-3">
+          <Avatar name={u.name} size={44} />
+          <div className="min-w-0 flex-1">
+            <div className="text-base font-semibold">{u.name}</div>
+            <div className="truncate text-xs text-mute">{u.email}</div>
+            <div className="mt-1.5 flex flex-wrap gap-1 text-[11px]">
+              <span className="rounded bg-accent/15 px-1.5 py-0.5 text-accent">{owner ? 'dono · pode tudo' : u.roleName || 'sem perfil'}</span>
+              {data?.allWorkspaces && <span className="rounded bg-hover px-1.5 py-0.5 text-dim">vê todos os workspaces</span>}
+            </div>
+          </div>
+        </div>
+        {u.about?.trim() && <p className="whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-[13px] text-dim">{u.about}</p>}
+
+        <div>
+          <div className="mb-2 text-xs font-medium text-dim">Onde atua</div>
+          {!data ? <Spinner /> : data.workspaces.length ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {data.workspaces.map((w) => (
+                <div key={w.id} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="grid size-6 place-items-center rounded-lg bg-gradient-to-br from-accent to-accent/60 text-[11px] font-bold text-white">{w.name[0]}</span>
+                    <span className="font-medium">{w.name}</span>
+                    <span className="font-mono text-[10px] text-mute">{w.key}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                    <span className="rounded bg-white/5 px-1.5 py-0.5 text-dim"><b className="text-fg">{w.open}</b> aberta(s) com ela</span>
+                    <span className="rounded bg-white/5 px-1.5 py-0.5 text-dim"><b className="text-fg">{w.resolved}</b> resolvida(s)</span>
+                    <span className="rounded bg-white/5 px-1.5 py-0.5 text-dim"><b className="text-fg">{w.created}</b> criada(s)</span>
+                  </div>
+                  {w.roles.length > 0 ? (
+                    <ul className="mt-2 space-y-0.5 text-xs text-dim">
+                      {w.roles.map((r) => <li key={r} className="flex gap-1.5"><span className="text-accent">•</span>{r}</li>)}
+                    </ul>
+                  ) : <p className="mt-2 text-xs text-mute">Sem papel fixo em etapas: atua conforme as permissões do perfil.</p>}
+                  {w.rules > 0 && <p className="mt-1 text-[11px] text-mute">Citada em {w.rules} regra(s) de automação.</p>}
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-xs text-mute">Sem workspaces em comum com você.</p>}
+        </div>
+
+        <div>
+          <div className="mb-2 text-xs font-medium text-dim">O que pode fazer</div>
+          {owner ? <p className="text-xs text-mute">Tudo: é o dono do Multica.</p> : groups.length ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {groups.map(({ g, items }) => (
+                <div key={g}>
+                  <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-mute">{g}</div>
+                  <ul className="space-y-0.5 text-xs text-dim">{items.map((p) => <li key={p.id} className="flex gap-1.5"><Check className="mt-0.5 size-3 shrink-0 text-emerald-400" />{p.label}</li>)}</ul>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-xs text-mute">Nenhuma permissão: só vê os workspaces dele.</p>}
+        </div>
+      </div>
+    </Modal>
   );
 }
 

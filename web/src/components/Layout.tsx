@@ -3,13 +3,13 @@ import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from '
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  BarChart3, Bot, BookOpen, ChevronDown, CircleHelp, FolderCog, LayoutGrid, LogOut, Menu, Plus, Search, Server, ShieldCheck, UserRound, Users, Workflow, X
+  BarChart3, Bot, BookOpen, ChevronDown, CircleHelp, FolderCog, LayoutGrid, LogOut, Menu, Plus, Search, Settings, Workflow, X
 } from 'lucide-react';
 import { Avatar, Modal, MenuItem, Popover, Spinner } from './ui';
 import { NewIssueModal } from './NewIssue';
 import { SearchModal } from './SearchModal';
 import { CreateWorkspaceForm } from '../pages/Onboarding';
-import { can, useIssues, useMe, useStages, useWorkspaces } from '../lib/queries';
+import { can, canSee, useIssues, useMe, useStages, useWorkspaces } from '../lib/queries';
 import { useRealtime } from '../lib/realtime';
 import { api } from '../lib/api';
 import { LAST_WS } from '../lib/constants';
@@ -181,29 +181,22 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
         {link(base, <LayoutGrid className="size-4" />, 'Issues', working ? (
           <span className="flex items-center gap-1 text-[11px] text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" />{working}</span>
         ) : null)}
-        {link(`${base}/analytics`, <BarChart3 className="size-4" />, 'Analytics')}
+        {canSee(me, 'analytics') && link(`${base}/analytics`, <BarChart3 className="size-4" />, 'Analytics')}
 
-        {(can(me, 'agent.create', 'agent.update', 'agent.delete', 'skill.create', 'skill.update', 'skill.delete',
-          'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete', 'workflow.manage')) && (
-          <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">Configuração</div>
-        )}
-        {can(me, 'agent.create', 'agent.update', 'agent.delete') && link(`${base}/agentes`, <Bot className="size-4" />, 'Agentes')}
-        {can(me, 'skill.create', 'skill.update', 'skill.delete') && link(`${base}/skills`, <BookOpen className="size-4" />, 'Skills')}
-        {can(me, 'workflow.manage') && link(`${base}/fluxo`, <Workflow className="size-4" />, 'Fluxo e automações')}
-        {can(me, 'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete') &&
-          link(`${base}/workspace`, <FolderCog className="size-4" />, 'Workspace e repositórios')}
+        {(canSee(me, 'fluxo') || canSee(me, 'workspace')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">Workspace</div>}
+        {canSee(me, 'fluxo') && link(`${base}/fluxo`, <Workflow className="size-4" />, 'Fluxo e automações')}
+        {canSee(me, 'workspace') && link(`${base}/workspace`, <FolderCog className="size-4" />, 'Repositórios e pessoas')}
 
-        {(can(me, 'user.create', 'user.update', 'user.delete', 'settings.manage') || me?.isOwner) && (
-          <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">Administração</div>
-        )}
-        {can(me, 'user.create', 'user.update', 'user.delete') && link(`${base}/usuarios`, <Users className="size-4" />, 'Usuários')}
-        {me?.isOwner && link(`${base}/permissoes`, <ShieldCheck className="size-4" />, 'Permissões')}
-        {can(me, 'settings.manage', 'repo.create') && link(`${base}/servidor`, <Server className="size-4" />, 'Servidor')}
+        {(canSee(me, 'agentes') || canSee(me, 'skills')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">IA</div>}
+        {canSee(me, 'agentes') && link(`${base}/agentes`, <Bot className="size-4" />, 'Agentes')}
+        {canSee(me, 'skills') && link(`${base}/skills`, <BookOpen className="size-4" />, 'Skills')}
+
+        <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">Configurações</div>
+        {link(`${base}/config`, <Settings className="size-4" />, 'Configurações gerais')}
       </nav>
 
       <div className="space-y-0.5 border-t border-line px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {link('/sobre', <CircleHelp className="size-4" />, 'Como funciona')}
-        {link(`${base}/conta`, <UserRound className="size-4" />, 'Minha conta')}
       </div>
 
       <Modal open={creating} onClose={() => setCreating(false)} title="Novo workspace">
