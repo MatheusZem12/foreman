@@ -174,7 +174,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-4 pb-10 pt-5 md:px-6">
+          <div className="page pb-10">
             <Gate on={caps.edit} block><TitleEditor issue={issue} onSave={(title) => patch({ title })} /></Gate>
             <Gate on={caps.edit} block><DescriptionEditor issue={issue} onSave={(description) => patch({ description })} /></Gate>
 

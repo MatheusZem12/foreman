@@ -31,7 +31,7 @@ export function AgentsPage() {
   const create = () => setEditing({ runtime: 'claude', model: 'sonnet', avatar: 'bot:violet', skillIds: [] });
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-6xl p-4 pb-24 md:p-8">
+      <div className="page">
         <PageHeader
           icon={Bot}
           title={t('Agentes')}

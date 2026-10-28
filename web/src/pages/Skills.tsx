@@ -91,7 +91,7 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
+    <div className="page space-y-4">
       <div className="flex items-center gap-2">
         <button onClick={onBack} className="text-xs text-mute md:hidden">{t('← Skills')}</button>
         <span className="font-mono text-xs text-mute">{s.slug ? `skills/${s.slug}/SKILL.md` : t('nova skill')}</span>

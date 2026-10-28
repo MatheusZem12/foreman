@@ -173,7 +173,7 @@ export function WorkflowPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className={clsx('mx-auto p-4 pb-24 md:p-8', view === 'mapa' ? 'max-w-6xl' : 'max-w-4xl')}>
+      <div className="page">
         <PageHeader
           icon={Workflow}
           title={t('Fluxo e automações')}

@@ -11,7 +11,7 @@ import { Appearance } from '../components/Prefs';
 
 export const Page = ({ children }: { children: React.ReactNode }) => (
   <div className="h-full overflow-y-auto">
-    <div className="mx-auto max-w-3xl space-y-8 p-4 pb-24 md:p-8">{children}</div>
+    <div className="page space-y-8">{children}</div>
   </div>
 );
 

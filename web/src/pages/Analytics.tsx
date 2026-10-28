@@ -174,7 +174,7 @@ export function AnalyticsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-7xl p-4 pb-24 md:p-8">
+      <div className="page">
         <PageHeader
           icon={BarChart3}
           title={t('Analytics')}

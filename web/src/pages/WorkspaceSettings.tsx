@@ -33,7 +33,7 @@ export function WorkspaceSettings() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-8 p-4 pb-24 md:p-8">
+      <div className="page space-y-8">
         <section>
           <PageHeader icon={FolderCog} title={t('Workspace')} description={t('Nome, repositórios git, pessoas e labels deste workspace.')} />
           <div className="flex items-end gap-2">
