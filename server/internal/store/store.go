@@ -402,9 +402,26 @@ func (s *Store) ListLabels(ctx context.Context, wsID string) ([]Label, error) {
 	return many[Label](ctx, s, `select * from labels where workspace_id = $1 order by name`, wsID)
 }
 
+// LabelStat: a label com quantas issues a usam (abertas e no total).
+type LabelStat struct {
+	Label
+	Issues int `db:"issues" json:"issues"`
+	Open   int `db:"open" json:"open"`
+}
+
+func (s *Store) LabelStats(ctx context.Context, wsID string) ([]LabelStat, error) {
+	return many[LabelStat](ctx, s, `select l.*,
+		(select count(*) from issues i where i.workspace_id = l.workspace_id and l.id = any(i.label_ids))::int as issues,
+		(select count(*) from issues i where i.workspace_id = l.workspace_id and l.id = any(i.label_ids) and i.closed = '')::int as open
+		from labels l where l.workspace_id = $1 order by l.name`, wsID)
+}
+
 func (s *Store) CreateLabel(ctx context.Context, wsID, name, color string) (*Label, error) {
-	return one[Label](ctx, s, `insert into labels(workspace_id, name, color) values($1,$2,$3)
-		on conflict (workspace_id, name) do update set color = excluded.color returning *`, wsID, name, color)
+	return one[Label](ctx, s, `insert into labels(workspace_id, name, color) values($1,$2,$3) returning *`, wsID, name, color)
+}
+
+func (s *Store) UpdateLabel(ctx context.Context, id, name, color string) (*Label, error) {
+	return one[Label](ctx, s, `update labels set name = $2, color = $3 where id = $1 returning *`, id, name, color)
 }
 
 func (s *Store) DeleteLabel(ctx context.Context, id string) error {

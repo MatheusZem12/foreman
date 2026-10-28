@@ -57,11 +57,99 @@ func Slugify(s string, max int) string {
 	return t
 }
 
-func (s *Store) ListIssues(ctx context.Context, wsID string) ([]Issue, error) {
-	// Encerradas antigas ficam de fora da listagem padrão para manter o board leve.
-	return many[Issue](ctx, s, issueSelect+` where i.workspace_id = $1
-		and (i.closed = '' or i.updated_at > now() - interval '30 days')
-		order by i.position, i.number desc`, wsID)
+// IssueQuery: uma página de issues (do quadro, da lista ou da busca). O quadro
+// nunca carrega tudo: pede as primeiras de cada etapa e depois, etapa por
+// etapa, mais um pedaço quando a pessoa rola.
+type IssueQuery struct {
+	Stage  string // vazio = todas as etapas (busca)
+	Sort   string // manual | newest | oldest | updated | priority
+	Offset int
+	Limit  int
+	Q      string // título, número (ex.: 42 ou LOJA-42) ou descrição
+	Who    string // "" = todas | mine = criadas por UserID | id de um agente
+	Label  string
+	UserID string
+}
+
+// Ordens possíveis (todas com desempate pelo número, para a paginação ser estável).
+var issueOrder = map[string]string{
+	"manual":   "i.position, i.number desc",
+	"newest":   "i.created_at desc, i.number desc",
+	"oldest":   "i.created_at, i.number",
+	"updated":  "i.updated_at desc, i.number desc",
+	"priority": "case when i.priority = 0 then 9 else i.priority end, i.updated_at desc, i.number desc",
+}
+
+func (q IssueQuery) where(wsID string) (string, []any) {
+	conds := []string{"i.workspace_id = $1"}
+	args := []any{wsID}
+	add := func(cond string, v any) {
+		args = append(args, v)
+		conds = append(conds, strings.ReplaceAll(cond, "?", fmt.Sprintf("$%d", len(args))))
+	}
+	if q.Stage != "" {
+		add("i.status = ?", q.Stage)
+	}
+	if t := strings.TrimSpace(q.Q); t != "" {
+		num := t
+		if i := strings.LastIndex(t, "-"); i >= 0 {
+			num = t[i+1:]
+		}
+		args = append(args, t, num)
+		conds = append(conds, fmt.Sprintf("(i.title ilike '%%' || $%d || '%%' or i.number::text = $%d)", len(args)-1, len(args)))
+	}
+	switch {
+	case q.Who == "mine" && q.UserID != "":
+		add("i.created_by = ?::uuid", q.UserID)
+	case q.Who != "" && q.Who != "mine":
+		add("i.agent_id = ?::uuid", q.Who)
+	}
+	if q.Label != "" {
+		add("?::uuid = any(i.label_ids)", q.Label)
+	}
+	return strings.Join(conds, " and "), args
+}
+
+// PageIssues: uma página na ordem pedida.
+func (s *Store) PageIssues(ctx context.Context, wsID string, q IssueQuery) ([]Issue, error) {
+	order, ok := issueOrder[q.Sort]
+	if !ok {
+		order = issueOrder["manual"]
+	}
+	if q.Limit <= 0 || q.Limit > 200 {
+		q.Limit = 40
+	}
+	where, args := q.where(wsID)
+	args = append(args, q.Limit, max(q.Offset, 0))
+	return many[Issue](ctx, s, issueSelect+` where `+where+` order by `+order+
+		fmt.Sprintf(` limit $%d offset $%d`, len(args)-1, len(args)), args...)
+}
+
+// StageCounts: quantas issues cada etapa tem com os mesmos filtros (o total da coluna).
+func (s *Store) StageCounts(ctx context.Context, wsID string, q IssueQuery) (map[string]int, error) {
+	q.Stage = ""
+	where, args := q.where(wsID)
+	rows, err := s.DB.Query(ctx, `select i.status, count(*) from issues i where `+where+` group by 1`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var st string
+		var n int
+		rows.Scan(&st, &n)
+		out[st] = n
+	}
+	return out, rows.Err()
+}
+
+// Working: issues com o agente trabalhando agora (o contador do quadro e do menu).
+func (s *Store) Working(ctx context.Context, wsID string) int {
+	var n int
+	s.DB.QueryRow(ctx, `select count(distinct r.issue_id) from runs r join issues i on i.id = r.issue_id
+		where i.workspace_id = $1 and r.status in ('queued', 'running')`, wsID).Scan(&n)
+	return n
 }
 
 func (s *Store) Issue(ctx context.Context, id string) (*Issue, error) {

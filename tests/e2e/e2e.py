@@ -98,7 +98,7 @@ check(all('permission' not in a for a in ok(A('GET', '/agents'))) and all('setup
 res = ok(A('POST', f'/issues/{I["id"]}/merge', {}))
 check(not res['conflict'] and sorted(r['name'] for r in res['repos']) == ['api', 'web'], 'merge feito nos dois repositórios alterados')
 check('mudanca api' in show('api', 'main.txt') and 'ajuste web' in show('web', 'main.txt') and show('docs', 'main.txt') == 'docs v1', 'main da api e do web receberam; docs intocado')
-d = ok(A('GET', f'/issues/{I["id"]}'))
+d = wait(A, I['id'], ['done'], 10)  # "merge feito → Concluída" é regra: leva um instante
 check(d['issue']['status'] == 'done' and not remote_has('api', br) and not remote_has('web', br), 'issue concluída e branches da issue removidas')
 
 # ---------- escopo escolhido: só web ----------
@@ -375,5 +375,29 @@ check(ok(own('GET', f'/issues/{N["id"]}'))['issue']['status'] == left[0]['id'], 
 an = ok(own('GET', f'/analytics?days=30&workspace={ws["id"]}'))
 kinds = {x['stage']: x['kind'] for x in an['stageTimes']}
 check(kinds.get('in_progress') == 'ai' and kinds.get('waiting') == 'people' and any(k['kind'] == 'ai' for k in an['kindTimes']), 'analytics classifica as etapas pelas regras: ' + str(kinds))
+# quadro paginado: primeiras N por etapa, total de cada etapa, página por etapa e busca no servidor
+for n in range(45):
+    ok(own('POST', f'/workspaces/{ws3["id"]}/issues', {'title': f'Carga {n:02d}', 'status': left[0]['id'], 'priority': n % 5}))
+bd = ok(own('GET', f'/workspaces/{ws3["id"]}/board?limit=30'))
+check(bd['counts'][left[0]['id']] >= 46 and sum(1 for i in bd['issues'] if i['status'] == left[0]['id']) == 30, 'quadro traz só as primeiras 30 da etapa e o total dela')
+pg = ok(own('GET', f'/workspaces/{ws3["id"]}/issues?stage={left[0]["id"]}&offset=30&limit=40'))
+ids1 = {i['id'] for i in bd['issues']}
+check(len(pg) >= 16 and not any(i['id'] in ids1 for i in pg), 'a próxima página da etapa não repete as já carregadas')
+old = ok(own('GET', f'/workspaces/{ws3["id"]}/issues?stage={left[0]["id"]}&sort=oldest&limit=1'))[0]
+new = ok(own('GET', f'/workspaces/{ws3["id"]}/issues?stage={left[0]["id"]}&sort=newest&limit=1'))[0]
+check(old['number'] < new['number'], 'ordem por etapa: mais antigas e mais novas')
+sr = ok(own('GET', f'/workspaces/{ws3["id"]}/issues?q=Carga%2007'))
+check(len(sr) == 1 and sr[0]['title'] == 'Carga 07', 'busca no servidor pelo título')
+check(ok(own('GET', f'/workspaces/{ws3["id"]}/board?q=Carga%201'))['counts'].get(left[0]['id']) == 10, 'filtro do quadro vale para o total da etapa')
+
+# labels: tela própria e permissões separadas
+lb = ok(own('POST', f'/workspaces/{ws3["id"]}/labels', {'name': 'bug', 'color': '#ef4444'}))
+ok(own('PATCH', f'/issues/{N["id"]}', {'labelIds': [lb['id']]}))
+ls = ok(own('GET', f'/workspaces/{ws3["id"]}/labels'))
+check(ls[0]['issues'] == 1, 'labels vêm com quantas issues usam')
+check(ok(own('PUT', f'/labels/{lb["id"]}', {'name': 'defeito', 'color': '#f59e0b'}))['name'] == 'defeito', 'renomear label')
+check(own('POST', f'/workspaces/{ws3["id"]}/labels', {'name': 'defeito'})[0] == 409, 'label com nome repetido é recusada')
+perms = {p['id'] for p in ok(own('GET', '/permissions'))}
+check({'label.view', 'label.create', 'label.update', 'label.delete'} <= perms and 'label.manage' not in perms, 'permissões de label separadas')
 print('FALHAS:', fails)
 

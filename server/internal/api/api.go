@@ -99,8 +99,10 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 				r.Get("/repos", a.h(a.listRepos))
 				r.With(a.can("repo.create")).Post("/repos", a.h(a.saveRepo))
 				r.Get("/labels", a.h(a.listLabels))
-				r.With(a.can("label.manage", "issue.labels")).Post("/labels", a.h(a.createLabel))
+				r.With(a.can("label.create")).Post("/labels", a.h(a.createLabel))
 				r.Get("/issues", a.h(a.listIssues))
+				r.Get("/board", a.h(a.board))
+				r.Get("/working", a.h(a.working))
 				r.With(a.can("issue.create")).Post("/issues", a.h(a.createIssue))
 				r.Get("/events", a.events)
 				r.Get("/stages", a.h(a.listStages))
@@ -119,7 +121,8 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.With(a.can("repo.update")).Put("/repos/{id}", a.h(a.saveRepo))
 			r.With(a.can("repo.delete")).Delete("/repos/{id}", a.h(a.deleteRepo))
 			r.Get("/repos/{id}/branches", a.h(a.repoBranches))
-			r.With(a.can("label.manage")).Delete("/labels/{id}", a.h(a.deleteLabel))
+			r.With(a.can("label.update")).Put("/labels/{id}", a.h(a.updateLabel))
+			r.With(a.can("label.delete")).Delete("/labels/{id}", a.h(a.deleteLabel))
 			r.With(a.can("repo.create", "repo.update", "settings.manage")).Get("/git", a.h(a.gitInfo))
 
 			// Agentes e skills são globais: todos usam, o perfil define quem edita.
@@ -712,7 +715,25 @@ func (a *API) repoBranches(w http.ResponseWriter, r *http.Request) (any, error) 
 }
 
 func (a *API) listLabels(w http.ResponseWriter, r *http.Request) (any, error) {
-	return a.st.ListLabels(r.Context(), chi.URLParam(r, "ws"))
+	return a.st.LabelStats(r.Context(), chi.URLParam(r, "ws"))
+}
+
+func (a *API) updateLabel(w http.ResponseWriter, r *http.Request) (any, error) {
+	l, err := a.st.Label(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		return nil, err
+	}
+	if err := a.ensureAccess(r, l.WorkspaceID); err != nil {
+		return nil, err
+	}
+	var in struct{ Name, Color string }
+	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(in.Name) == "" {
+		return nil, bad("informe o nome da label")
+	}
+	return a.st.UpdateLabel(r.Context(), l.ID, strings.TrimSpace(in.Name), firstNonEmptyStr(in.Color, l.Color))
 }
 
 func (a *API) createLabel(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -793,8 +814,63 @@ func (a *API) deleteSkill(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- issues ----------
 
+// issueQuery lê os filtros comuns do quadro, da lista e da busca.
+func issueQuery(r *http.Request) store.IssueQuery {
+	q := r.URL.Query()
+	num := func(k string) int { n, _ := strconv.Atoi(q.Get(k)); return n }
+	return store.IssueQuery{
+		Stage: q.Get("stage"), Sort: q.Get("sort"), Offset: num("offset"), Limit: num("limit"),
+		Q: q.Get("q"), Who: q.Get("who"), Label: q.Get("label"), UserID: userOf(r).ID,
+	}
+}
+
+// listIssues: uma página (de uma etapa ou da busca em todas).
 func (a *API) listIssues(w http.ResponseWriter, r *http.Request) (any, error) {
-	return a.st.ListIssues(r.Context(), chi.URLParam(r, "ws"))
+	return a.st.PageIssues(r.Context(), chi.URLParam(r, "ws"), issueQuery(r))
+}
+
+// board: as primeiras N de cada etapa (cada uma na ordem escolhida para ela),
+// o total de cada etapa com os mesmos filtros e quantas o agente está tocando.
+// O resto vem por listIssues, etapa a etapa, quando a pessoa rola a coluna.
+func (a *API) board(w http.ResponseWriter, r *http.Request) (any, error) {
+	ctx := r.Context()
+	wsID := chi.URLParam(r, "ws")
+	q := issueQuery(r)
+	if q.Limit <= 0 || q.Limit > 100 {
+		q.Limit = 30
+	}
+	sorts := map[string]string{}
+	json.Unmarshal([]byte(r.URL.Query().Get("sorts")), &sorts)
+	stages, err := a.st.Stages(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := a.st.StageCounts(ctx, wsID, q)
+	if err != nil {
+		return nil, err
+	}
+	issues := []store.Issue{}
+	for _, st := range stages {
+		if counts[st.ID] == 0 {
+			continue
+		}
+		sq := q
+		sq.Stage, sq.Offset = st.ID, 0
+		sq.Sort = sorts[st.ID]
+		if sq.Sort == "" && st.Policy.Close != "" {
+			sq.Sort = "updated" // encerradas: as mais recentes primeiro
+		}
+		page, err := a.st.PageIssues(ctx, wsID, sq)
+		if err != nil {
+			return nil, err
+		}
+		issues = append(issues, page...)
+	}
+	return map[string]any{"issues": issues, "counts": counts, "working": a.st.Working(ctx, wsID)}, nil
+}
+
+func (a *API) working(w http.ResponseWriter, r *http.Request) (any, error) {
+	return map[string]int{"count": a.st.Working(r.Context(), chi.URLParam(r, "ws"))}, nil
 }
 
 func (a *API) publishIssue(is *store.Issue) {
