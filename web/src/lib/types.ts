@@ -23,7 +23,7 @@ export interface RuleConfig {
 }
 export interface Rule {
   id: string; workspaceId: string; stage: string; action: RuleAction; config: RuleConfig; enabled: boolean; position: number;
-  trigger: RuleTrigger; conditions: RuleConditions; name: string;
+  trigger: RuleTrigger; conditions: RuleConditions;
 }
 export interface WorkflowWarning { where: string; message: string; stageId?: string; ruleId?: string }
 

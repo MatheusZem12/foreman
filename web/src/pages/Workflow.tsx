@@ -168,7 +168,7 @@ export function WorkflowPage() {
     refresh();
     qc.invalidateQueries({ queryKey: ['issues', ws.id] });
   };
-  const newRule = (p: Partial<Rule>) => setEditingRule({ trigger: 'enter', action: 'notify', config: { to: 'requester' }, conditions: {}, enabled: true, name: '', ...p });
+  const newRule = (p: Partial<Rule>) => setEditingRule({ trigger: 'enter', action: 'notify', config: { to: 'requester' }, conditions: {}, enabled: true, ...p });
   const globalRules = rules.filter((r) => !triggerOf(r.trigger).stage);
 
   return (
@@ -434,7 +434,7 @@ function RuleRow({ readOnly, rule: r, stages, index, onEdit, onToggle, onDelete 
           <span className="truncate">{what}</span>
           {filters.map((f) => <span key={f} className="rounded bg-white/5 px-1.5 text-[10px] text-dim">{f}</span>)}
         </div>
-        {(r.name || missing) && <div className="truncate text-[11px] text-mute">{missing ? t('A etapa de destino foi removida: edite ou apague esta regra.') : r.name}</div>}
+        {missing && <div className="truncate text-[11px] text-mute">{t('A etapa de destino foi removida: edite ou apague esta regra.')}</div>}
       </div>
       {readOnly ? <span className="pr-1.5 text-[11px] text-mute">{r.enabled ? t('ativa') : t('desligada')}</span> : <>
         <Toggle checked={r.enabled} onChange={onToggle} />
@@ -597,7 +597,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
   const save = async () => {
     setBusy(true);
     try {
-      const body = { name: r.name ?? '', trigger: r.trigger, stage: tt.stage ? r.stage : '', action: r.action, config: c, conditions: access ? {} : cond, enabled: r.enabled ?? true };
+      const body = { trigger: r.trigger, stage: tt.stage ? r.stage : '', action: r.action, config: c, conditions: access ? {} : cond, enabled: r.enabled ?? true };
       if (r.id) await api.put(`/rules/${r.id}`, body);
       else await api.post(`/workspaces/${ws.id}/rules`, body);
       onSaved();
@@ -608,7 +608,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
       setBusy(false);
     }
   };
-  const summary = [tt.label + (tt.stage && stageName ? ` · ${stageName}` : ''), A.label, r.name || '', nFilters ? t('{0} filtro(s)', nFilters) : t('sem filtros')];
+  const summary = [tt.label + (tt.stage && stageName ? ` · ${stageName}` : ''), A.label, '', nFilters ? t('{0} filtro(s)', nFilters) : t('sem filtros')];
   const onFail = (
     <Field label={t('Se falhar, mover para')} hint={t('opcional')}>
       <select className="field-input" value={c.onFail ?? ''} onChange={(e) => setC({ onFail: e.target.value })}>
@@ -803,10 +803,6 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
             <p className="text-[11px] text-mute">{t('MULTICA_ISSUE, _TITLE, _BRANCH, _STAGE, _FROM, _EVENT, _PRIORITY, _README, _WORKSPACE · até 10 min.')}</p>
             {onFail}
           </>}
-          <div className="flex items-end gap-3 border-t border-line/60 pt-3">
-            <Field label={t('Nome')} hint={t('opcional')} className="flex-1"><input className="field-input" value={r.name ?? ''} onChange={(e) => setR({ ...r, name: e.target.value })} placeholder={A.label} /></Field>
-            <div className="pb-2"><Toggle checked={r.enabled ?? true} onChange={(enabled) => setR({ ...r, enabled })} label={t('Ativa')} /></div>
-          </div>
         </div>
       )}
 

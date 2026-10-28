@@ -190,7 +190,7 @@ func (e *Engine) matches(ctx context.Context, is *store.Issue, c store.Condition
 func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r store.Rule) bool {
 	var cfg Config
 	json.Unmarshal(r.Config, &cfg)
-	label := firstNonEmpty(r.Name, actionLabel(r.Action))
+	label := actionLabel(r.Action)
 	msg, err := e.apply(ctx, is, ev, r.Action, cfg)
 	switch {
 	case errors.Is(err, errSkip):

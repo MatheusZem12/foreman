@@ -41,7 +41,7 @@ function condLabel(r: Rule) {
   if (c.labels?.length) parts.push(t('{0} label(s)', c.labels.length));
   if (c.agents?.length) parts.push(t('por agente'));
   if (c.actorRoles?.length) parts.push(t('por perfil'));
-  return parts.join(' · ') || r.name || t('sempre');
+  return parts.join(' · ') || t('sempre');
 }
 
 const pillW = (text: string) => text.length * 6.1 + 18;
@@ -296,7 +296,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       </div>
       {layout.loose.length > 0 && (
         <p className="text-xs text-mute">
-          {t('Também movem issues, de qualquer etapa:')} {layout.loose.map((r) => `${r.name || t('regra')} → ${stages.find((s) => s.id === r.config.to)?.name}`).join(' · ')}
+          {t('Também movem issues, de qualquer etapa:')} {layout.loose.map((r) => `${t('regra')} → ${stages.find((s) => s.id === r.config.to)?.name}`).join(' · ')}
         </p>
       )}
     </div>

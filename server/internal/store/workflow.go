@@ -293,7 +293,6 @@ type Rule struct {
 	CreatedAt   time.Time       `db:"created_at" json:"createdAt"`
 	Trigger     string          `db:"trigger" json:"trigger"`
 	Conditions  json.RawMessage `db:"conditions" json:"conditions"`
-	Name        string          `db:"name" json:"name"`
 }
 
 // Gatilhos. enter/leave/stale pedem etapa.
@@ -349,12 +348,12 @@ func (s *Store) SaveRule(ctx context.Context, r Rule) (*Rule, error) {
 		r.Conditions = json.RawMessage("{}")
 	}
 	if r.ID == "" {
-		return one[Rule](ctx, s, `insert into rules(workspace_id, stage, action, config, enabled, trigger, conditions, name, position)
-			values($1,$2,$3,$4,$5,$6,$7,$8,(select coalesce(max(position), -1) + 1 from rules where workspace_id = $1 and stage = $2)) returning *`,
-			r.WorkspaceID, r.Stage, r.Action, r.Config, r.Enabled, r.Trigger, r.Conditions, r.Name)
+		return one[Rule](ctx, s, `insert into rules(workspace_id, stage, action, config, enabled, trigger, conditions, position)
+			values($1,$2,$3,$4,$5,$6,$7,(select coalesce(max(position), -1) + 1 from rules where workspace_id = $1 and stage = $2)) returning *`,
+			r.WorkspaceID, r.Stage, r.Action, r.Config, r.Enabled, r.Trigger, r.Conditions)
 	}
-	return one[Rule](ctx, s, `update rules set stage=$2, action=$3, config=$4, enabled=$5, trigger=$6, conditions=$7, name=$8 where id=$1 returning *`,
-		r.ID, r.Stage, r.Action, r.Config, r.Enabled, r.Trigger, r.Conditions, r.Name)
+	return one[Rule](ctx, s, `update rules set stage=$2, action=$3, config=$4, enabled=$5, trigger=$6, conditions=$7 where id=$1 returning *`,
+		r.ID, r.Stage, r.Action, r.Config, r.Enabled, r.Trigger, r.Conditions)
 }
 
 // SetRuleOrder grava a ordem em que as regras rodam (ids do mesmo workspace).
@@ -429,8 +428,8 @@ func (s *Store) ReplaceWorkflow(ctx context.Context, wsID string, stages []Stage
 		}
 	}
 	for _, r := range rules {
-		if _, err := tx.Exec(ctx, `insert into rules(workspace_id, stage, action, config, enabled, position, trigger, conditions, name)
-			values($1,$2,$3,$4,$5,$6,$7,$8,$9)`, wsID, r.Stage, r.Action, r.Config, r.Enabled, r.Position, r.Trigger, r.Conditions, r.Name); err != nil {
+		if _, err := tx.Exec(ctx, `insert into rules(workspace_id, stage, action, config, enabled, position, trigger, conditions)
+			values($1,$2,$3,$4,$5,$6,$7,$8)`, wsID, r.Stage, r.Action, r.Config, r.Enabled, r.Position, r.Trigger, r.Conditions); err != nil {
 			return err
 		}
 	}

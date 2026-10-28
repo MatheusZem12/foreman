@@ -334,7 +334,6 @@ func (a *API) saveRule(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	in := body.Rule
 	in.Enabled = body.Enabled == nil || *body.Enabled
-	in.Name = strings.TrimSpace(in.Name)
 	if in.Trigger == "" {
 		in.Trigger = "enter"
 	}
@@ -388,6 +387,9 @@ func (a *API) deleteRule(w http.ResponseWriter, r *http.Request) (any, error) {
 var actionNames = map[string]string{
 	"allow_act": "quem mexe", "allow_enter": "quem traz issues", "read_only": "somente leitura", "lock_fields": "campos travados",
 	"require": "requisitos", "wip": "limite de issues", "approval": "aprovação", "responsible": "responsáveis",
+	"notify": "notificar", "webhook": "webhook", "move": "mover", "run_agent": "rodar agente", "open_pr": "abrir PR", "merge": "merge",
+	"script": "script", "set_agent": "definir agente", "set_priority": "definir prioridade", "add_label": "adicionar label",
+	"assign": "definir responsável", "comment": "comentar",
 }
 
 type warning struct {
@@ -435,9 +437,9 @@ func (a *API) workflowWarnings(ctx context.Context, wsID string, stages []store.
 	for _, r := range rules {
 		var c ruleConfig
 		json.Unmarshal(r.Config, &c)
-		where := tr(ctx, "Regra %s", firstNonEmptyStr(r.Name, r.Action))
+		where := tr(ctx, "Regra %s", tr(ctx, firstNonEmptyStr(actionNames[r.Action], r.Action)))
 		if r.Stage != "" {
-			where = tr(ctx, "Etapa %s · %s", stageName(r.Stage), firstNonEmptyStr(r.Name, tr(ctx, actionNames[r.Action]), r.Action))
+			where = tr(ctx, "Etapa %s · %s", stageName(r.Stage), tr(ctx, firstNonEmptyStr(actionNames[r.Action], r.Action)))
 		}
 		checkWho(store.Who{Roles: c.Roles, Users: c.Users}, where, "", r.ID)
 		if c.LabelID != "" {
@@ -525,7 +527,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 		rl := &rules[i]
 		var c map[string]any
 		json.Unmarshal(rl.Config, &c)
-		where := tr(ctx, "Regra %s", firstNonEmptyStr(rl.Name, rl.Action))
+		where := tr(ctx, "Regra %s", tr(ctx, firstNonEmptyStr(actionNames[rl.Action], rl.Action)))
 		if list, ok := c["users"].([]any); ok {
 			var ids []string
 			for _, v := range list {
