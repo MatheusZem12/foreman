@@ -15,7 +15,7 @@ export type RuleAction = 'notify' | 'webhook' | 'move' | 'run_agent' | 'open_pr'
   | 'set_agent' | 'set_priority' | 'add_label' | 'assign' | 'comment' | 'stop_agent'
   // regras de acesso da etapa (trigger 'access')
   | 'allow_act' | 'allow_enter' | 'read_only' | 'lock_fields' | 'require' | 'wip' | 'approval' | 'responsible' | 'close';
-export type RuleTrigger = 'access' | 'enter' | 'leave' | 'stale' | 'created' | 'commented' | 'run_started' | 'run_finished' | 'merged' | 'merge_conflict'
+export type RuleTrigger = 'access' | 'enter' | 'leave' | 'stale' | 'created' | 'commented' | 'run_started' | 'run_finished' | 'merged' | 'merge_conflict' | 'rule_failed'
   | 'cost_over' | 'assigned' | 'priority_changed';
 export interface RuleConditions {
   priorities?: number[]; labels?: string[]; agents?: string[]; outcomes?: string[]; hours?: number; cost?: number; actorRoles?: string[];

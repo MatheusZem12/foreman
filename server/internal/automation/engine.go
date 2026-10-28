@@ -212,8 +212,14 @@ func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r
 		return true
 	case err != nil:
 		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Regra **%s** (%s) falhou: %s", label, e.triggerText(ctx, is, r), err))
-		if cfg.OnFail != "" && cfg.OnFail != is.Status && e.st.ValidStage(ctx, is.WorkspaceID, cfg.OnFail) {
-			e.move(ctx, is, cfg.OnFail)
+		// "Se falhar, mover para" da própria regra vale primeiro; sem ele, as
+		// regras de "Uma regra falhou" decidem (o padrão leva para Bloqueada).
+		if cfg.OnFail != "" && e.st.ValidStage(ctx, is.WorkspaceID, cfg.OnFail) {
+			if cfg.OnFail != is.Status {
+				e.move(ctx, is, cfg.OnFail)
+			}
+		} else if r.Trigger != "rule_failed" {
+			e.st.Emit(ctx, store.Event{Kind: "rule_failed", IssueID: is.ID})
 		}
 		return true
 	case msg != "" && !(r.Action == "move" && routine[r.Trigger]):
@@ -229,7 +235,7 @@ func (e *Engine) triggerText(ctx context.Context, is *store.Issue, r store.Rule)
 	return map[string]string{
 		"enter": "ao entrar em " + st, "leave": "ao sair de " + st, "stale": "parada em " + st,
 		"created": "issue criada", "commented": "comentário", "run_started": "agente começou", "run_finished": "execução terminou",
-		"merged": "merge feito", "merge_conflict": "conflito no merge",
+		"merged": "merge feito", "merge_conflict": "conflito no merge", "rule_failed": "uma regra falhou",
 		"cost_over": "custo passou do limite", "assigned": "responsável definido", "priority_changed": "prioridade trocada",
 	}[r.Trigger]
 }

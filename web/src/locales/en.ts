@@ -2,6 +2,9 @@
 // faltar aqui aparece em português. Gerado a partir de t('…') e revisado.
 const en: Record<string, string> = {
   // fluxo padrão em regras
+  "Uma regra falhou": "A rule failed",
+  "uma regra falhou": "a rule failed",
+  "agente sem repositório, script, merge, PR… (quando a regra não tem “se falhar, mover para”)": "agent without a repository, script, merge, PR… (when the rule has no “if it fails, move to”)",
   "Regras gerais": "General rules",
   "Regra geral": "General rule",
   "Regras de etapa disparam quando a issue entra, sai ou fica parada numa etapa. Regras gerais disparam por um acontecimento, esteja a issue onde estiver: o agente começou ou terminou, merge, conflito, issue criada, comentário, prioridade, responsável, custo. Para valer só a partir de certas etapas, use o filtro “a issue está na etapa”.": "Stage rules fire when the issue enters, leaves or sits idle in a stage. General rules fire on an event, wherever the issue is: the agent started or finished, merge, conflict, issue created, comment, priority, assignee, cost. To apply only from certain stages, use the “the issue is in the stage” filter.",

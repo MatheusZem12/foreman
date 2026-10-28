@@ -55,6 +55,7 @@ As regras padrão (função `seed_workflow` no banco, migração 016):
 - **Execução terminou**, estando em Em andamento: concluída → Em revisão; precisa de você ou incompleta → Aguardando você; falhou → Bloqueada; parada → Backlog.
 - **Backlog e Cancelada, ao entrar:** parar o agente.
 - **Merge feito** → Concluída; **conflito no merge** → Bloqueada.
+- **Uma regra falhou** (agente sem repositório, script, merge, PR…) → Bloqueada, a não ser que a própria regra tenha "se falhar, mover para".
 - **Concluída** encerra a issue como resolvida e **Cancelada** como cancelada (regra de acesso "Encerrar a issue"); é isso que o analytics conta.
 - **Em revisão:** 1 aprovação → Concluída. **Concluída, ao entrar:** merge. **Aguardando você, ao entrar:** e-mail para quem pediu.
 

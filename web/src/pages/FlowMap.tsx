@@ -25,7 +25,7 @@ const COLORS: Record<Kind, string> = { seq: 'rgb(var(--ink) / 0.22)', rule: '#9d
 const START = '__start';
 
 // Gatilhos de rotina (agente e merge): desenhados em laranja, como "automático".
-const ROUTINE = ['run_started', 'run_finished', 'merged', 'merge_conflict'];
+const ROUTINE = ['run_started', 'run_finished', 'merged', 'merge_conflict', 'rule_failed'];
 const OUTCOME_LABEL: Record<string, () => string> = {
   done: () => t('IA concluiu'), waiting: () => t('IA precisa de você'), incomplete: () => t('IA não terminou'),
   failed: () => t('falhou'), cancelled: () => t('parada')
@@ -34,6 +34,7 @@ function routineLabel(r: Rule) {
   if (r.trigger === 'run_started') return t('agente começa');
   if (r.trigger === 'merged') return t('merge feito');
   if (r.trigger === 'merge_conflict') return t('conflito no merge');
+  if (r.trigger === 'rule_failed') return t('uma regra falhou');
   const o = r.conditions?.outcomes ?? [];
   return o.length ? [...new Set(o.map((x) => OUTCOME_LABEL[x]?.() ?? x))].join(' / ') : t('agente terminou');
 }

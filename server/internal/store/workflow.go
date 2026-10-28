@@ -290,7 +290,7 @@ type Rule struct {
 // Gatilhos. enter/leave/stale pedem etapa.
 var RuleTriggers = map[string]bool{
 	"enter": true, "leave": true, "stale": true, "access": true, // etapa
-	"created": true, "commented": true, "run_started": true, "run_finished": true, "merged": true, "merge_conflict": true,
+	"created": true, "commented": true, "run_started": true, "run_finished": true, "merged": true, "merge_conflict": true, "rule_failed": true,
 	"cost_over": true, "assigned": true, "priority_changed": true,
 }
 

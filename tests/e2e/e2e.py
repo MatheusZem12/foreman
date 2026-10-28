@@ -360,7 +360,8 @@ check(next(x for x in s3 if x['id'] == 'done')['policy'].get('close') == 'done',
 N = ok(own('POST', f'/workspaces/{ws3["id"]}/issues', {'title': 'Sem repo', 'status': 'todo', 'agentId': ag['id']}))['issue']
 time.sleep(2)
 dn = ok(own('GET', f'/issues/{N["id"]}'))
-check(dn['issue']['status'] == 'todo' and any('não tem repositório' in c['body'] for c in dn['comments']), 'sem repositório a regra de rodar o agente avisa e a issue fica onde está')
+check(dn['issue']['status'] == 'blocked' and any('não tem repositório' in c['body'] for c in dn['comments']), 'sem repositório a regra de rodar o agente falha, avisa e "uma regra falhou" leva para Bloqueada')
+check(has('rule_failed', 'move', to='blocked'), 'regra padrão: uma regra falhou → Bloqueada')
 ok(own('PATCH', f'/issues/{N["id"]}', {'status': 'done'}))
 check(ok(own('GET', f'/issues/{N["id"]}'))['issue']['closed'] == 'done', 'entrar numa etapa com "Encerrar" conta como resolvida')
 ok(own('PUT', f'/workspaces/{ws3["id"]}/stages/backlog', {'name': 'Ideias'}))

@@ -33,6 +33,7 @@ const TRIGGERS: { id: RuleTrigger; label: string; stage?: boolean; hint: string 
   { id: 'run_finished', label: t('Execução do agente terminou'), hint: t('concluída, aguardando, incompleta, com falha ou parada') },
   { id: 'merged', label: t('Merge feito'), hint: t('pelo botão ou por regra') },
   { id: 'merge_conflict', label: t('Conflito no merge'), hint: t('nada foi publicado') },
+  { id: 'rule_failed', label: t('Uma regra falhou'), hint: t('agente sem repositório, script, merge, PR… (quando a regra não tem “se falhar, mover para”)') },
   { id: 'assigned', label: t('Responsável definido'), hint: t('alguém virou dono da issue') },
   { id: 'priority_changed', label: t('Prioridade trocada'), hint: t('use a condição para pegar só urgentes') },
   { id: 'cost_over', label: t('Custo passou de um valor'), hint: t('soma das execuções em US$') }
