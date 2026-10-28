@@ -30,7 +30,7 @@ Abra `http://localhost:8700`. Na primeira vez o script compila o front (npm) e o
 | **Vários repositórios** | Um workspace tem quantos repositórios quiser. Cada issue recebe um worktree de cada um (ou só dos escolhidos) e a IA mexe só nos que o pedido exige, guiada pela **descrição** de cada repositório. Só os alterados ganham branch, push e merge. |
 | **Chat limpo + README** | Todo pedido abre um chat novo. A continuidade vem do **README da issue**, que o agente reescreve ao terminar (objetivo, o que foi feito por pedido, arquivos, decisões, como testar, pendências), do **histórico de pedidos** que o Multica registra (quando, agente, pedido, resultado, commits) e do log de commits. Os dois vão como anexo para o próximo chat e ficam na aba README da issue. Se o agente não escrever o README, o servidor gera um automático. |
 | **Resultado declarado** | Ao terminar, a IA escreve em `$MULTICA_STATUS` se ficou `concluido`, `aguardando: <o que precisa>` ou `incompleto: <por quê>`. Concluído vai para *Em revisão*; os outros vão para *Aguardando você*, com a pergunta como comentário e uma caixa para responder direto ao agente. |
-| **Etapas e automações** | Em *Fluxo e automações*, cada workspace cria etapas próprias (ex.: "Revisão por IA", "QA") e regras que disparam ao entrar numa etapa: notificar por e-mail, webhook (Slack, Discord, n8n), mover para outra etapa, rodar um agente com um pedido, abrir PR (GitHub, via `gh`), fazer merge ou rodar um script bash com variáveis `MULTICA_*`. Cada ação fica registrada como comentário na issue; regras em loop param sozinhas. Workspaces nascem com duas regras: *Concluída → merge* e *Aguardando você → avisar quem pediu*. |
+| **Etapas e automações** | O núcleo do Multica; veja [Fluxo, papéis e automações](#fluxo-papéis-e-automações). |
 | **Skills compartilhadas** | Guias em markdown, com scripts opcionais, guardados no banco. Você indexa as skills nos agentes: chamou o agente, vai o pacote dele. Agente e issue guardam só a referência: editou uma vez, vale para todos. `Anexar a todas` inclui a skill em toda execução. No prompt vai só o índice (nome, descrição e caminho); o agente lê a skill inteira quando precisa. |
 | **Ajuste por comentário** | Comentário com "Enviar para o agente" vira uma nova execução (pode ser outro agente) no mesmo worktree, recebendo o resumo e o pedido. |
 | **Merge seguro** | `--no-ff` num worktree temporário, seguido de push, com destino escolhido por repositório. Com vários repositórios, todos os merges são feitos localmente antes: se um der conflito, **nenhum** é publicado. A issue vai para *Bloqueada* e o botão **Resolver conflito com IA** traz o destino para a branch da issue e pede ao agente para resolver. O merge é recusado enquanto houver marcador de conflito. |
@@ -42,6 +42,37 @@ Caminho de uma issue:
 - a IA terminou → **Em revisão**; precisa de alguém ou não terminou → **Aguardando você**; falhou ou deu conflito → **Bloqueada**;
 - em **Em revisão**, o botão **✓ Aprovar** leva para **Concluída**, onde por padrão a regra faz o merge (troque por "Abrir PR" se preferir);
 - uma issue em **Backlog** não roda; mover para **Backlog** ou **Cancelada** interrompe a execução.
+
+## Fluxo, papéis e automações
+
+Usuários e perfis são **globais**; o acesso a workspaces, não. O fluxo de cada workspace fica em *Fluxo e automações*.
+
+**Etapas.** Todo workspace tem as etapas do sistema (com comportamento próprio) e as suas. Todas podem ser **arrastadas** para mudar a ordem; as personalizadas podem ser removidas (as issues voltam para o Backlog). Cada etapa tem uma política:
+- **Quem mexe nas issues desta etapa** (perfis e/ou pessoas): editar, comentar, rodar agente, tirar dali.
+- **Quem pode trazer issues para cá.**
+- **Travas:** campos que ninguém altera ali (título, descrição, prioridade, labels, agente, repositórios, responsável).
+- **Requisitos para entrar:** ter agente, responsável, descrição ou alterações de código.
+- **Limite** de issues ao mesmo tempo.
+- **Aprovação:** quantas aprovações de pessoas diferentes, quem aprova e para onde a issue vai quando aprovada. *Em revisão* nasce com 1 aprovação → *Concluída*.
+- **Responsáveis da etapa** (destinatários de e-mail).
+
+Ex.: Estagiário e Júnior podem ter o **mesmo perfil de permissões**, mas a Triagem só aceita o Estagiário e o Desenvolvimento só o Júnior: cada um mexe na sua etapa. O dono passa por tudo.
+
+**Telas por permissão.** Cada tela tem um "ver" (Analytics, Fluxo, Repositórios e pessoas, Agentes, Skills, Usuários). A tela aparece com o "ver" ou com qualquer permissão de mexer nela; sem nenhuma, some do menu e o endereço bloqueia; só com o "ver", abre em modo leitura. Em *Usuários*, quem pode ver abre o **perfil** de cada pessoa: o que o perfil dela permite e, em cada workspace em comum, em que etapas ela mexe, traz issues, aprova ou é responsável, regras que a citam e issues abertas, criadas e resolvidas.
+
+**Permissões finas** (perfil): criar, editar texto, mover, comentar, prioridade, labels, agente, repositórios, responsável, executar, aprovar, merge, excluir, labels do workspace, configurar e copiar o fluxo. Ex.: um perfil que só cria issues não escolhe agente nem prioridade. Cada issue devolve o que a pessoa pode fazer ali (`caps`); a tela trava o resto e o servidor confere de novo.
+
+**Ordem das regras.** As regras de uma etapa rodam de cima para baixo, na ordem que você arrastar. Ações rápidas (notificar, comentar, definir campos) seguem na hora; script, merge e PR esperam terminar; **rodar agente** numa regra de etapa também espera: a issue fica na etapa enquanto o agente trabalha e a próxima regra só roda quando ele termina (se ele precisar de alguém, a issue vai para *Aguardando você*; se falhar, para *Bloqueada* ou a etapa "se falhar"). **Mover** tira a issue da etapa, então deixe por último — a tela avisa quando não está. Ex.: *avisar que chegou → agente revisa → avisar que terminou → mover para QA*.
+
+**Regras** = gatilho + condições + ação. Gatilhos: entrar, sair ou ficar parada X horas numa etapa; issue criada; comentário; execução terminou (concluída, aguardando, incompleta, falhou); responsável definido; prioridade trocada; custo acima de US$ X. Condições: prioridade, labels, agente, perfil de quem causou. Ações: notificar por e-mail (quem pediu, quem criou, responsável, responsáveis da etapa, time, só administradores, perfis ou usuários escolhidos — nunca e-mail digitado), webhook, comentar, mover, definir responsável (fixo, quem criou, quem pediu ou distribuir para quem tem menos issues num grupo), prioridade, label, agente, rodar agente, abrir PR, merge e script. Cada ação vira comentário na issue; loops param sozinhos.
+
+**Entrada de issues:** um endereço por workspace (`POST /api/hooks/<token>`) cria issues na etapa escolhida, com `{title, description, priority}` ou `{subject, text, from}`. Serve para "quando cair um e-mail na caixa": encaminhe com Cloudflare Email Routing, n8n, Zapier ou Make.
+
+**Copiar o fluxo** para outro workspace mostra antes o que muda: perfis e agentes vão iguais (são globais), pessoas sem acesso ao destino saem das listas, labels são recriadas pelo nome e regras que ficariam sem ninguém vão desativadas. A tela de fluxo também alerta quando alguém perde o acesso depois.
+
+**Skills** se vinculam a todas as issues, a agentes escolhidos ou a nenhum; o agente mostra as skills do pacote dele.
+
+A chave do workspace (prefixo das issues) não muda depois de criada.
 
 ## Usuários e permissões
 
@@ -163,6 +194,8 @@ Coloque um proxy reverso (Caddy, nginx, Traefik) na frente da porta 8700 e defin
 | `MULTICA_SECURE_COOKIE` | `false` | `true` atrás de HTTPS |
 
 ## Desenvolvimento
+
+Testes de ponta a ponta (Docker; sobe uma stack isolada na porta 18700 com repositórios git de teste e um agente simulado): `tests/e2e/run.sh` (ou `--no-build` para reaproveitar a imagem).
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db   # Postgres em localhost:5432
