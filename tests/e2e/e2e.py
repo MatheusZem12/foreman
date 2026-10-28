@@ -324,5 +324,15 @@ check(loja['created'] >= 1 and 'OUT' not in [w['key'] for w in prof['workspaces'
 check(login('est')('GET', f'/users/{ana["id"]}/profile')[0] == 403, 'sem "ver usuários" não abre perfis')
 roles_now = {r['name']: r for r in ok(own('GET', '/roles'))}
 check(all(p in roles_now['Membro']['permissions'] for p in ['user.view', 'workflow.view', 'analytics.view']) and 'workflow.manage' not in roles_now['Membro']['permissions'], 'Membro vê as telas em modo leitura')
+
+# etapas em paralelo
+pri = ok(C('POST', f'/workspaces/{ws2["id"]}/stages', {'name': 'Prioridade', 'after': 'backlog'}))
+dif = ok(C('POST', f'/workspaces/{ws2["id"]}/stages', {'name': 'Difícil', 'after': pri['id']}))
+med = ok(C('POST', f'/workspaces/{ws2["id"]}/stages', {'name': 'Médio', 'after': dif['id'], 'parallel': True}))
+sts = ok(C('GET', f'/workspaces/{ws2["id"]}/stages'))
+ids = [x['id'] for x in sts]
+check(next(x for x in sts if x['id'] == med['id'])['parallel'] and ids.index(med['id']) == ids.index(dif['id']) + 1, 'etapa em paralelo fica logo depois da anterior')
+ok(C('PUT', f'/workspaces/{ws2["id"]}/stages/{med["id"]}', {'name': 'Médio', 'parallel': False}))
+check(not next(x for x in ok(C('GET', f'/workspaces/{ws2["id"]}/stages')) if x['id'] == med['id'])['parallel'], 'dá para tirar a etapa do paralelo')
 print('FALHAS:', fails)
 
