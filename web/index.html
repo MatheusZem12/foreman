@@ -8,6 +8,16 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon.svg" />
     <title>Multica</title>
+    <script>
+      // Tema antes do React: sem piscar claro/escuro ao abrir.
+      (function () {
+        var t = 'system';
+        try { t = localStorage.getItem('mx.theme') || 'system'; } catch (e) {}
+        var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        if (!dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f6f6f8');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

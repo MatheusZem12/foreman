@@ -17,9 +17,39 @@
   --chart-3: #199e70;
   --chart-4: #c98500;
   --chart-5: #d55181;
-  --chart-grid: rgb(255 255 255 / 0.06);
+  --chart-grid: rgb(var(--ink) / 0.06);
+  --ink: 255 255 255;   /* sobreposições (white/x no Tailwind) */
+  --shadow: 0.6;
   color-scheme: dark;
 }
+
+/* Tema claro: mesmas variáveis, outros valores. data-theme é posto antes do
+   React carregar (index.html), então não pisca. */
+:root[data-theme='light'] {
+  --bg: 246 246 248;
+  --panel: 255 255 255;
+  --card: 251 251 252;
+  --hover: 239 239 243;
+  --line: 226 226 232;
+  --fg: 24 24 28;
+  --dim: 78 78 88;
+  --mute: 124 124 134;
+  --accent: 104 86 240;
+  --ink: 0 0 0;
+  --shadow: 0.12;
+  --chart-grid: rgb(0 0 0 / 0.07);
+  color-scheme: light;
+}
+/* Tons claros de status (feitos para fundo escuro) escurecem no tema claro. */
+:root[data-theme='light'] :is(.text-red-200, .text-red-300, .text-red-400) { color: #c62828; }
+:root[data-theme='light'] :is(.text-emerald-200, .text-emerald-300, .text-emerald-400) { color: #047857; }
+:root[data-theme='light'] :is(.text-amber-100, .text-amber-200, .text-amber-300) { color: #92400e; }
+:root[data-theme='light'] .text-amber-400 { color: #b45309; }
+:root[data-theme='light'] :is(.text-sky-300, .text-sky-400, .text-sky-400\/80) { color: #0369a1; }
+:root[data-theme='light'] :is(.text-orange-200, .text-orange-400) { color: #c2410c; }
+/* Faixas escurecidas (rodapé de diálogo, blocos de código) ficam sutis. */
+:root[data-theme='light'] :is(.bg-black\/10, .bg-black\/20, .bg-black\/30) { background-color: rgb(0 0 0 / 0.03); }
+:root[data-theme='light'] :is(.bg-black\/50, .bg-black\/60, .bg-black\/70) { background-color: rgb(20 20 30 / 0.35); }
 
 html, body, #root { height: 100%; }
 body {
@@ -52,7 +82,7 @@ textarea.field-input { @apply resize-y leading-relaxed; }
 select.field-input { @apply cursor-pointer pr-8; }
 
 /* Superfícies */
-.surface { @apply rounded-xl border border-line bg-panel; box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.5); }
+.surface { @apply rounded-xl border border-line bg-panel; box-shadow: 0 1px 0 0 rgb(var(--ink) / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / var(--shadow)); }
 .surface-hover { @apply transition hover:border-white/15 hover:bg-card; }
 .glow { background: radial-gradient(600px circle at 50% -20%, rgb(var(--accent) / 0.12), transparent 60%); }
 }
@@ -101,8 +131,8 @@ code, kbd, pre { font-variant-ligatures: none; }
 
 .hero-grid {
   background-image:
-    linear-gradient(rgb(255 255 255 / .045) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / .045) 1px, transparent 1px);
+    linear-gradient(rgb(var(--ink) / .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--ink) / .045) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
   -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);

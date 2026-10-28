@@ -12,10 +12,14 @@ export default {
         fg: 'rgb(var(--fg) / <alpha-value>)',
         dim: 'rgb(var(--dim) / <alpha-value>)',
         mute: 'rgb(var(--mute) / <alpha-value>)',
-        accent: 'rgb(var(--accent) / <alpha-value>)'
+        accent: 'rgb(var(--accent) / <alpha-value>)',
+        // "white/x" é a tinta de sobreposição: branca no tema escuro, preta no
+        // claro. Branco de verdade (texto em cima do roxo) é "snow".
+        white: 'rgb(var(--ink) / <alpha-value>)',
+        snow: '#ffffff'
       },
       boxShadow: {
-        pop: '0 12px 40px -8px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.04)'
+        pop: '0 12px 40px -8px rgb(0 0 0 / var(--shadow, 0.6)), 0 0 0 1px rgb(var(--ink) / 0.04)'
       },
       fontFamily: {
         sans: ['Inter Variable', 'Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
