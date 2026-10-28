@@ -18,7 +18,8 @@ const issueSelect = `select i.*,
 	coalesce((select jsonb_agg(jsonb_build_object('repoId', ir.repo_id, 'name', r.name, 'baseBranch', ir.base_branch,
 		'targetBranch', ir.target_branch, 'changed', ir.changed, 'conflict', ir.conflict, 'mergedInto', ir.merged_into,
 		'mergedSha', ir.merged_sha) order by r.name)
-		from issue_repos ir join repos r on r.id = ir.repo_id where ir.issue_id = i.id), '[]'::jsonb) as repos
+		from issue_repos ir join repos r on r.id = ir.repo_id where ir.issue_id = i.id), '[]'::jsonb) as repos,
+	coalesce((select array_agg(a.user_id::text) from issue_approvals a where a.issue_id = i.id and a.stage = i.status), '{}') as approvals
 	from issues i`
 
 // IssueRepo é um repositório no escopo da issue, com as branches dele e o
@@ -75,6 +76,7 @@ type NewIssue struct {
 	Status      string  `json:"status"`
 	Priority    int16   `json:"priority"`
 	AgentID     *string `json:"agentId"`
+	AssigneeID  *string `json:"assigneeId"`
 	// Vazio = todos os repositórios do workspace (a IA escolhe onde mexer).
 	RepoIDs  []string `json:"repoIds"`
 	LabelIDs []string `json:"labelIds"`
@@ -96,12 +98,12 @@ func (s *Store) CreateIssue(ctx context.Context, wsID, userID string, in NewIssu
 	var id string
 	// Nova issue entra no topo da coluna.
 	err = tx.QueryRow(ctx, `insert into issues(workspace_id, number, title, description, status, priority, position, agent_id,
-			branch, label_ids, skill_ids, created_by, all_repos)
+			branch, label_ids, skill_ids, created_by, all_repos, assignee_id)
 		values($1,$2,$3,$4,$5,$6,
 			coalesce((select min(position) from issues where workspace_id = $1 and status = $5), 0) - 1024,
-			$7,$8,$9,$10,$11,$12) returning id`,
+			$7,$8,$9,$10,$11,$12,$13) returning id`,
 		wsID, number, in.Title, in.Description, in.Status, in.Priority, in.AgentID,
-		branch, nz(in.LabelIDs), nz(in.SkillIDs), userID, len(in.RepoIDs) == 0).Scan(&id)
+		branch, nz(in.LabelIDs), nz(in.SkillIDs), nilIfEmpty(userID), len(in.RepoIDs) == 0, in.AssigneeID).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -113,13 +115,26 @@ func (s *Store) CreateIssue(ctx context.Context, wsID, userID string, in NewIssu
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return s.Issue(ctx, id)
+	is, err := s.Issue(ctx, id)
+	if err == nil {
+		s.DB.Exec(ctx, `insert into issue_stage_log(issue_id, workspace_id, stage) values($1, $2, $3)`, id, wsID, in.Status)
+		s.Emit(ctx, Event{Kind: "created", IssueID: id, ActorID: nilIfEmpty(userID)})
+	}
+	return is, err
+}
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // Campos que o usuário pode alterar direto (o resto muda pelo fluxo de execução).
 var editableIssueCols = map[string]string{
 	"title": "title", "description": "description", "status": "status", "priority": "priority",
 	"position": "position", "agentId": "agent_id", "labelIds": "label_ids", "skillIds": "skill_ids", "summary": "summary",
+	"assigneeId": "assignee_id",
 }
 
 func (s *Store) PatchIssue(ctx context.Context, id string, patch map[string]any) (*Issue, error) {
@@ -140,22 +155,27 @@ func (s *Store) PatchIssue(ctx context.Context, id string, patch map[string]any)
 		if f, isNum := v.(float64); isNum && col == "priority" {
 			v = int16(f)
 		}
-		if v == "" && col == "agent_id" {
+		if v == "" && (col == "agent_id" || col == "assignee_id") {
 			v = nil
 		}
 		args = append(args, v)
 		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
 	}
-	var from string
-	if _, ok := patch["status"]; ok {
-		s.DB.QueryRow(ctx, `select status from issues where id = $1`, id).Scan(&from)
-	}
+	before, _ := s.Issue(ctx, id)
 	if _, err := s.DB.Exec(ctx, `update issues set `+strings.Join(sets, ", ")+` where id = $1`, args...); err != nil {
 		return nil, err
 	}
 	is, err := s.Issue(ctx, id)
-	if err == nil && from != "" {
-		s.statusChanged(ctx, id, from, is.Status)
+	if err == nil && before != nil {
+		if _, ok := patch["status"]; ok {
+			s.statusChanged(ctx, id, before.Status, is.Status)
+		}
+		if _, ok := patch["assigneeId"]; ok && is.AssigneeID != nil && (before.AssigneeID == nil || *before.AssigneeID != *is.AssigneeID) {
+			s.Emit(ctx, Event{Kind: "assigned", IssueID: id})
+		}
+		if _, ok := patch["priority"]; ok && before.Priority != is.Priority {
+			s.Emit(ctx, Event{Kind: "priority_changed", IssueID: id})
+		}
 	}
 	return is, err
 }
@@ -304,10 +324,10 @@ func (s *Store) DeleteIssue(ctx context.Context, id string) error {
 
 // ---------- execuções ----------
 
-func (s *Store) CreateRun(ctx context.Context, issue *Issue, agent *Agent, kind, request string, userID *string) (*Run, error) {
-	return one[Run](ctx, s, `insert into runs(issue_id, workspace_id, agent_id, agent_name, runtime, model, kind, request, created_by)
-		values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
-		issue.ID, issue.WorkspaceID, agent.ID, agent.Name, agent.Runtime, agent.Model, kind, request, userID)
+func (s *Store) CreateRun(ctx context.Context, issue *Issue, agent *Agent, kind, request string, userID *string, holdStage bool) (*Run, error) {
+	return one[Run](ctx, s, `insert into runs(issue_id, workspace_id, agent_id, agent_name, runtime, model, kind, request, created_by, hold_stage)
+		values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
+		issue.ID, issue.WorkspaceID, agent.ID, agent.Name, agent.Runtime, agent.Model, kind, request, userID, holdStage)
 }
 
 // ClaimNextRun pega a execução mais antiga da fila de forma atômica.
@@ -422,6 +442,25 @@ type IssueStats struct {
 	Resolved        int64   `json:"resolved"`        // concluídas no período
 	Open            int64   `json:"open"`            // abertas agora
 	AvgResolveHours float64 `json:"avgResolveHours"` // criação → conclusão, das concluídas no período
+	MedResolveHours float64 `json:"medResolveHours"` // mediana (não se deixa levar por uma issue esquecida)
+}
+
+// PriorityPoint: custo e tempo por prioridade da issue.
+type PriorityPoint struct {
+	Priority   int16   `json:"priority"`
+	Issues     int64   `json:"issues"`
+	Runs       int64   `json:"runs"`
+	CostUSD    float64 `json:"costUsd"`
+	AvgSeconds float64 `json:"avgSeconds"` // tempo médio de execução do agente
+}
+
+// StageTime: quanto tempo, em média, as issues ficam em cada etapa.
+type StageTime struct {
+	Stage    string  `json:"stage"`
+	Name     string  `json:"name"`
+	Passes   int64   `json:"passes"`
+	AvgHours float64 `json:"avgHours"`
+	MedHours float64 `json:"medHours"`
 }
 
 type StatusCount struct {
@@ -461,6 +500,26 @@ type Analytics struct {
 	Models  []ModelPoint  `json:"models"`
 	Users   []UserPoint   `json:"users"`
 	Top     []TopIssue    `json:"top"`
+	// Desempenho: por prioridade, por quem criou a issue e por etapa.
+	Priorities []PriorityPoint `json:"priorities"`
+	Creators   []UserPoint     `json:"creators"`
+	StageTimes []StageTime     `json:"stageTimes"`
+	People     []PersonStat    `json:"people"`
+}
+
+// PersonStat: o desempenho de cada pessoa no período.
+type PersonStat struct {
+	UserID       string  `json:"userId"`
+	Name         string  `json:"name"`
+	Created      int64   `json:"created"`      // issues que criou
+	OpenAssigned int64   `json:"openAssigned"` // abertas com ela de responsável, agora
+	Resolved     int64   `json:"resolved"`     // com ela de responsável, concluídas no período
+	ResolveHours float64 `json:"resolveHours"` // média criação → conclusão dessas
+	Comments     int64   `json:"comments"`
+	Approvals    int64   `json:"approvals"`
+	Runs         int64   `json:"runs"` // pedidos ao agente
+	CostUSD      float64 `json:"costUsd"`
+	ReplyHours   float64 `json:"replyHours"` // quanto as issues dela ficam em "Aguardando você"
 }
 
 const totalsCols = `coalesce(sum(cost_usd),0)::float8, coalesce(sum(input_tokens),0)::int8, coalesce(sum(cached_tokens),0)::int8,
@@ -473,7 +532,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	where := `where created_at >= $1 and started_at is not null and ($2::uuid[] is null or workspace_id = any($2::uuid[]))`
 	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
 	out := &Analytics{Daily: []DayPoint{}, Monthly: []MonthPoint{}, Status: []StatusCount{}, Agents: []AgentPoint{},
-		Models: []ModelPoint{}, Users: []UserPoint{}, Top: []TopIssue{}}
+		Models: []ModelPoint{}, Users: []UserPoint{}, Top: []TopIssue{}, Priorities: []PriorityPoint{}, Creators: []UserPoint{}, StageTimes: []StageTime{}, People: []PersonStat{}}
 	t := &out.Totals
 	if err := s.DB.QueryRow(ctx, `select `+totalsCols+` from runs `+where, since, wsIDs).
 		Scan(&t.CostUSD, &t.InputTokens, &t.CachedTokens, &t.OutputTokens, &t.Seconds, &t.Runs, &t.Failed); err != nil {
@@ -579,6 +638,10 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	}
 	rows.Close()
 
+	if err := s.performance(ctx, out, since, wsIDs); err != nil {
+		return nil, err
+	}
+
 	rows, err = s.DB.Query(ctx, `select i.id::text, w.key || '-' || i.number, i.title, i.status, coalesce(sum(r.cost_usd),0)::float8, count(r.id)
 		from issues i join workspaces w on w.id = i.workspace_id join runs r on r.issue_id = i.id
 		where r.created_at >= $1 and `+wsOnly+` group by i.id, w.key order by 5 desc limit 8`, since, wsIDs)
@@ -592,4 +655,91 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 		out.Top = append(out.Top, p)
 	}
 	return out, rows.Err()
+}
+
+// performance: custo por prioridade e por quem criou, tempo por etapa e mediana do ciclo.
+func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time, wsIDs []string) error {
+	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
+	rows, err := s.DB.Query(ctx, `select i.priority, count(distinct i.id), count(r.id), coalesce(sum(r.cost_usd),0)::float8,
+		coalesce(avg(extract(epoch from (coalesce(r.ended_at, now()) - r.started_at))),0)::float8
+		from runs r join issues i on i.id = r.issue_id
+		where r.created_at >= $1 and r.started_at is not null and `+wsOnly+` group by 1 order by 1`, since, wsIDs)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var p PriorityPoint
+		rows.Scan(&p.Priority, &p.Issues, &p.Runs, &p.CostUSD, &p.AvgSeconds)
+		out.Priorities = append(out.Priorities, p)
+	}
+	rows.Close()
+
+	rows, err = s.DB.Query(ctx, `select coalesce(i.created_by::text, ''), coalesce(max(u.name), 'Entrada externa'), count(r.id), coalesce(sum(r.cost_usd),0)::float8
+		from runs r join issues i on i.id = r.issue_id left join users u on u.id = i.created_by
+		where r.created_at >= $1 and r.started_at is not null and `+wsOnly+` group by i.created_by order by 4 desc limit 10`, since, wsIDs)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var p UserPoint
+		rows.Scan(&p.UserID, &p.Name, &p.Runs, &p.CostUSD)
+		out.Creators = append(out.Creators, p)
+	}
+	rows.Close()
+
+	// Passagens encerradas no período; o nome vem da etapa (o do sistema é igual em todos os workspaces).
+	// Etapas que já foram removidas viram uma linha só, "Etapa removida".
+	rows, err = s.DB.Query(ctx, `select case when st.id is null then '' else l.stage end as k,
+		coalesce(max(st.name), 'Etapa removida'), count(*),
+		avg(extract(epoch from (l.left_at - l.entered_at)))/3600,
+		percentile_cont(0.5) within group (order by extract(epoch from (l.left_at - l.entered_at)))/3600
+		from issue_stage_log l left join stages st on st.workspace_id = l.workspace_id and st.id = l.stage
+		where l.left_at >= $1 and ($2::uuid[] is null or l.workspace_id = any($2::uuid[]))
+		group by k order by min(coalesce(st.position, 999))`, since, wsIDs)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var p StageTime
+		rows.Scan(&p.Stage, &p.Name, &p.Passes, &p.AvgHours, &p.MedHours)
+		out.StageTimes = append(out.StageTimes, p)
+	}
+	rows.Close()
+
+	if err := s.DB.QueryRow(ctx, `select coalesce(percentile_cont(0.5) within group (order by extract(epoch from (i.done_at - i.created_at))), 0)/3600
+		from issues i where i.done_at >= $1 and `+wsOnly, since, wsIDs).Scan(&out.Issues.MedResolveHours); err != nil {
+		return err
+	}
+	return s.people(ctx, out, since, wsIDs)
+}
+
+// people: uma linha por pessoa com alguma atividade no período.
+func (s *Store) people(ctx context.Context, out *Analytics, since time.Time, wsIDs []string) error {
+	w := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
+	rows, err := s.DB.Query(ctx, `select u.id::text, u.name,
+		(select count(*) from issues i where i.created_by = u.id and i.created_at >= $1 and `+w+`),
+		(select count(*) from issues i where i.assignee_id = u.id and i.status not in ('done', 'cancelled') and `+w+`),
+		(select count(*) from issues i where i.assignee_id = u.id and i.done_at >= $1 and `+w+`),
+		coalesce((select avg(extract(epoch from (i.done_at - i.created_at))) from issues i where i.assignee_id = u.id and i.done_at >= $1 and `+w+`), 0)/3600,
+		(select count(*) from comments c join issues i on i.id = c.issue_id where c.user_id = u.id and c.kind = 'comment' and c.created_at >= $1 and `+w+`),
+		(select count(*) from issue_approvals a join issues i on i.id = a.issue_id where a.user_id = u.id and a.created_at >= $1 and `+w+`),
+		(select count(*) from runs r join issues i on i.id = r.issue_id where r.created_by = u.id and r.created_at >= $1 and `+w+`),
+		coalesce((select sum(r.cost_usd) from runs r join issues i on i.id = r.issue_id where r.created_by = u.id and r.created_at >= $1 and `+w+`), 0)::float8,
+		coalesce((select avg(extract(epoch from (l.left_at - l.entered_at))) from issue_stage_log l join issues i on i.id = l.issue_id
+			where l.stage = 'waiting' and l.left_at >= $1 and (i.assignee_id = u.id or i.created_by = u.id) and `+w+`), 0)/3600
+		from users u order by u.name`, since, wsIDs)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p PersonStat
+		if err := rows.Scan(&p.UserID, &p.Name, &p.Created, &p.OpenAssigned, &p.Resolved, &p.ResolveHours, &p.Comments, &p.Approvals, &p.Runs, &p.CostUSD, &p.ReplyHours); err != nil {
+			return err
+		}
+		if p.Created+p.OpenAssigned+p.Resolved+p.Comments+p.Approvals+p.Runs > 0 {
+			out.People = append(out.People, p)
+		}
+	}
+	return rows.Err()
 }

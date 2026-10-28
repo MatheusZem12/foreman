@@ -42,7 +42,7 @@ func main() {
 	h := hub.New()
 	rn := runner.New(cfg, st, h)
 	ntf := notify.New(st)
-	automation.New(st, rn, ntf) // regras do fluxo: escuta as mudanças de etapa
+	automation.New(st, rn, ntf).Start(ctx) // regras do fluxo: eventos das issues + varredura por tempo
 	rn.Start(ctx)
 
 	srv := &http.Server{

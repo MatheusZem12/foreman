@@ -158,6 +158,17 @@ func (r *Runner) systemComment(ctx context.Context, issue *store.Issue, runID *s
 var ErrBusy = errors.New("essa issue já tem uma execução na fila ou rodando")
 
 func (r *Runner) Enqueue(ctx context.Context, issue *store.Issue, agentID, kind, request string, userID *string) (*store.Run, error) {
+	return r.enqueue(ctx, issue, agentID, kind, request, userID, false)
+}
+
+// EnqueueInStage: execução pedida por um passo de etapa. A issue continua na
+// etapa enquanto o agente trabalha e o runner não a move ao terminar; quem
+// decide o próximo passo é a sequência de regras da etapa.
+func (r *Runner) EnqueueInStage(ctx context.Context, issue *store.Issue, agentID, kind, request string) (*store.Run, error) {
+	return r.enqueue(ctx, issue, agentID, kind, request, nil, true)
+}
+
+func (r *Runner) enqueue(ctx context.Context, issue *store.Issue, agentID, kind, request string, userID *string, hold bool) (*store.Run, error) {
 	if _, err := r.st.ActiveRun(ctx, issue.ID); err == nil {
 		return nil, ErrBusy
 	}
@@ -174,12 +185,14 @@ func (r *Runner) Enqueue(ctx context.Context, issue *store.Issue, agentID, kind,
 	if kind == "followup" && strings.TrimSpace(request) == "" {
 		return nil, errors.New("descreva o ajuste")
 	}
-	run, err := r.st.CreateRun(ctx, issue, agent, kind, request, userID)
+	run, err := r.st.CreateRun(ctx, issue, agent, kind, request, userID, hold)
 	if err != nil {
 		return nil, err
 	}
-	// Todo pedido novo (issue criada, ajuste, regra) entra em "Em andamento" na hora.
-	r.st.SetIssueStatus(ctx, issue.ID, "in_progress")
+	// Todo pedido novo (issue criada, ajuste, resposta) entra em "Em andamento" na hora.
+	if !hold {
+		r.st.SetIssueStatus(ctx, issue.ID, "in_progress")
+	}
 	r.publishRun(run)
 	r.PublishIssue(ctx, issue.ID)
 	r.poke()
@@ -509,7 +522,9 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		r.st.FinishRun(ctx, run.ID, store.RunResult{Status: "failed", Error: "issue não encontrada"})
 		return
 	}
-	r.st.SetIssueStatus(ctx, issue.ID, "in_progress")
+	if !run.HoldStage {
+		r.st.SetIssueStatus(ctx, issue.ID, "in_progress")
+	}
 	r.PublishIssue(ctx, issue.ID)
 
 	var works []*repoWork
@@ -539,7 +554,18 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 				}
 			}
 		}
-		r.st.SetIssueStatus(ctx, issue.ID, next)
+		if !run.HoldStage {
+			r.st.SetIssueStatus(ctx, issue.ID, next)
+		}
+		if res.Status != "cancelled" {
+			kind := outcome.Kind
+			if res.Status == "failed" {
+				kind = "failed"
+			} else if kind == "" {
+				kind = "done"
+			}
+			r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: issue.ID, Outcome: kind, ActorID: run.CreatedBy})
+		}
 		if res.Status == "failed" {
 			r.systemComment(ctx, issue, &run.ID, "A execução falhou: "+res.Error)
 		}

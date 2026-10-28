@@ -15,8 +15,8 @@ var ErrNotFound = errors.New("não encontrado")
 
 type Store struct {
 	DB *pgxpool.Pool
-	// OnStatusChange é chamado a cada mudança de etapa de uma issue (motor de automações).
-	OnStatusChange func(StatusChange)
+	// OnEvent é chamado a cada evento de issue (motor de automações).
+	OnEvent func(Event)
 }
 
 func New(pool *pgxpool.Pool) *Store { return &Store{DB: pool} }
@@ -55,6 +55,9 @@ type Workspace struct {
 	Key       string    `db:"key" json:"key"`
 	IssueSeq  int       `db:"issue_seq" json:"-"`
 	CreatedAt time.Time `db:"created_at" json:"createdAt"`
+	// Entrada de issues por webhook: o token é segredo (só sai na rota de configuração).
+	IntakeToken *string `db:"intake_token" json:"-"`
+	IntakeStage string  `db:"intake_stage" json:"intakeStage"`
 }
 
 type FileEntry struct {
@@ -125,7 +128,10 @@ type Issue struct {
 	UpdatedAt   time.Time  `db:"updated_at" json:"updatedAt"`
 	AllRepos    bool       `db:"all_repos" json:"allRepos"`
 	DoneAt      *time.Time `db:"done_at" json:"doneAt"`
+	AssigneeID  *string    `db:"assignee_id" json:"assigneeId"`
+	StageSince  time.Time  `db:"stage_entered_at" json:"stageSince"`
 	// Calculados na listagem.
+	Approvals []string    `db:"approvals" json:"approvals"` // quem já aprovou na etapa atual
 	Repos     []IssueRepo `db:"repos" json:"repos"`
 	ActiveRun *string     `db:"active_run" json:"activeRun"`
 	CostUSD   float64     `db:"cost_usd" json:"costUsd"`
@@ -154,6 +160,8 @@ type Run struct {
 	EndedAt      *time.Time `db:"ended_at" json:"endedAt"`
 	Outcome      string     `db:"outcome" json:"outcome"`
 	OutcomeNote  string     `db:"outcome_note" json:"outcomeNote"`
+	// Pedida por um passo de etapa: a issue não muda de etapa por causa dela.
+	HoldStage bool `db:"hold_stage" json:"holdStage"`
 }
 
 type RunEvent struct {
@@ -293,7 +301,7 @@ func (s *Store) Workspace(ctx context.Context, id string) (*Workspace, error) {
 func (s *Store) CreateWorkspace(ctx context.Context, name, key string) (*Workspace, error) {
 	ws, err := one[Workspace](ctx, s, `insert into workspaces(name, key) values($1, upper($2)) returning *`, name, key)
 	if err == nil {
-		s.seedRules(ctx, ws.ID)
+		s.seedWorkflow(ctx, ws.ID)
 	}
 	return ws, err
 }
@@ -405,5 +413,14 @@ func (s *Store) DeleteLabel(ctx context.Context, id string) error {
 		return err
 	}
 	_, err := s.DB.Exec(ctx, `delete from labels where id = $1`, id)
+	return err
+}
+
+// SetSkillAgents deixa a skill no pacote exatamente destes agentes.
+func (s *Store) SetSkillAgents(ctx context.Context, skillID string, agentIDs []string) error {
+	_, err := s.DB.Exec(ctx, `update agents set skill_ids = case
+			when id = any($2::uuid[]) then (select array_agg(distinct x) from unnest(array_append(skill_ids, $1)) x)
+			else array_remove(skill_ids, $1) end
+		where not archived`, skillID, nz(agentIDs))
 	return err
 }

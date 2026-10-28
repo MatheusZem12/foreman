@@ -62,6 +62,8 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 		r.Post("/setup", a.h(a.postSetup))
 		r.Post("/login", a.h(a.login))
 		r.Post("/logout", a.h(a.logout))
+		// Entrada de issues por webhook: sem login, o token do endereço é a credencial.
+		r.Post("/hooks/{token}", a.h(a.intakeHook))
 
 		r.Group(func(r chi.Router) {
 			r.Use(a.auth)
@@ -71,6 +73,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.Put("/me/prefs/{key}", a.h(a.putPref))
 			// Usuários: todos leem (nomes nos comentários); gerenciar depende do perfil.
 			r.Get("/users", a.h(a.listUsers))
+			r.With(a.can("user.view", "user.create", "user.update", "user.delete")).Get("/users/{id}/profile", a.h(a.userProfile))
 			r.With(a.can("user.create")).Post("/users", a.h(a.createUser))
 			r.With(a.can("user.update")).Patch("/users/{id}", a.h(a.patchUser))
 			r.With(a.can("user.delete")).Delete("/users/{id}", a.h(a.deleteUser))
@@ -95,23 +98,29 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 				r.Get("/repos", a.h(a.listRepos))
 				r.With(a.can("repo.create")).Post("/repos", a.h(a.saveRepo))
 				r.Get("/labels", a.h(a.listLabels))
-				r.With(a.can("issue.update")).Post("/labels", a.h(a.createLabel))
+				r.With(a.can("label.manage", "issue.labels")).Post("/labels", a.h(a.createLabel))
 				r.Get("/issues", a.h(a.listIssues))
 				r.With(a.can("issue.create")).Post("/issues", a.h(a.createIssue))
 				r.Get("/events", a.events)
 				r.Get("/stages", a.h(a.listStages))
 				r.With(a.can("workflow.manage")).Post("/stages", a.h(a.saveStage))
+				r.With(a.can("workflow.manage")).Put("/stages/order", a.h(a.orderStages))
+				r.With(a.can("workflow.manage")).Put("/stages/{id}", a.h(a.saveStage))
+				r.With(a.can("workflow.manage")).Delete("/stages/{id}", a.h(a.deleteStage))
 				r.Get("/rules", a.h(a.listRules))
 				r.With(a.can("workflow.manage")).Post("/rules", a.h(a.saveRule))
+				r.With(a.can("workflow.manage")).Put("/rules/order", a.h(a.orderRules))
+				r.With(a.can("workflow.view", "workflow.manage")).Get("/workflow/warnings", a.h(a.getWarnings))
+				r.With(a.can("workflow.duplicate")).Post("/workflow/copy", a.h(a.copyWorkflow))
+				r.With(a.can("workflow.manage")).Get("/intake", a.h(a.getIntake))
+				r.With(a.can("workflow.manage")).Put("/intake", a.h(a.saveIntake))
 			})
-			r.With(a.can("workflow.manage")).Put("/stages/{id}", a.h(a.saveStage))
-			r.With(a.can("workflow.manage")).Delete("/stages/{id}", a.h(a.deleteStage))
 			r.With(a.can("workflow.manage")).Put("/rules/{id}", a.h(a.saveRule))
 			r.With(a.can("workflow.manage")).Delete("/rules/{id}", a.h(a.deleteRule))
 			r.With(a.can("repo.update")).Put("/repos/{id}", a.h(a.saveRepo))
 			r.With(a.can("repo.delete")).Delete("/repos/{id}", a.h(a.deleteRepo))
 			r.Get("/repos/{id}/branches", a.h(a.repoBranches))
-			r.With(a.can("issue.update")).Delete("/labels/{id}", a.h(a.deleteLabel))
+			r.With(a.can("label.manage")).Delete("/labels/{id}", a.h(a.deleteLabel))
 			r.With(a.can("repo.create", "repo.update", "settings.manage")).Get("/git", a.h(a.gitInfo))
 
 			// Agentes e skills são globais: todos usam, o perfil define quem edita.
@@ -122,12 +131,14 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.Get("/skills", a.h(a.listSkills))
 			r.With(a.can("skill.create")).Post("/skills", a.h(a.saveSkill))
 			r.With(a.can("skill.update")).Put("/skills/{id}", a.h(a.saveSkill))
+			r.With(a.can("skill.update")).Put("/skills/{id}/agents", a.h(a.skillAgents))
 			r.With(a.can("skill.delete")).Delete("/skills/{id}", a.h(a.deleteSkill))
 
 			r.Get("/issues/{id}", a.h(a.getIssue))
-			r.With(a.can("issue.update")).Patch("/issues/{id}", a.h(a.patchIssue))
-			r.With(a.can("issue.merge")).Post("/issues/{id}/approve", a.h(a.approveIssue))
-			r.With(a.can("issue.update")).Put("/issues/{id}/repos", a.h(a.setIssueRepos))
+			// Issues: a permissão de cada campo e a política da etapa são conferidas no handler.
+			r.Patch("/issues/{id}", a.h(a.patchIssue))
+			r.Post("/issues/{id}/approve", a.h(a.approveIssue))
+			r.Put("/issues/{id}/repos", a.h(a.setIssueRepos))
 			r.With(a.can("issue.delete")).Delete("/issues/{id}", a.h(a.deleteIssue))
 			r.With(a.can("issue.run")).Post("/issues/{id}/run", a.h(a.runIssue))
 			r.With(a.can("issue.run")).Post("/issues/{id}/cancel", a.h(a.cancelIssue))
@@ -142,7 +153,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.With(a.can("settings.manage")).Put("/settings/email", a.h(a.saveEmailSettings))
 			r.With(a.can("settings.manage")).Post("/settings/email/test", a.h(a.testEmailSettings))
 
-			r.Get("/analytics", a.h(a.analytics))
+			r.With(a.can("analytics.view")).Get("/analytics", a.h(a.analytics))
 			r.Get("/runtimes", a.h(a.runtimes))
 			r.Get("/runtimes/models", a.h(a.runtimeModels))
 		})
@@ -405,7 +416,7 @@ func (a *API) putPref(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (a *API) listUsers(w http.ResponseWriter, r *http.Request) (any, error) {
-	if u := userOf(r); u.Can("user.update") || u.Can("member.manage") {
+	if u := userOf(r); u.Can("user.update") || u.Can("member.manage") || u.Can("user.view") {
 		return a.st.ListUsersWithWorkspaces(r.Context())
 	}
 	return a.st.ListUsers(r.Context())
@@ -814,7 +825,10 @@ func (a *API) createIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 		}
 	}
 	u := userOf(r)
-	is, err := a.st.CreateIssue(r.Context(), wsID, u.ID, in)
+	if err := a.guardNewIssue(r.Context(), u, wsID, &in); err != nil {
+		return nil, err
+	}
+	is, err := a.st.CreateIssue(store.WithActor(r.Context(), u.ID), wsID, u.ID, in)
 	if err != nil {
 		return nil, err
 	}
@@ -836,6 +850,7 @@ type issueDetail struct {
 	Issue    *store.Issue    `json:"issue"`
 	Runs     []store.Run     `json:"runs"`
 	Comments []store.Comment `json:"comments"`
+	Caps     map[string]any  `json:"caps"`
 }
 
 func (a *API) getIssue(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -865,7 +880,20 @@ func (a *API) getIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	comments, err := a.st.ListComments(ctx, is.ID)
-	return issueDetail{is, runs, comments}, err
+	return issueDetail{is, runs, comments, a.capsOf(ctx, userOf(r), is)}, err
+}
+
+// loadActable carrega a issue e confere a permissão do perfil e a política da etapa.
+func (a *API) loadActable(r *http.Request, perm, what string) (*store.Issue, error) {
+	is, err := a.loadIssue(r)
+	if err != nil {
+		return nil, err
+	}
+	u := userOf(r)
+	if err := need(u, perm, what); err != nil {
+		return nil, err
+	}
+	return is, a.canAct(r.Context(), u, is)
 }
 
 func (a *API) loadIssue(r *http.Request) (*store.Issue, error) {
@@ -890,6 +918,44 @@ func (a *API) patchIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	if t, ok := patch["title"].(string); ok && strings.TrimSpace(t) == "" {
 		return nil, bad("o título não pode ficar vazio")
+	}
+	// Permissão de cada campo + política da etapa atual (e da de destino, se mudar).
+	ctx, u := r.Context(), userOf(r)
+	if err := a.canAct(ctx, u, before); err != nil {
+		return nil, err
+	}
+	next := *before
+	for k, v := range patch {
+		if k == "status" && v == before.Status {
+			continue
+		}
+		if err := a.canField(ctx, u, before, k); err != nil {
+			return nil, err
+		}
+		switch k {
+		case "agentId":
+			if id, _ := v.(string); id != "" {
+				next.AgentID = &id
+			} else {
+				next.AgentID = nil
+			}
+		case "assigneeId":
+			if err := a.checkAssignee(ctx, before.WorkspaceID, v); err != nil {
+				return nil, err
+			}
+			if id, _ := v.(string); id != "" {
+				next.AssigneeID = &id
+			} else {
+				next.AssigneeID = nil
+			}
+		case "description":
+			next.Description, _ = v.(string)
+		}
+	}
+	if to, ok := patch["status"].(string); ok && to != before.Status {
+		if err := a.canEnter(ctx, u, &next, to); err != nil {
+			return nil, err
+		}
 	}
 	is, err := a.st.PatchIssue(store.WithActor(r.Context(), userOf(r).ID), before.ID, patch)
 	if err != nil {
@@ -919,7 +985,7 @@ func (a *API) patchIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (a *API) deleteIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadIssue(r)
+	is, err := a.loadActable(r, "issue.delete", "excluir issues")
 	if err != nil {
 		return nil, err
 	}
@@ -932,7 +998,7 @@ func (a *API) deleteIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (a *API) runIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadIssue(r)
+	is, err := a.loadActable(r, "issue.run", "executar agentes")
 	if err != nil {
 		return nil, err
 	}
@@ -958,7 +1024,7 @@ func (a *API) runIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (a *API) cancelIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadIssue(r)
+	is, err := a.loadActable(r, "issue.run", "cancelar execuções")
 	if err != nil {
 		return nil, err
 	}
@@ -969,7 +1035,7 @@ func (a *API) cancelIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (a *API) mergeIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadIssue(r)
+	is, err := a.loadActable(r, "issue.merge", "fazer merge")
 	if err != nil {
 		return nil, err
 	}
@@ -990,7 +1056,7 @@ func (a *API) mergeIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 // setIssueRepos troca os repositórios da issue (todos, ou só os escolhidos) e
 // as branches de cada um.
 func (a *API) setIssueRepos(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadIssue(r)
+	is, err := a.loadActable(r, "issue.repos", "escolher repositórios")
 	if err != nil {
 		return nil, err
 	}
@@ -999,6 +1065,9 @@ func (a *API) setIssueRepos(w http.ResponseWriter, r *http.Request) (any, error)
 		Repos []store.RepoChoice `json:"repos"`
 	}
 	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	if err := a.canField(r.Context(), userOf(r), is, "repos"); err != nil {
 		return nil, err
 	}
 	if !in.All && len(in.Repos) == 0 {
@@ -1015,7 +1084,7 @@ func (a *API) setIssueRepos(w http.ResponseWriter, r *http.Request) (any, error)
 }
 
 func (a *API) discardIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadIssue(r)
+	is, err := a.loadActable(r, "issue.merge", "descartar branches")
 	if err != nil {
 		return nil, err
 	}
@@ -1050,9 +1119,20 @@ func (a *API) addComment(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, bad("comentário vazio")
 	}
 	u := userOf(r)
+	if err := need(u, "issue.comment", "comentar"); err != nil {
+		return nil, err
+	}
+	if err := a.canAct(r.Context(), u, is); err != nil {
+		return nil, err
+	}
 	// Verifica antes de gravar, para não deixar um pedido "órfão" se o agente estiver ocupado.
 	if in.SendToAgent && !u.Can("issue.run") {
 		return nil, httpError{http.StatusForbidden, "seu perfil não pode executar agentes"}
+	}
+	if in.SendToAgent && in.AgentID != "" && (is.AgentID == nil || *is.AgentID != in.AgentID) {
+		if err := a.canField(r.Context(), u, is, "agentId"); err != nil {
+			return nil, err
+		}
 	}
 	if in.SendToAgent && is.ActiveRun != nil {
 		return nil, httpError{http.StatusConflict, runner.ErrBusy.Error()}
@@ -1062,6 +1142,7 @@ func (a *API) addComment(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	a.hub.Publish(hub.Event{Type: "comment", WorkspaceID: is.WorkspaceID, Data: c})
+	a.st.Emit(r.Context(), store.Event{Kind: "commented", IssueID: is.ID, ActorID: &u.ID})
 	if in.SendToAgent {
 		kind := "followup"
 		if is.Branch == "" || len(mustRuns(a, r, is.ID)) == 0 {
@@ -1179,6 +1260,8 @@ type emailSettingsView struct {
 	notify.Settings
 	HasPassword bool          `json:"hasPassword"`
 	Status      notify.Status `json:"status"`
+	// Regras de e-mail ativas: com o envio desligado, nenhuma delas manda nada.
+	NotifyRules int `json:"notifyRules"`
 }
 
 func (a *API) getEmailSettings(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1186,12 +1269,13 @@ func (a *API) getEmailSettings(w http.ResponseWriter, r *http.Request) (any, err
 	if err != nil {
 		return nil, err
 	}
+	rules := a.st.EnabledNotifyRules(r.Context())
 	if !userOf(r).Can("settings.manage") {
-		return map[string]bool{"enabled": c.Enabled}, nil
+		return map[string]any{"enabled": c.Enabled, "notifyRules": rules}, nil
 	}
 	has := c.Password != ""
 	c.Password = "" // a senha nunca volta para o navegador
-	return emailSettingsView{Settings: c, HasPassword: has, Status: a.ntf.Status()}, nil
+	return emailSettingsView{Settings: c, HasPassword: has, Status: a.ntf.Status(), NotifyRules: rules}, nil
 }
 
 // emailForm lê o formulário; senha vazia mantém a que já está salva.
