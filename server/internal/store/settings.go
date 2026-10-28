@@ -51,3 +51,19 @@ func (s *Store) NotificationRecipients(ctx context.Context, wsID, exceptUserID s
 		where (`+seesAll+` or m.user_id is not null) and u.email_notifications and u.id::text <> $2
 		order by u.name`, wsID, exceptUserID)
 }
+
+// UserPref devolve a preferência crua da pessoa, ou nil se ela nunca salvou.
+func (s *Store) UserPref(ctx context.Context, userID, key string) (json.RawMessage, error) {
+	var raw []byte
+	err := s.DB.QueryRow(ctx, `select value from user_prefs where user_id = $1 and key = $2`, userID, key).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return raw, err
+}
+
+func (s *Store) SetUserPref(ctx context.Context, userID, key string, value json.RawMessage) error {
+	_, err := s.DB.Exec(ctx, `insert into user_prefs(user_id, key, value) values($1, $2, $3)
+		on conflict (user_id, key) do update set value = excluded.value, updated_at = now()`, userID, key, []byte(value))
+	return err
+}

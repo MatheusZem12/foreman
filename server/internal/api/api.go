@@ -67,6 +67,8 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.Use(a.auth)
 			r.Get("/me", a.h(a.me))
 			r.Patch("/me", a.h(a.patchMe))
+			r.Get("/me/prefs/{key}", a.h(a.getPref))
+			r.Put("/me/prefs/{key}", a.h(a.putPref))
 			// Usuários: todos leem (nomes nos comentários); gerenciar depende do perfil.
 			r.Get("/users", a.h(a.listUsers))
 			r.With(a.can("user.create")).Post("/users", a.h(a.createUser))
@@ -375,6 +377,31 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) (any, error) {
 		in.Name = u.Name
 	}
 	return a.st.UpdateUser(r.Context(), u.ID, strings.TrimSpace(in.Name), in.About)
+}
+
+// Preferências de visualização da própria pessoa, guardadas como JSON opaco.
+// A chave é livre (ex.: "board:<workspace>"); o servidor só limita o tamanho.
+func (a *API) getPref(w http.ResponseWriter, r *http.Request) (any, error) {
+	raw, err := a.st.UserPref(r.Context(), userOf(r).ID, chi.URLParam(r, "key"))
+	if err != nil || raw == nil {
+		return map[string]any{}, err
+	}
+	return raw, nil
+}
+
+func (a *API) putPref(w http.ResponseWriter, r *http.Request) (any, error) {
+	key := chi.URLParam(r, "key")
+	if key == "" || len(key) > 100 {
+		return nil, bad("chave inválida")
+	}
+	var v json.RawMessage
+	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 16<<10)).Decode(&v); err != nil || len(v) == 0 || v[0] != '{' {
+		return nil, bad("a preferência precisa ser um objeto JSON de até 16 KB")
+	}
+	if err := a.st.SetUserPref(r.Context(), userOf(r).ID, key, v); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 
 func (a *API) listUsers(w http.ResponseWriter, r *http.Request) (any, error) {

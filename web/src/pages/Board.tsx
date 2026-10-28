@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragStartEvent
 } from '@dnd-kit/core';
 import clsx from 'clsx';
-import { Columns3, List, ListFilter, Plus, Search } from 'lucide-react';
+import { Columns3, GripVertical, List, ListFilter, Plus, Search } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Chip, MenuItem, Popover, PriorityIcon, Spinner, StatusIcon, useToast } from '../components/ui';
 import { LabelDots } from '../components/pickers';
@@ -38,6 +38,76 @@ function writePref(key: string, v: string) {
   }
 }
 
+// A arrumação do quadro é de cada pessoa, por workspace (as etapas mudam de um
+// para outro). Só aparência: a ordem das colunas aqui não mexe no fluxo.
+type BoardLayout = { mode: 'side' | 'grid'; perRow: number; order: string[] };
+const DEFAULT_LAYOUT: BoardLayout = { mode: 'side', perRow: 3, order: [] };
+
+function useBoardLayout(wsId: string) {
+  const qc = useQueryClient();
+  const key = ['pref', `board:${wsId}`];
+  const { data } = useQuery({
+    queryKey: key,
+    queryFn: () => api.get<Partial<BoardLayout>>(`/me/prefs/board:${wsId}`),
+    staleTime: Infinity
+  });
+  const layout: BoardLayout = { ...DEFAULT_LAYOUT, ...data };
+  const save = (patch: Partial<BoardLayout>) => {
+    const next = { ...layout, ...patch };
+    qc.setQueryData(key, next);
+    api.put(`/me/prefs/board:${wsId}`, next).catch(() => { /* fica só nesta sessão */ });
+  };
+  return [layout, save] as const;
+}
+
+// Colunas na ordem que a pessoa escolheu; etapa nova (fora da lista salva)
+// entra na posição padrão dela.
+function arrange(columns: Status[], order: string[]) {
+  const rank = (id: string, i: number) => (order.includes(id) ? order.indexOf(id) : order.length + i);
+  return columns.map((id, i) => [id, rank(id, i)] as const).sort((a, b) => a[1] - b[1]).map(([id]) => id);
+}
+
+// No modo lado a lado: a roda do mouse anda para os lados (a menos que esteja
+// sobre uma lista que rola na vertical) e arrastar o fundo também.
+function useSideScroll(el: HTMLDivElement | null) {
+  useEffect(() => {
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth) return;
+      const body = (e.target as HTMLElement).closest<HTMLElement>('[data-col-body]');
+      if (body && body.scrollHeight > body.clientHeight) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    let start: { x: number; left: number } | null = null;
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      if ((e.target as HTMLElement).closest('a,button,input,[data-col-head]')) return;
+      start = { x: e.clientX, left: el.scrollLeft };
+      e.preventDefault(); // não selecionar texto enquanto arrasta
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!start) return;
+      el.scrollLeft = start.left - (e.clientX - start.x);
+      el.style.cursor = 'grabbing';
+    };
+    const onUp = () => {
+      start = null;
+      el.style.cursor = '';
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [el]);
+}
+
 function sortIssues(list: Issue[], sort: Sort) {
   const copy = list.slice();
   if (sort === 'priority') copy.sort((a, b) => (a.priority || 9) - (b.priority || 9) || a.position - b.position);
@@ -62,6 +132,10 @@ export function Board() {
   const [text, setText] = useState('');
   const [showCancelled, setShowCancelled] = useState(false);
   const [dragging, setDragging] = useState<Issue | null>(null);
+  const [draggingCol, setDraggingCol] = useState<Status | null>(null);
+  const [layout, saveLayout] = useBoardLayout(ws.id);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  useSideScroll(layout.mode === 'side' ? scroller : null);
 
   const filtered = useMemo(() => {
     const t = text.trim().toLowerCase();
@@ -103,10 +177,29 @@ export function Board() {
     }
   };
 
-  const onDragStart = (e: DragStartEvent) => setDragging((issues ?? []).find((i) => i.id === e.active.id) ?? null);
+  // O status da coluna sob o ponteiro (soltar na coluna ou num cartão dela).
+  const statusUnder = (overId: string): Status | null =>
+    overId.startsWith('col:') ? (overId.slice(4) as Status) : (issues ?? []).find((i) => i.id === overId.slice(5))?.status ?? null;
+
+  const onDragStart = (e: DragStartEvent) => {
+    const id = String(e.active.id);
+    if (id.startsWith('colh:')) setDraggingCol(id.slice(5) as Status);
+    else setDragging((issues ?? []).find((i) => i.id === id) ?? null);
+  };
   const onDragEnd = (e: DragEndEvent) => {
     setDragging(null);
+    setDraggingCol(null);
     lastDragEnd = Date.now();
+    const activeId = String(e.active.id);
+    if (activeId.startsWith('colh:')) {
+      const from = activeId.slice(5) as Status;
+      const to = statusUnder(String(e.over?.id ?? ''));
+      if (!to || to === from) return;
+      const next = columns.filter((c) => c !== from);
+      next.splice(columns.indexOf(to), 0, from);
+      saveLayout({ order: next });
+      return;
+    }
     const issue = (issues ?? []).find((i) => i.id === e.active.id);
     const overId = String(e.over?.id ?? '');
     if (!issue || !overId) return;
@@ -134,7 +227,7 @@ export function Board() {
     move(issue, status, position);
   };
 
-  const columns = STATUSES.map((s) => s.id).filter((id) => id !== 'cancelled' || showCancelled);
+  const columns = arrange(STATUSES.map((s) => s.id).filter((id) => id !== 'cancelled' || showCancelled), layout.order);
 
   return (
     <div className="flex h-full flex-col">
@@ -176,6 +269,20 @@ export function Board() {
                 ))}
                 <div className="my-1 border-t border-line" />
                 <MenuItem selected={showCancelled} onClick={() => setShowCancelled(!showCancelled)}>Mostrar canceladas</MenuItem>
+                <div className="my-1 border-t border-line" />
+                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">Colunas (só para você)</div>
+                <MenuItem selected={layout.mode === 'side'} onClick={() => saveLayout({ mode: 'side' })}>Lado a lado</MenuItem>
+                <MenuItem selected={layout.mode === 'grid'} onClick={() => saveLayout({ mode: 'grid' })}>Uma embaixo da outra</MenuItem>
+                {layout.mode === 'grid' && (
+                  <div className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-mute">
+                    Por linha
+                    {[1, 2, 3, 4].map((n) => (
+                      <button key={n} onClick={() => saveLayout({ perRow: n })} className={clsx('ml-1 rounded-md px-2 py-0.5', layout.perRow === n ? 'bg-white/10 text-fg' : 'hover:text-fg')}>{n}</button>
+                    ))}
+                  </div>
+                )}
+                {layout.order.length > 0 && <MenuItem onClick={() => saveLayout({ order: [] })}>Restaurar ordem das colunas</MenuItem>}
+                <div className="px-2.5 pb-1 pt-0.5 text-[11px] leading-snug text-mute">Arraste o título de uma coluna para mudar a ordem.</div>
               </>
             )}
           </Popover>
@@ -192,13 +299,31 @@ export function Board() {
         <ListView byStatus={byStatus} columns={columns} agents={agents} labels={labels} />
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
-          <div className="flex flex-1 snap-x snap-mandatory gap-3 overflow-x-auto p-3 md:snap-none md:p-4">
-            {columns.map((s) => (
-              <Column key={s} status={s} issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />
-            ))}
-          </div>
+          {layout.mode === 'grid' ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
+              <div
+                className="grid grid-cols-1 gap-3 sm:[grid-template-columns:repeat(var(--per-row),minmax(0,1fr))]"
+                style={{ '--per-row': layout.perRow } as React.CSSProperties}
+              >
+                {columns.map((s) => (
+                  <Column key={s} status={s} grid issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div ref={setScroller} className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto p-3 md:snap-none md:p-4">
+              {columns.map((s) => (
+                <Column key={s} status={s} issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />
+              ))}
+            </div>
+          )}
           <DragOverlay dropAnimation={null}>
             {dragging && <Tilt><Card issue={dragging} agents={agents} labels={labels} overlay /></Tilt>}
+            {draggingCol && (
+              <div className="flex items-center gap-2 rounded-xl border border-accent/50 bg-panel px-3.5 py-2.5 shadow-pop">
+                <StatusIcon status={draggingCol} /> <span className="font-medium">{statusOf(draggingCol).label}</span>
+              </div>
+            )}
           </DragOverlay>
         </DndContext>
       )}
@@ -244,24 +369,35 @@ function LabelFilter({ labels, value, onChange }: { labels: Label[]; value: stri
   );
 }
 
-function Column({ status, issues, agents, labels, onAdd }: { status: Status; issues: Issue[]; agents: Agent[]; labels: Label[]; onAdd: () => void }) {
+function Column({ status, issues, agents, labels, onAdd, grid }: { status: Status; issues: Issue[]; agents: Agent[]; labels: Label[]; onAdd: () => void; grid?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${status}` });
+  const head = useDraggable({ id: `colh:${status}` });
   const s = statusOf(status);
   return (
     <section
       ref={setNodeRef}
       className={clsx(
-        'flex w-[85vw] shrink-0 snap-center flex-col rounded-2xl border bg-white/[0.015] transition-colors sm:w-[19rem]',
-        isOver ? 'border-accent/50 bg-accent/[0.04]' : 'border-white/[0.06]'
+        'flex flex-col rounded-2xl border bg-white/[0.015] transition-colors',
+        grid ? 'h-[clamp(14rem,42vh,30rem)] min-w-0' : 'w-[85vw] shrink-0 snap-center sm:w-[19rem]',
+        isOver ? 'border-accent/50 bg-accent/[0.04]' : 'border-white/[0.06]',
+        head.isDragging && 'opacity-40'
       )}
     >
-      <header className="flex items-center gap-2 px-3.5 py-3">
+      <header
+        ref={head.setNodeRef}
+        {...head.listeners}
+        {...head.attributes}
+        data-col-head
+        className="group flex cursor-grab touch-none items-center gap-2 px-3.5 py-3 active:cursor-grabbing"
+        title="Arraste para mudar a ordem das colunas"
+      >
+        <GripVertical className="-ml-2 size-3.5 text-mute opacity-0 transition group-hover:opacity-100" />
         <StatusIcon status={status} />
         <span className="font-medium">{s.label}</span>
         <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute">{issues.length}</span>
         <button onClick={onAdd} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg" title="Nova issue nesta coluna"><Plus className="size-3.5" /></button>
       </header>
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2.5">
+      <div data-col-body className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2.5">
         {issues.map((i) => <Card key={i.id} issue={i} agents={agents} labels={labels} />)}
         {!issues.length && <div className="mx-1 rounded-xl border border-dashed border-white/[0.07] py-8 text-center text-xs text-mute">Arraste uma issue para cá</div>}
       </div>
