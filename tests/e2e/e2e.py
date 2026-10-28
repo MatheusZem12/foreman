@@ -254,17 +254,12 @@ check(C('POST', f'/workspaces/{ws["id"]}/rules', {'trigger': 'created', 'action'
 check(C('POST', f'/workspaces/{ws["id"]}/rules', {'trigger': 'created', 'action': 'notify', 'config': {'to': 'emails', 'emails': 'a@b.c'}})[0] == 400, 'e-mail digitado não é mais aceito (só pessoas e grupos)')
 ok(C('POST', f'/workspaces/{ws["id"]}/rules', {'trigger': 'created', 'action': 'comment', 'conditions': {'priorities': [1]}, 'config': {'message': 'URGENTE: avisar o plantão'}}))
 ok(C('POST', f'/workspaces/{ws["id"]}/rules', {'trigger': 'created', 'action': 'assign', 'conditions': {'priorities': [1]}, 'config': {'mode': 'balance', 'roles': [jun_role['id'], est_role['id']]}}))
-intake = ok(C('PUT', f'/workspaces/{ws["id"]}/intake', {'enabled': True, 'stage': tri['id']}))
-check(intake['enabled'] and intake['path'].startswith('/api/hooks/'), 'entrada por webhook gera um endereço')
-anon = session()
-h1 = ok(anon('POST', intake['path'][4:], {'subject': 'Site fora do ar', 'text': 'cliente reclamou', 'from': 'cliente@x.com', 'priority': 1}))
-h2 = ok(anon('POST', intake['path'][4:], {'title': 'Ajuste de texto', 'priority': 3}))
+h1 = ok(own('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'Site fora do ar', 'description': 'cliente reclamou', 'status': tri['id'], 'priority': 1}))['issue']
+h2 = ok(own('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'Ajuste de texto', 'status': tri['id'], 'priority': 3}))['issue']
 time.sleep(1.5)
-i1 = ok(own('GET', f'/issues/{h1["ref"]}')); i2 = ok(own('GET', f'/issues/{h2["ref"]}'))
-check(i1['issue']['status'] == tri['id'] and 'cliente@x.com' in i1['issue']['description'], 'e-mail encaminhado vira issue na etapa escolhida')
+i1 = ok(own('GET', f'/issues/{h1["id"]}')); i2 = ok(own('GET', f'/issues/{h2["id"]}'))
 check(any('URGENTE' in c['body'] for c in i1['comments']) and not any('URGENTE' in c['body'] for c in i2['comments']), 'regra de issue criada com condição de prioridade')
 check(i1['issue']['assigneeId'] in (est['id'], jun['id']), 'regra distribui o responsável entre os perfis escolhidos')
-check(anon('POST', '/hooks/token-errado', {'title': 'x'})[0] == 404, 'token errado não cria nada')
 
 # ordem das etapas, alertas e cópia do fluxo para outro workspace
 check(isinstance(ok(C('GET', f'/workspaces/{ws2["id"]}/workflow/warnings')), list), 'alertas vêm como lista (vazia quando não há)')

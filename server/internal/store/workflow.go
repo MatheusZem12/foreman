@@ -444,14 +444,6 @@ func (s *Store) Approve(ctx context.Context, issueID, stage, userID string) (int
 
 // ---------- entrada por webhook ----------
 
-func (s *Store) WorkspaceByIntake(ctx context.Context, token string) (*Workspace, error) {
-	return one[Workspace](ctx, s, `select * from workspaces where intake_token = $1`, token)
-}
-
-func (s *Store) SetIntake(ctx context.Context, wsID string, token *string, stage string) (*Workspace, error) {
-	return one[Workspace](ctx, s, `update workspaces set intake_token = $2, intake_stage = $3 where id = $1 returning *`, wsID, token, stage)
-}
-
 // ---------- membros com acesso ----------
 
 // WorkspaceUserIDs: quem tem acesso ao workspace (vínculo ou "ver todos").

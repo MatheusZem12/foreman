@@ -56,8 +56,6 @@ type Workspace struct {
 	IssueSeq  int       `db:"issue_seq" json:"-"`
 	CreatedAt time.Time `db:"created_at" json:"createdAt"`
 	// Entrada de issues por webhook: o token é segredo (só sai na rota de configuração).
-	IntakeToken *string `db:"intake_token" json:"-"`
-	IntakeStage string  `db:"intake_stage" json:"intakeStage"`
 }
 
 type FileEntry struct {

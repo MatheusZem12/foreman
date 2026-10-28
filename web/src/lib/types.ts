@@ -40,7 +40,7 @@ export interface User {
 export interface Permission { id: string; group: string; label: string }
 export interface Role { id: string; name: string; permissions: string[]; users: number }
 export interface Member extends User { linked: boolean }
-export interface Workspace { id: string; name: string; key: string; createdAt: string; intakeStage?: string }
+export interface Workspace { id: string; name: string; key: string; createdAt: string }
 export interface FileEntry { path: string; content: string }
 export interface Repo {
   id: string; workspaceId: string; name: string; url: string; defaultBranch: string; targetBranch: string;

@@ -7,8 +7,8 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  AlertTriangle, ArrowRightLeft, CheckCircle2, CircleStop, ListChecks, ListOrdered, LogIn, LogOut, Map as MapIcon, Bot, Check, ChevronDown, Copy, Flag, GitMerge, GitPullRequest,
-  GripVertical, Inbox, Lock, Mail, MessageSquare, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, SquareTerminal, Tag, Timer, Trash2,
+  AlertTriangle, ArrowRightLeft, CheckCircle2, CircleStop, ListChecks, ListOrdered, LogIn, LogOut, Map as MapIcon, Bot, Check, Copy, Flag, GitMerge, GitPullRequest,
+  GripVertical, Inbox, Lock, Mail, MessageSquare, Pencil, Plus, Settings2, ShieldCheck, Sparkles, SquareTerminal, Tag, Timer, Trash2,
   UserCheck, Users, Webhook, Workflow, Zap
 } from 'lucide-react';
 import { useWs } from '../components/Layout';
@@ -107,14 +107,14 @@ export function WorkflowPage() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   // Só com "Ver o fluxo": tudo em modo leitura.
   const canEdit = useCan('workflow.manage');
-  const [view, setView] = useState<'mapa' | 'etapas'>(() => {
+  const [view, setView] = useState<'mapa' | 'etapas' | 'gerais'>(() => {
     try {
-      return (localStorage.getItem('mx.flowView') as 'mapa' | 'etapas') || 'mapa';
+      return (localStorage.getItem('mx.flowView') as 'mapa' | 'etapas' | 'gerais') || 'mapa';
     } catch {
       return 'mapa';
     }
   });
-  const pickView = (v: 'mapa' | 'etapas') => {
+  const pickView = (v: 'mapa' | 'etapas' | 'gerais') => {
     setView(v);
     try {
       localStorage.setItem('mx.flowView', v);
@@ -195,7 +195,7 @@ export function WorkflowPage() {
         {email && !email.enabled && rules.some((r) => r.action === 'notify' && r.enabled) && <EmailOffAlert count={rules.filter((r) => r.action === 'notify' && r.enabled).length} />}
 
         <div className="mb-4 flex gap-1 border-b border-line">
-          {([['mapa', t('Mapa do fluxo'), MapIcon], ['etapas', t('Etapas e regras'), ListOrdered]] as const).map(([id, label, I]) => (
+          {([['mapa', t('Mapa do fluxo'), MapIcon], ['etapas', t('Etapas e regras'), ListOrdered], ['gerais', t('Regras gerais'), Zap]] as const).map(([id, label, I]) => (
             <button key={id} onClick={() => pickView(id)}
               className={clsx('-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] transition-colors', view === id ? 'border-accent font-medium text-fg' : 'border-transparent text-mute hover:text-fg')}>
               <I className="size-3.5" /> {label}
@@ -232,21 +232,34 @@ export function WorkflowPage() {
           </SortableContext>
         </DndContext>
 
-        <section className="mt-8">
-          <div className="mb-2 flex items-center gap-2">
-            <Zap className="size-4 text-accent" />
-            <h2 className="font-semibold">{t('Gatilhos do workspace')}</h2>
-            {canEdit && <Button size="sm" variant="ghost" className="ml-auto" onClick={() => newRule({ trigger: 'created', stage: '' })}><Plus className="size-3.5" /> {t('Regra')}</Button>}
-          </div>
-          <p className="mb-3 text-xs text-mute">{t('Regras que não dependem de etapa: issue criada (ex.: urgente avisa o time), comentário, fim da execução, prioridade, responsável, custo.')}</p>
-          <div className="space-y-1.5">
-            <RuleList readOnly={!canEdit} rules={globalRules} stages={stages} onEdit={setEditingRule} onToggle={toggle} onDelete={remove} />
-            {!globalRules.length && <div className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-xs text-mute">{t('Nenhuma ainda. Ex.: “Issue criada com prioridade Urgente → notificar só administradores”.')}</div>}
-          </div>
-        </section>
-
-        {canEdit && <Intake stages={stages} />}
         </>}
+
+        {view === 'gerais' && (
+          <section>
+            <div className="mb-4 flex flex-wrap items-start gap-3">
+              <p className="min-w-0 flex-1 text-xs text-mute">{t('Regras de etapa disparam quando a issue entra, sai ou fica parada numa etapa. Regras gerais disparam por um acontecimento, esteja a issue onde estiver: o agente começou ou terminou, merge, conflito, issue criada, comentário, prioridade, responsável, custo. Para valer só a partir de certas etapas, use o filtro “a issue está na etapa”.')}</p>
+              {canEdit && <Button size="sm" variant="primary" onClick={() => newRule({ trigger: 'run_finished', stage: '' })}><Plus className="size-3.5" /> {t('Regra geral')}</Button>}
+            </div>
+            {!globalRules.length && <div className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-xs text-mute">{t('Nenhuma ainda. Ex.: “Issue criada com prioridade Urgente → notificar só administradores”.')}</div>}
+            {/* Uma caixa por gatilho, na ordem em que acontecem. */}
+            <div className="space-y-3">
+              {TRIGGERS.filter((x) => !x.stage).map((x) => {
+                const list = globalRules.filter((r) => r.trigger === x.id);
+                if (!list.length) return null;
+                return (
+                  <div key={x.id} className="surface p-3">
+                    <div className="mb-2 flex items-baseline gap-2 px-1">
+                      <span className="text-[13px] font-semibold">{x.label}</span>
+                      <span className="text-[11px] text-mute">{x.hint}</span>
+                      {canEdit && <button type="button" onClick={() => newRule({ trigger: x.id, stage: '' })} className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-mute hover:bg-white/5 hover:text-fg"><Plus className="size-3" /> {t('Regra')}</button>}
+                    </div>
+                    <RuleList readOnly={!canEdit} rules={list} stages={stages} onEdit={setEditingRule} onToggle={toggle} onDelete={remove} />
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
       {editingRule && <RuleModal rule={editingRule} stages={stages} onClose={() => setEditingRule(null)} onSaved={refresh} />}
       {editingStage && <StageModal stage={editingStage} stages={stages} onClose={() => setEditingStage(null)} onSaved={refresh} />}
@@ -420,7 +433,6 @@ function RuleRow({ readOnly, rule: r, stages, index, onEdit, onToggle, onDelete 
     cond.hours ? t('após {0} h', cond.hours) : '', cond.cost ? t('> US$ {0}', cond.cost) : '',
     cond.actorRoles?.length ? t('por perfil') : '', cond.agents?.length ? t('por agente') : ''
   ].filter(Boolean);
-  const global = !triggerOf(r.trigger).stage;
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
       className={clsx('group relative flex items-center gap-2 rounded-lg border px-1.5 py-1.5', missing ? 'border-red-400/30 bg-red-400/[0.05]' : 'border-white/[0.06] bg-white/[0.02]', !r.enabled && 'opacity-50', isDragging && 'z-10 bg-panel shadow-pop')}>
@@ -433,7 +445,6 @@ function RuleRow({ readOnly, rule: r, stages, index, onEdit, onToggle, onDelete 
       <span className={clsx('grid size-7 shrink-0 place-items-center rounded-lg', missing ? 'bg-red-400/10 text-red-400' : 'bg-accent/10 text-accent')}><A.icon className="size-3.5" /></span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 text-[13px]">
-          {global && <span className="text-mute">{triggerOf(r.trigger).label}:</span>}
           <span className="truncate">{what}</span>
           {filters.map((f) => <span key={f} className="rounded bg-white/5 px-1.5 text-[10px] text-dim">{f}</span>)}
         </div>
@@ -904,55 +915,5 @@ function CopyModal({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </Modal>
-  );
-}
-
-// ---------- entrada de issues por webhook ----------
-
-function Intake({ stages }: { stages: Stage[] }) {
-  const { ws } = useWs();
-  const qc = useQueryClient();
-  const toast = useToast();
-  const { data } = useQuery({ queryKey: ['intake', ws.id], queryFn: () => api.get<{ enabled: boolean; stage: string; path?: string }>(`/workspaces/${ws.id}/intake`) });
-  const [open, setOpen] = useState(false);
-  const save = async (body: { enabled: boolean; stage: string; rotate?: boolean }) => {
-    try {
-      qc.setQueryData(['intake', ws.id], await api.put(`/workspaces/${ws.id}/intake`, body));
-    } catch (err) {
-      toast('error', (err as Error).message);
-    }
-  };
-  if (!data) return null;
-  const url = data.path ? `${location.origin}${data.path}` : '';
-  return (
-    <section className="mt-8 surface p-4">
-      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 text-left">
-        <Inbox className="size-4 text-accent" />
-        <span className="font-semibold">{t('Entrada de issues')}</span>
-        <span className="text-xs text-mute">{t('webhook · e-mail encaminhado · formulários')}</span>
-        <span className={clsx('ml-auto rounded-full px-2 py-0.5 text-[11px]', data.enabled ? 'bg-emerald-400/15 text-emerald-300' : 'bg-white/5 text-mute')}>{data.enabled ? t('ligada') : t('desligada')}</span>
-        <ChevronDown className={clsx('size-4 text-mute transition', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div className="mt-4 space-y-3 text-[13px]">
-          <p className="text-xs text-mute">{t('Um endereço que cria issues sozinho. Use para “quando cair um e-mail na caixa”: encaminhe com Cloudflare Email Routing, n8n, Zapier ou Make para este endereço. Aceita')} <code>{t('{title, description, priority}')}</code> {t('ou')} <code>{t('{subject, text, from}')}</code>{t('. A issue dispara as regras de “Issue criada”.')}</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <Toggle checked={data.enabled} onChange={(enabled) => save({ enabled, stage: data.stage })} label={t('Ligada')} />
-            <Field label={t('Cria em')} className="w-56">
-              <select className="field-input" value={data.stage} onChange={(e) => save({ enabled: data.enabled, stage: e.target.value })}>
-                {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </Field>
-          </div>
-          {url && (
-            <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 truncate rounded-lg border border-line bg-black/30 px-3 py-2 font-mono text-[11px]">{url}</code>
-              <Button size="sm" onClick={() => { navigator.clipboard?.writeText(url); toast('success', t('Endereço copiado')); }}><Copy className="size-3.5" /></Button>
-              <Button size="sm" variant="ghost" title={t('Gerar outro endereço (o antigo para de funcionar)')} onClick={() => confirm(t('Gerar um endereço novo? O atual para de funcionar.')) && save({ enabled: true, stage: data.stage, rotate: true })}><RefreshCw className="size-3.5" /></Button>
-            </div>
-          )}
-        </div>
-      )}
-    </section>
   );
 }

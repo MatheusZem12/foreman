@@ -84,8 +84,6 @@ Ex.: Estagiário e Júnior podem ter o **mesmo perfil de permissões**, mas a Tr
 
 **Regras** = gatilho + condições + ação. Gatilhos: entrar, sair ou ficar parada X horas numa etapa; issue criada; comentário; execução terminou (concluída, aguardando, incompleta, falhou); responsável definido; prioridade trocada; custo acima de US$ X. Condições: prioridade, labels, agente, perfil de quem causou. Ações: notificar por e-mail (quem pediu, quem criou, responsável, responsáveis da etapa, time, só administradores, perfis ou usuários escolhidos — nunca e-mail digitado), webhook, comentar, mover, definir responsável (fixo, quem criou, quem pediu ou distribuir para quem tem menos issues num grupo), prioridade, label, agente, rodar agente, abrir PR, merge e script. Cada ação vira comentário na issue; loops param sozinhos.
 
-**Entrada de issues:** um endereço por workspace (`POST /api/hooks/<token>`) cria issues na etapa escolhida, com `{title, description, priority}` ou `{subject, text, from}`. Serve para "quando cair um e-mail na caixa": encaminhe com Cloudflare Email Routing, n8n, Zapier ou Make.
-
 **Copiar o fluxo** para outro workspace mostra antes o que muda: perfis e agentes vão iguais (são globais), pessoas sem acesso ao destino saem das listas, labels são recriadas pelo nome e regras que ficariam sem ninguém vão desativadas. A tela de fluxo também alerta quando alguém perde o acesso depois.
 
 **Skills** se vinculam a todas as issues, a agentes escolhidos ou a nenhum; o agente mostra as skills do pacote dele.

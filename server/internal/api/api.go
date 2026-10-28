@@ -65,7 +65,6 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 		r.Post("/login", a.h(a.login))
 		r.Post("/logout", a.h(a.logout))
 		// Entrada de issues por webhook: sem login, o token do endereço é a credencial.
-		r.Post("/hooks/{token}", a.h(a.intakeHook))
 
 		r.Group(func(r chi.Router) {
 			r.Use(a.auth)
@@ -114,8 +113,6 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 				r.With(a.can("workflow.manage")).Put("/rules/order", a.h(a.orderRules))
 				r.With(a.can("workflow.view", "workflow.manage")).Get("/workflow/warnings", a.h(a.getWarnings))
 				r.With(a.can("workflow.duplicate")).Post("/workflow/copy", a.h(a.copyWorkflow))
-				r.With(a.can("workflow.manage")).Get("/intake", a.h(a.getIntake))
-				r.With(a.can("workflow.manage")).Put("/intake", a.h(a.saveIntake))
 			})
 			r.With(a.can("workflow.manage")).Put("/rules/{id}", a.h(a.saveRule))
 			r.With(a.can("workflow.manage")).Delete("/rules/{id}", a.h(a.deleteRule))

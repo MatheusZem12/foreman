@@ -2,8 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -632,93 +630,6 @@ func (a *API) approveIssue(w http.ResponseWriter, r *http.Request) (any, error) 
 	is, _ = a.st.Issue(ctx, is.ID)
 	a.publishIssue(is)
 	return map[string]any{"issue": is, "approvals": n, "needed": p.Approvals}, nil
-}
-
-// ---------- entrada de issues por webhook ----------
-
-func (a *API) getIntake(w http.ResponseWriter, r *http.Request) (any, error) {
-	ws, err := a.st.Workspace(r.Context(), chi.URLParam(r, "ws"))
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]any{"enabled": ws.IntakeToken != nil, "stage": ws.IntakeStage}
-	if ws.IntakeToken != nil {
-		out["path"] = "/api/hooks/" + *ws.IntakeToken
-	}
-	return out, nil
-}
-
-func (a *API) saveIntake(w http.ResponseWriter, r *http.Request) (any, error) {
-	ctx := r.Context()
-	wsID := chi.URLParam(r, "ws")
-	var in struct {
-		Enabled bool   `json:"enabled"`
-		Stage   string `json:"stage"`
-		Rotate  bool   `json:"rotate"`
-	}
-	if err := decode(r, &in); err != nil {
-		return nil, err
-	}
-	ws, err := a.st.Workspace(ctx, wsID)
-	if err != nil {
-		return nil, err
-	}
-	if in.Stage == "" {
-		in.Stage = a.st.FirstStage(ctx, wsID)
-	}
-	if !a.st.ValidStage(ctx, wsID, in.Stage) {
-		return nil, bad("etapa inválida")
-	}
-	token := ws.IntakeToken
-	switch {
-	case !in.Enabled:
-		token = nil
-	case token == nil || in.Rotate:
-		b := make([]byte, 20)
-		rand.Read(b)
-		t := hex.EncodeToString(b)
-		token = &t
-	}
-	if _, err := a.st.SetIntake(ctx, wsID, token, in.Stage); err != nil {
-		return nil, err
-	}
-	return a.getIntake(w, r)
-}
-
-// intakeHook cria uma issue a partir de um POST externo (formulário, n8n,
-// e-mail encaminhado por Cloudflare Email Routing, Zapier…). Sem login: o
-// token do endereço é a credencial. Aceita {title, description, priority} ou
-// o formato de e-mail {subject, text|body, from}.
-func (a *API) intakeHook(w http.ResponseWriter, r *http.Request) (any, error) {
-	ctx := r.Context()
-	ws, err := a.st.WorkspaceByIntake(ctx, chi.URLParam(r, "token"))
-	if err != nil {
-		return nil, store.ErrNotFound
-	}
-	var in struct {
-		Title, Description, Subject, Text, Body, From string
-		Priority                                      int16
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&in); err != nil {
-		return nil, bad("envie JSON: {title, description, priority} ou {subject, text, from}")
-	}
-	title := strings.TrimSpace(firstNonEmptyStr(in.Title, in.Subject))
-	if title == "" {
-		return nil, bad("faltou o título (title ou subject)")
-	}
-	desc := strings.TrimSpace(firstNonEmptyStr(in.Description, in.Text, in.Body))
-	if in.From != "" {
-		desc = strings.TrimSpace(desc + "\n\n— recebido de " + in.From)
-	}
-	if in.Priority < 0 || in.Priority > 4 {
-		in.Priority = 0
-	}
-	is, err := a.st.CreateIssue(ctx, ws.ID, "", store.NewIssue{Title: title, Description: desc, Status: ws.IntakeStage, Priority: in.Priority})
-	if err != nil {
-		return nil, err
-	}
-	a.publishIssue(is)
-	return map[string]any{"ref": fmt.Sprintf("%s-%d", ws.Key, is.Number), "id": is.ID}, nil
 }
 
 // ---------- skills ↔ agentes ----------
