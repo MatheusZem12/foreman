@@ -85,7 +85,12 @@ Ex.: Estagiário e Júnior podem ter o **mesmo perfil de permissões**, mas a Tr
 
 **Regras** = gatilho + condições + ação. Gatilhos: entrar, sair ou ficar parada X horas numa etapa; issue criada; comentário; execução terminou (concluída, aguardando, incompleta, falhou); responsável definido; prioridade trocada; custo acima de US$ X. Condições: prioridade, labels, agente, perfil de quem causou. Ações: notificar por e-mail (quem pediu, quem criou, responsável, responsáveis da etapa, time, só administradores, perfis ou usuários escolhidos — nunca e-mail digitado), webhook, comentar, mover, definir responsável (fixo, quem criou, quem pediu ou distribuir para quem tem menos issues num grupo), prioridade, label, agente, rodar agente, abrir PR, merge e script. Cada ação vira comentário na issue; loops param sozinhos.
 
-**Copiar o fluxo** para outro workspace mostra antes o que muda: perfis e agentes vão iguais (são globais), pessoas sem acesso ao destino saem das listas, labels são recriadas pelo nome e regras que ficariam sem ninguém vão desativadas. A tela de fluxo também alerta quando alguém perde o acesso depois.
+**Copiar o fluxo** de X para Y **substitui** o fluxo de Y: ele é desfeito e fica igual ao de X (etapas, regras e regras de acesso). A prévia mostra o que será apagado em Y, quantas issues vão para a primeira etapa (as que estavam em etapas que deixam de existir) e o que vai precisar de ajuste. Pessoas sem acesso a Y vão junto, sem ganhar acesso por isso, e aparecem nos alertas do fluxo de Y para alguém corrigir. Labels são achadas ou criadas pelo nome. A tela de fluxo também alerta quando alguém perde o acesso depois.
+
+**Analytics** tem dois níveis, cada um com permissões separadas:
+- **Do workspace** (*Analytics*, `analytics.view`): os números do workspace em que você está. Para ver de outro projeto, entre nele. Sem mais nada, mostra só os **seus** números (issues que você criou ou de que é responsável, e as execuções delas e as que você pediu). Com `analytics.team`, dá para ver **todo mundo** ou **uma pessoa**.
+- **Geral** (*Analytics geral*, `analytics.global`): todos os workspaces a que você tem acesso, somados; só os seus números. Com `analytics.global_team`, todo mundo ou uma pessoa.
+- O servidor confere cada pedido: sem a permissão de equipe, pedir os números de outra pessoa dá 403.
 
 **Skills** se vinculam a todas as issues, a agentes escolhidos ou a nenhum; o agente mostra as skills do pacote dele.
 

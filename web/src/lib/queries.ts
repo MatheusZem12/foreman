@@ -16,6 +16,7 @@ export const useCan = (...perms: string[]) => can(useMe().data, ...perms);
 // Sem nenhuma, a tela some do menu; só com o "ver", abre em modo leitura.
 export const SCREENS = {
   analytics: ['analytics.view'],
+  analyticsGlobal: ['analytics.global'],
   fluxo: ['workflow.view', 'workflow.manage'],
   workspace: ['workspace.view', 'repo.create', 'repo.update', 'repo.delete', 'member.manage', 'workspace.update', 'workspace.delete'],
   labels: ['label.view', 'label.create', 'label.update', 'label.delete'],
@@ -31,7 +32,7 @@ export const useMembers = (ws?: string) =>
 export const useWorkspaces = () => useQuery({ queryKey: ['workspaces'], queryFn: () => api.get<Workspace[]>('/workspaces') });
 export const useAgents = () => useQuery({ queryKey: ['agents'], queryFn: () => api.get<Agent[]>('/agents') });
 export const useSkills = () => useQuery({ queryKey: ['skills'], queryFn: () => api.get<Skill[]>('/skills') });
-export const useUsers = () => useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users') });
+export const useUsers = (enabled = true) => useQuery({ queryKey: ['users'], queryFn: () => api.get<User[]>('/users'), enabled });
 export const useRepos = (ws?: string) =>
   useQuery({ queryKey: ['repos', ws], queryFn: () => api.get<Repo[]>(`/workspaces/${ws}/repos`), enabled: !!ws });
 export const useLabels = (ws?: string) =>

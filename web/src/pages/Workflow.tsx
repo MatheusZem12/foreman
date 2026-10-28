@@ -875,13 +875,13 @@ function CopyModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [to, setTo] = useState('');
-  const [preview, setPreview] = useState<{ warnings: WorkflowWarning[]; stages: number; rules: number } | null>(null);
+  const [preview, setPreview] = useState<{ warnings: WorkflowWarning[]; stages: number; rules: number; replaced: { stages: number; rules: number }; movedIssues: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const targets = workspaces.filter((w) => w.id !== ws.id);
   const run = async (dryRun: boolean) => {
     setBusy(true);
     try {
-      const res = await api.post<{ warnings: WorkflowWarning[]; stages: number; rules: number }>(`/workspaces/${ws.id}/workflow/copy`, { to, dryRun });
+      const res = await api.post<{ warnings: WorkflowWarning[]; stages: number; rules: number; replaced: { stages: number; rules: number }; movedIssues: number }>(`/workspaces/${ws.id}/workflow/copy`, { to, dryRun });
       if (dryRun) setPreview(res);
       else {
         toast('success', t('Fluxo copiado: {0} etapas e {1} regras', res.stages, res.rules));
@@ -907,11 +907,23 @@ function CopyModal({ onClose }: { onClose: () => void }) {
             {targets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
         </Field>
-        <p className="text-xs text-mute">{t('Copia etapas, acessos, travas, aprovações e regras de')} <b className="text-dim">{ws.name}</b>{t('. Perfis e agentes são globais e vão iguais; pessoas sem acesso ao destino saem das listas, e labels são recriadas pelo nome. Issues do destino em etapas que deixarem de existir vão para o Backlog.')}</p>
+        <p className="text-xs text-mute">{t('O fluxo do destino é desfeito e fica igual ao de {0}: etapas, regras e regras de acesso, como estão. Pessoas sem acesso ao destino vão junto e aparecem nos alertas do fluxo de lá para alguém corrigir (elas não ganham acesso por isso). Labels são achadas ou criadas pelo nome.', ws.name)}</p>
         {preview && (
-          <div className={clsx('rounded-xl border p-3 text-xs', preview.warnings.length ? 'border-amber-400/25 bg-amber-400/[0.07] text-amber-200' : 'border-emerald-400/25 bg-emerald-400/[0.07] text-emerald-200')}>
-            <div className="mb-1 font-medium">{preview.stages} {t('etapas e')} {preview.rules} {t('regras ·')} {preview.warnings.length ? t('{0} ajuste(s) automático(s):', preview.warnings.length) : t('nada a ajustar.')}</div>
-            <ul className="space-y-0.5 pl-4">{preview.warnings.map((w, i) => <li key={i} className="list-disc"><b className="font-medium">{w.where}:</b> {w.message}</li>)}</ul>
+          <div className="space-y-3">
+            <div className="rounded-xl border border-red-400/25 bg-red-400/[0.06] p-3 text-xs text-red-200">
+              <div className="mb-1 font-medium">{t('O que será apagado no destino')}</div>
+              <ul className="space-y-0.5 pl-4">
+                <li className="list-disc">{t('{0} etapa(s) e {1} regra(s) atuais', preview.replaced.stages, preview.replaced.rules)}</li>
+                {preview.movedIssues > 0 && <li className="list-disc">{t('{0} issue(s) em etapas que deixam de existir vão para a primeira etapa', preview.movedIssues)}</li>}
+              </ul>
+              <div className="mt-2 text-dim">{t('No lugar: {0} etapa(s) e {1} regra(s) de {2}.', preview.stages, preview.rules, ws.name)}</div>
+            </div>
+            {preview.warnings.length > 0 ? (
+              <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-3 text-xs text-amber-200">
+                <div className="mb-1 font-medium">{t('Vai precisar de ajuste no destino ({0})', preview.warnings.length)}</div>
+                <ul className="space-y-0.5 pl-4">{preview.warnings.map((w, i) => <li key={i} className="list-disc"><b className="font-medium">{w.where}:</b> {w.message}</li>)}</ul>
+              </div>
+            ) : <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.07] p-3 text-xs text-emerald-200">{t('Nada a ajustar depois: todas as pessoas citadas têm acesso ao destino.')}</div>}
           </div>
         )}
       </div>

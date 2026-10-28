@@ -3,7 +3,7 @@ import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from '
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  BarChart3, Bot, BookOpen, ChevronDown, CircleHelp, FolderCog, Tags, LayoutGrid, LogOut, Menu, Plus, Search, Settings, Workflow, X
+  BarChart3, Bot, Globe2, BookOpen, ChevronDown, CircleHelp, FolderCog, Tags, LayoutGrid, LogOut, Menu, Plus, Search, Settings, Workflow, X
 } from 'lucide-react';
 import { Avatar, Modal, MenuItem, Popover, Spinner } from './ui';
 import { NewIssueModal } from './NewIssue';
@@ -184,6 +184,7 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
           <span className="flex items-center gap-1 text-[11px] text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" />{working}</span>
         ) : null)}
         {canSee(me, 'analytics') && link(`${base}/analytics`, <BarChart3 className="size-4" />, t('Analytics'))}
+        {canSee(me, 'analyticsGlobal') && link(`${base}/analytics-geral`, <Globe2 className="size-4" />, t('Analytics geral'))}
 
         {(canSee(me, 'fluxo') || canSee(me, 'workspace') || canSee(me, 'labels')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Workspace')}</div>}
         {canSee(me, 'fluxo') && link(`${base}/fluxo`, <Workflow className="size-4" />, t('Fluxo e automações'))}

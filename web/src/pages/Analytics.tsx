@@ -5,13 +5,13 @@ import clsx from 'clsx';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
-import { Activity, AlertTriangle, BarChart3, Bot, CheckCircle2, Clock, Coins, Cpu, Sparkles, Table2, Users, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Bot, ChevronDown, Globe2, CheckCircle2, Clock, Coins, Cpu, Sparkles, Table2, Users, Zap } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Avatar, EmptyState, PageHeader, PriorityIcon, Spinner, StatusIcon } from '../components/ui';
+import { Avatar, Chip, EmptyState, MenuItem, PageHeader, Popover, PriorityIcon, Spinner, StatusIcon } from '../components/ui';
 import { api } from '../lib/api';
 import { PRIORITIES, STATUSES, statusOf } from '../lib/constants';
 import { compact, duration, money } from '../lib/format';
-import { useAgents } from '../lib/queries';
+import { useAgents, useCan, useMe, useMembers, useUsers } from '../lib/queries';
 import type { Agent, Analytics, StageKind, Totals } from '../lib/types';
 import { AgentIcon } from '../components/AgentIcon';
 import { lang, locale, t } from '../lib/i18n';
@@ -132,10 +132,16 @@ function RankRow({ left, value, share, sub }: { left: React.ReactNode; value: st
 
 type Day = { day: string; value: number; cost: number; runs: number; t?: Totals };
 
-export function AnalyticsPage() {
+// Dois níveis: o Analytics do workspace em que a pessoa está (analytics.view)
+// e o geral, de todos os workspaces que ela enxerga (analytics.global). Em
+// cada um, ver os números de todo mundo ou de outra pessoa é uma permissão à
+// parte (analytics.team / analytics.global_team); sem ela, só os próprios.
+export function AnalyticsPage({ global }: { global?: boolean }) {
   const { ws } = useWs();
+  const { data: me } = useMe();
+  const team = useCan(global ? 'analytics.global_team' : 'analytics.team');
+  const [person, setPerson] = useState<string>(team ? 'all' : 'me');
   const [days, setDays] = useState<'7' | '30' | '90' | '365'>('30');
-  const [scope, setScope] = useState<'ws' | 'all'>('ws');
   const [metric, setMetric] = useState<Metric>('cost');
   const [table, setTable] = useState(false);
   const [tab, setTab] = useState<Tab>(() => {
@@ -155,8 +161,8 @@ export function AnalyticsPage() {
   };
   const { data: agents = [] } = useAgents();
   const { data, isLoading } = useQuery({
-    queryKey: ['analytics', scope === 'ws' ? ws.id : '', days],
-    queryFn: () => api.get<Analytics>(`/analytics?days=${days}&workspace=${scope === 'ws' ? ws.id : ''}`)
+    queryKey: ['analytics', global ? 'global' : ws.id, days, person],
+    queryFn: () => api.get<Analytics>(`${global ? '' : `/workspaces/${ws.id}`}/analytics?days=${days}&person=${person}`)
   });
 
   // Dias sem execução entram com zero: o eixo do tempo fica contínuo.
@@ -176,12 +182,12 @@ export function AnalyticsPage() {
     <div className="h-full overflow-y-auto">
       <div className="page">
         <PageHeader
-          icon={BarChart3}
-          title={t('Analytics')}
-          description={t('Custo, volume e ritmo das issues e dos agentes.')}
+          icon={global ? Globe2 : BarChart3}
+          title={global ? t('Analytics geral') : t('Analytics')}
+          description={global ? t('Todos os workspaces a que você tem acesso, somados.') : t('Custo, volume e ritmo das issues e dos agentes de {0}.', ws.name)}
           actions={
             <div className="flex flex-wrap gap-2">
-              <Segmented items={[{ id: 'ws', label: ws.name }, { id: 'all', label: t('Todos') }]} value={scope} onChange={setScope} />
+              <PersonPicker global={global} team={team} value={person} onChange={setPerson} meId={me?.id} />
               <Segmented items={[{ id: '7', label: '7d' }, { id: '30', label: '30d' }, { id: '90', label: '90d' }, { id: '365', label: t('1 ano') }]} value={days} onChange={setDays} />
             </div>
           }
@@ -616,5 +622,32 @@ function AgentTable({ data, agents }: { data: Analytics; agents: Agent[] }) {
         </div>
       ) : <p className="py-10 text-center text-mute">{t('Nenhuma execução.')}</p>}
     </Card>
+  );
+}
+
+// De quem são os números: só os meus, de todo mundo ou de uma pessoa (com a permissão de equipe).
+function PersonPicker({ global, team, value, onChange, meId }: { global?: boolean; team: boolean; value: string; onChange: (v: string) => void; meId?: string }) {
+  const { ws } = useWs();
+  const canUsers = useCan('user.view');
+  const { data: members = [] } = useMembers(ws.id);
+  const { data: users = [] } = useUsers(global && canUsers && team);
+  const people = (global && canUsers ? users : members).filter((p) => p.id !== meId);
+  if (!team) return <span className="inline-flex h-8 items-center rounded-lg border border-line px-2.5 text-xs text-mute" title={t('Seu perfil vê só os próprios números')}>{t('Seus números')}</span>;
+  const label = value === 'all' ? t('Todo mundo') : value === 'me' ? t('Só eu') : people.find((p) => p.id === value)?.name ?? t('Pessoa');
+  return (
+    <Popover align="right" trigger={() => <Chip>{label} <ChevronDown className="size-3.5 text-mute" /></Chip>}>
+      {(close) => (
+        <div className="max-h-80 overflow-y-auto">
+          <MenuItem selected={value === 'all'} onClick={() => { onChange('all'); close(); }}>{t('Todo mundo')}</MenuItem>
+          <MenuItem selected={value === 'me'} onClick={() => { onChange('me'); close(); }}>{t('Só eu')}</MenuItem>
+          {people.length > 0 && <div className="px-2 pb-1 pt-2 text-[11px] text-mute">{t('Uma pessoa')}</div>}
+          {people.map((p) => (
+            <MenuItem key={p.id} selected={value === p.id} onClick={() => { onChange(p.id); close(); }}>
+              <Avatar name={p.name} size={18} /> {p.name}
+            </MenuItem>
+          ))}
+        </div>
+      )}
+    </Popover>
   );
 }

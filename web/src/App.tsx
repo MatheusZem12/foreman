@@ -91,6 +91,7 @@ export default function App() {
               <Route index element={<Board />} />
               <Route path="issues/:ref" element={<IssuePage />} />
               <Route path="analytics" element={<Need perms={[...SCREENS.analytics]}><Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage /></Suspense></Need>} />
+              <Route path="analytics-geral" element={<Need perms={[...SCREENS.analyticsGlobal]}><Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage global /></Suspense></Need>} />
               <Route path="config" element={<SettingsPage />} />
               <Route path="config/:tab" element={<SettingsPage />} />
               <Route path="fluxo" element={<Need perms={[...SCREENS.fluxo]}><WorkflowPage /></Need>} />

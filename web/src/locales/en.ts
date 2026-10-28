@@ -1,6 +1,22 @@
 // Inglês. A chave é o texto em português (o que está no código); o que
 // faltar aqui aparece em português. Gerado a partir de t('…') e revisado.
 const en: Record<string, string> = {
+  // analytics por workspace/geral e cópia do fluxo
+  "Analytics geral": "Overall Analytics",
+  "Todos os workspaces a que você tem acesso, somados.": "Every workspace you can access, combined.",
+  "Custo, volume e ritmo das issues e dos agentes de {0}.": "Cost, volume and pace of {0}'s issues and agents.",
+  "Seu perfil vê só os próprios números": "Your role only sees its own numbers",
+  "Seus números": "Your numbers",
+  "Todo mundo": "Everyone",
+  "Só eu": "Just me",
+  "Uma pessoa": "One person",
+  "O fluxo do destino é desfeito e fica igual ao de {0}: etapas, regras e regras de acesso, como estão. Pessoas sem acesso ao destino vão junto e aparecem nos alertas do fluxo de lá para alguém corrigir (elas não ganham acesso por isso). Labels são achadas ou criadas pelo nome.": "The destination's workflow is undone and becomes identical to {0}'s: stages, rules and access rules, as they are. People without access to the destination go along and show up in that workflow's alerts for someone to fix (they don't gain access because of it). Labels are matched or created by name.",
+  "O que será apagado no destino": "What will be deleted in the destination",
+  "{0} etapa(s) e {1} regra(s) atuais": "{0} current stage(s) and {1} rule(s)",
+  "{0} issue(s) em etapas que deixam de existir vão para a primeira etapa": "{0} issue(s) in stages that stop existing go to the first stage",
+  "No lugar: {0} etapa(s) e {1} regra(s) de {2}.": "In their place: {0} stage(s) and {1} rule(s) from {2}.",
+  "Vai precisar de ajuste no destino ({0})": "Will need fixing in the destination ({0})",
+  "Nada a ajustar depois: todas as pessoas citadas têm acesso ao destino.": "Nothing to fix afterwards: everyone mentioned has access to the destination.",
   // labels e quadro paginado
   "Apagar a label \"{0}\"? Ela sai de {1} issue(s).": "Delete the label \"{0}\"? It's removed from {1} issue(s).",
   "Apagar a label \"{0}\"?": "Delete the label \"{0}\"?",
