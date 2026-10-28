@@ -7,7 +7,7 @@ export interface StagePolicy {
   enter: Who; act: Who; locked?: LockField[]; requires?: Requirement[]; wip?: number;
   approvals?: number; approveTo?: string; approvers: Who; responsible: Who; readOnly?: boolean;
 }
-export interface Stage { id: string; name: string; color: string; position: number; system: boolean; policy: StagePolicy }
+export interface Stage { id: string; name: string; color: string; position: number; system: boolean; policy: StagePolicy; parallel?: boolean }
 export type RuleAction = 'notify' | 'webhook' | 'move' | 'run_agent' | 'open_pr' | 'merge' | 'script'
   | 'set_agent' | 'set_priority' | 'add_label' | 'assign' | 'comment';
 export type RuleTrigger = 'enter' | 'leave' | 'stale' | 'created' | 'commented' | 'run_finished' | 'cost_over' | 'assigned' | 'priority_changed';

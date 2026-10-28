@@ -6,11 +6,11 @@ import {
   type DragEndEvent, type DragStartEvent
 } from '@dnd-kit/core';
 import clsx from 'clsx';
-import { Columns3, GripVertical, List, ListFilter, Plus, Search } from 'lucide-react';
+import { Columns3, List, ListFilter, Plus, Search } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Chip, MenuItem, Popover, PriorityIcon, Spinner, StatusIcon, useToast } from '../components/ui';
 import { LabelDots } from '../components/pickers';
-import { STATUSES, statusOf } from '../lib/constants';
+import { STATUSES, stageGroups, statusOf } from '../lib/constants';
 import { useAgents, useIssues, useLabels, useMe, useStages } from '../lib/queries';
 import { money, timeAgo } from '../lib/format';
 import { api } from '../lib/api';
@@ -38,10 +38,10 @@ function writePref(key: string, v: string) {
   }
 }
 
-// A arrumação do quadro é de cada pessoa, por workspace (as etapas mudam de um
-// para outro). Só aparência: a ordem das colunas aqui não mexe no fluxo.
-type BoardLayout = { mode: 'side' | 'grid'; perRow: number; order: string[] };
-const DEFAULT_LAYOUT: BoardLayout = { mode: 'side', perRow: 3, order: [] };
+// A exibição do quadro é de cada pessoa, por workspace (lado a lado ou em
+// grade). A ORDEM das colunas vem só do fluxo: muda em Fluxo e automações.
+type BoardLayout = { mode: 'side' | 'grid'; perRow: number };
+const DEFAULT_LAYOUT: BoardLayout = { mode: 'side', perRow: 3 };
 
 function useBoardLayout(wsId: string) {
   const qc = useQueryClient();
@@ -58,13 +58,6 @@ function useBoardLayout(wsId: string) {
     api.put(`/me/prefs/board:${wsId}`, next).catch(() => { /* fica só nesta sessão */ });
   };
   return [layout, save] as const;
-}
-
-// Colunas na ordem que a pessoa escolheu; etapa nova (fora da lista salva)
-// entra na posição padrão dela.
-function arrange(columns: Status[], order: string[]) {
-  const rank = (id: string, i: number) => (order.includes(id) ? order.indexOf(id) : order.length + i);
-  return columns.map((id, i) => [id, rank(id, i)] as const).sort((a, b) => a[1] - b[1]).map(([id]) => id);
 }
 
 // No modo lado a lado: a roda do mouse anda para os lados (a menos que esteja
@@ -132,7 +125,6 @@ export function Board() {
   const [text, setText] = useState('');
   const [showCancelled, setShowCancelled] = useState(false);
   const [dragging, setDragging] = useState<Issue | null>(null);
-  const [draggingCol, setDraggingCol] = useState<Status | null>(null);
   const [layout, saveLayout] = useBoardLayout(ws.id);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   useSideScroll(layout.mode === 'side' ? scroller : null);
@@ -177,29 +169,10 @@ export function Board() {
     }
   };
 
-  // O status da coluna sob o ponteiro (soltar na coluna ou num cartão dela).
-  const statusUnder = (overId: string): Status | null =>
-    overId.startsWith('col:') ? (overId.slice(4) as Status) : (issues ?? []).find((i) => i.id === overId.slice(5))?.status ?? null;
-
-  const onDragStart = (e: DragStartEvent) => {
-    const id = String(e.active.id);
-    if (id.startsWith('colh:')) setDraggingCol(id.slice(5) as Status);
-    else setDragging((issues ?? []).find((i) => i.id === id) ?? null);
-  };
+  const onDragStart = (e: DragStartEvent) => setDragging((issues ?? []).find((i) => i.id === e.active.id) ?? null);
   const onDragEnd = (e: DragEndEvent) => {
     setDragging(null);
-    setDraggingCol(null);
     lastDragEnd = Date.now();
-    const activeId = String(e.active.id);
-    if (activeId.startsWith('colh:')) {
-      const from = activeId.slice(5) as Status;
-      const to = statusUnder(String(e.over?.id ?? ''));
-      if (!to || to === from) return;
-      const next = columns.filter((c) => c !== from);
-      next.splice(columns.indexOf(to), 0, from);
-      saveLayout({ order: next });
-      return;
-    }
     const issue = (issues ?? []).find((i) => i.id === e.active.id);
     const overId = String(e.over?.id ?? '');
     if (!issue || !overId) return;
@@ -227,7 +200,9 @@ export function Board() {
     move(issue, status, position);
   };
 
-  const columns = arrange(STATUSES.map((s) => s.id).filter((id) => id !== 'cancelled' || showCancelled), layout.order);
+  const columns = STATUSES.map((s) => s.id).filter((id) => id !== 'cancelled' || showCancelled);
+  // Etapas em paralelo dividem a mesma coluna, uma embaixo da outra.
+  const groups = stageGroups(STATUSES.filter((s) => columns.includes(s.id))).map((g) => g.map((s) => s.id));
 
   return (
     <div className="flex h-full flex-col">
@@ -281,8 +256,7 @@ export function Board() {
                     ))}
                   </div>
                 )}
-                {layout.order.length > 0 && <MenuItem onClick={() => saveLayout({ order: [] })}>Restaurar ordem das colunas</MenuItem>}
-                <div className="px-2.5 pb-1 pt-0.5 text-[11px] leading-snug text-mute">Arraste o título de uma coluna para mudar a ordem.</div>
+                <div className="px-2.5 pb-1 pt-0.5 text-[11px] leading-snug text-mute">A ordem das colunas segue o fluxo (Fluxo e automações).</div>
               </>
             )}
           </Popover>
@@ -305,25 +279,28 @@ export function Board() {
                 className="grid grid-cols-1 gap-3 sm:[grid-template-columns:repeat(var(--per-row),minmax(0,1fr))]"
                 style={{ '--per-row': layout.perRow } as React.CSSProperties}
               >
-                {columns.map((s) => (
-                  <Column key={s} status={s} grid issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />
-                ))}
+                {groups.map((g) => g.length === 1
+                  ? <Column key={g[0]} status={g[0]} grid issues={byStatus[g[0]]} agents={agents} labels={labels} onAdd={() => openNewIssue(g[0])} />
+                  : (
+                    <div key={g[0]} className="flex h-[clamp(20rem,60vh,40rem)] min-w-0 flex-col gap-2">
+                      {g.map((s) => <Column key={s} status={s} stacked issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />)}
+                    </div>
+                  ))}
               </div>
             </div>
           ) : (
             <div ref={setScroller} className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto p-3 md:snap-none md:p-4">
-              {columns.map((s) => (
-                <Column key={s} status={s} issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />
-              ))}
+              {groups.map((g) => g.length === 1
+                ? <Column key={g[0]} status={g[0]} issues={byStatus[g[0]]} agents={agents} labels={labels} onAdd={() => openNewIssue(g[0])} />
+                : (
+                  <div key={g[0]} className="flex w-[85vw] shrink-0 snap-center flex-col gap-2 sm:w-[19rem]">
+                    {g.map((s) => <Column key={s} status={s} stacked issues={byStatus[s]} agents={agents} labels={labels} onAdd={() => openNewIssue(s)} />)}
+                  </div>
+                ))}
             </div>
           )}
           <DragOverlay dropAnimation={null}>
             {dragging && <Tilt><Card issue={dragging} agents={agents} labels={labels} overlay /></Tilt>}
-            {draggingCol && (
-              <div className="flex items-center gap-2 rounded-xl border border-accent/50 bg-panel px-3.5 py-2.5 shadow-pop">
-                <StatusIcon status={draggingCol} /> <span className="font-medium">{statusOf(draggingCol).label}</span>
-              </div>
-            )}
           </DragOverlay>
         </DndContext>
       )}
@@ -369,31 +346,22 @@ function LabelFilter({ labels, value, onChange }: { labels: Label[]; value: stri
   );
 }
 
-function Column({ status, issues, agents, labels, onAdd, grid }: { status: Status; issues: Issue[]; agents: Agent[]; labels: Label[]; onAdd: () => void; grid?: boolean }) {
+function Column({ status, issues, agents, labels, onAdd, grid, stacked }: { status: Status; issues: Issue[]; agents: Agent[]; labels: Label[]; onAdd: () => void; grid?: boolean; stacked?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${status}` });
-  const head = useDraggable({ id: `colh:${status}` });
   const s = statusOf(status);
   return (
     <section
       ref={setNodeRef}
       className={clsx(
         'flex flex-col rounded-2xl border bg-white/[0.015] transition-colors',
-        grid ? 'h-[clamp(14rem,42vh,30rem)] min-w-0' : 'w-[85vw] shrink-0 snap-center sm:w-[19rem]',
-        isOver ? 'border-accent/50 bg-accent/[0.04]' : 'border-white/[0.06]',
-        head.isDragging && 'opacity-40'
+        stacked ? 'min-h-0 flex-1' : grid ? 'h-[clamp(14rem,42vh,30rem)] min-w-0' : 'w-[85vw] shrink-0 snap-center sm:w-[19rem]',
+        isOver ? 'border-accent/50 bg-accent/[0.04]' : 'border-white/[0.06]'
       )}
     >
-      <header
-        ref={head.setNodeRef}
-        {...head.listeners}
-        {...head.attributes}
-        data-col-head
-        className="group flex cursor-grab touch-none items-center gap-2 px-3.5 py-3 active:cursor-grabbing"
-        title="Arraste para mudar a ordem das colunas"
-      >
-        <GripVertical className="-ml-2 size-3.5 text-mute opacity-0 transition group-hover:opacity-100" />
+      <header data-col-head className="flex items-center gap-2 px-3.5 py-3">
         <StatusIcon status={status} />
         <span className="font-medium">{s.label}</span>
+        {s.parallel && <span className="rounded bg-white/[0.06] px-1 text-[10px] text-mute" title="Em paralelo com a etapa de cima">paralela</span>}
         <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute">{issues.length}</span>
         <button onClick={onAdd} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg" title="Nova issue nesta coluna"><Plus className="size-3.5" /></button>
       </header>
