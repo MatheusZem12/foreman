@@ -487,10 +487,13 @@ func (a *API) getWarnings(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- duplicar o fluxo ----------
 
-// copyWorkflow copia etapas e regras (inclusive as de acesso) para outro workspace.
-// Pessoas sem acesso ao destino saem das listas; labels são recriadas pelo
-// nome; regras que ficariam sem efeito vão desativadas. dryRun só devolve
-// os alertas, para a pessoa decidir antes de confirmar.
+// copyWorkflow substitui o fluxo do destino pelo da origem, igual: etapas,
+// regras e regras de acesso. O fluxo do destino é desfeito; issues em etapas
+// que deixam de existir vão para a primeira etapa. Pessoas sem acesso ao
+// destino são copiadas como estão e aparecem nos alertas do destino para a
+// pessoa corrigir (elas não ganham acesso nem recebem nada por isso). Só as
+// labels mudam: são do workspace, então são achadas ou criadas pelo nome.
+// dryRun devolve o que vai acontecer, para confirmar antes.
 func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) {
 	ctx := r.Context()
 	from := chi.URLParam(r, "ws")
@@ -515,75 +518,58 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	access, _ := a.st.WorkspaceUserIDs(ctx, in.To)
-	users, _ := a.st.ListUsers(ctx)
-	name := func(id string) string {
-		for _, u := range users {
-			if u.ID == id {
-				return u.Name
-			}
-		}
-		return tr(ctx, "usuário removido")
+	oldStages, _ := a.st.Stages(ctx, in.To)
+	oldRules, _ := a.st.ListRules(ctx, in.To)
+	keep := map[string]bool{}
+	for _, st := range stages {
+		keep[st.ID] = true
 	}
-	warns := []warning{}
-	strip := func(ids []string, where string) []string {
-		kept := ids[:0:0]
-		for _, id := range ids {
-			if access[id] {
-				kept = append(kept, id)
-			} else {
-				warns = append(warns, warning{Where: where, Message: tr(ctx, "%s não tem acesso ao destino e sai da lista", name(id))})
-			}
+	moved := 0
+	for _, st := range oldStages {
+		if !keep[st.ID] {
+			moved += a.st.CountInStage(ctx, in.To, st.ID)
 		}
-		return kept
 	}
+
+	notes := []warning{}
 	destLabels, _ := a.st.ListLabels(ctx, in.To)
 	for i := range rules {
 		rl := &rules[i]
 		var c map[string]any
 		json.Unmarshal(rl.Config, &c)
-		where := tr(ctx, "Regra %s", tr(ctx, firstNonEmptyStr(actionNames[rl.Action], rl.Action)))
-		if list, ok := c["users"].([]any); ok {
-			var ids []string
-			for _, v := range list {
-				ids = append(ids, fmt.Sprint(v))
-			}
-			kept := strip(ids, where)
-			c["users"] = kept
-			roles, _ := c["roles"].([]any)
-			// Regra de acesso que ficaria sem ninguém liberaria a etapa para todos.
-			needsUsers := (rl.Action == "notify" && c["to"] == "users") || (rl.Action == "assign" && (c["mode"] == nil || c["mode"] == "" || c["mode"] == "user")) ||
-				(rl.Trigger == "access" && slices.Contains([]string{"allow_act", "allow_enter", "responsible"}, rl.Action) && len(roles) == 0)
-			if needsUsers && len(kept) == 0 && rl.Enabled {
-				rl.Enabled = false
-				warns = append(warns, warning{Where: where, Message: tr(ctx, "ficou sem ninguém e vai desativada; escolha pessoas do destino")})
-			}
+		lid, _ := c["labelId"].(string)
+		if lid == "" {
+			continue
 		}
-		if lid, _ := c["labelId"].(string); lid != "" {
-			if l, err := a.st.Label(ctx, lid); err == nil {
-				idx := slices.IndexFunc(destLabels, func(x store.Label) bool { return strings.EqualFold(x.Name, l.Name) })
-				switch {
-				case idx >= 0:
-					c["labelId"] = destLabels[idx].ID
-				case in.DryRun:
-					warns = append(warns, warning{Where: where, Message: tr(ctx, "a label %s será criada no destino", l.Name)})
-				default:
-					if nl, err := a.st.CreateLabel(ctx, in.To, l.Name, l.Color); err == nil {
-						c["labelId"] = nl.ID
-						destLabels = append(destLabels, *nl)
-					}
-				}
+		l, err := a.st.Label(ctx, lid)
+		if err != nil {
+			continue
+		}
+		idx := slices.IndexFunc(destLabels, func(x store.Label) bool { return strings.EqualFold(x.Name, l.Name) })
+		switch {
+		case idx >= 0:
+			c["labelId"] = destLabels[idx].ID
+		case in.DryRun:
+			notes = append(notes, warning{Where: tr(ctx, "Regra %s", tr(ctx, firstNonEmptyStr(actionNames[rl.Action], rl.Action))), Message: tr(ctx, "a label %s será criada no destino", l.Name)})
+		default:
+			if nl, err := a.st.CreateLabel(ctx, in.To, l.Name, l.Color); err == nil {
+				c["labelId"] = nl.ID
+				destLabels = append(destLabels, *nl)
 			}
 		}
 		rl.Config, _ = json.Marshal(c)
 	}
+	// O que vai precisar de ajuste no destino (pessoas sem acesso, perfis apagados…).
+	warns := append(a.workflowWarnings(ctx, in.To, stages, rules), notes...)
+	out := map[string]any{"warnings": warns, "stages": len(stages), "rules": len(rules),
+		"replaced": map[string]int{"stages": len(oldStages), "rules": len(oldRules)}, "movedIssues": moved}
 	if in.DryRun {
-		return map[string]any{"warnings": warns, "stages": len(stages), "rules": len(rules)}, nil
+		return out, nil
 	}
 	if err := a.st.ReplaceWorkflow(ctx, in.To, stages, rules); err != nil {
 		return nil, err
 	}
-	return map[string]any{"warnings": warns, "stages": len(stages), "rules": len(rules)}, nil
+	return out, nil
 }
 
 // ---------- aprovar ----------

@@ -272,7 +272,9 @@ check(any('est' in w['message'] for w in prev['warnings']), 'cópia avisa quem n
 ok(C('POST', f'/workspaces/{ws["id"]}/workflow/copy', {'to': ws2['id']}))
 s2 = ok(C('GET', f'/workspaces/{ws2["id"]}/stages'))
 tri2 = next(x for x in s2 if x['name'] == 'Triagem')
-check(tri2['policy']['act']['roles'] == [est_role['id']] and not tri2['policy']['responsible'].get('users'), 'cópia leva perfis e tira pessoas sem acesso')
+check(tri2['policy']['act']['roles'] == [est_role['id']] and tri2['policy']['responsible'].get('users') == [est['id']], 'cópia substitui o destino igual à origem (pessoas inclusive)')
+check(any('est' in w['message'] for w in ok(C('GET', f'/workspaces/{ws2["id"]}/workflow/warnings'))), 'no destino, quem não tem acesso aparece nos alertas para corrigir')
+check(prev['replaced']['stages'] >= 8 and 'movedIssues' in prev, 'a prévia diz o que será apagado no destino')
 check(A('POST', f'/workspaces/{ws["id"]}/workflow/copy', {'to': ws2['id']})[0] == 403, 'copiar fluxo exige permissão')
 
 # skill vinculada a agentes; chave do workspace não muda
@@ -292,7 +294,7 @@ st, r = A('PATCH', f'/issues/{R["id"]}', {'title': 'mudou'})
 check(st == 403 and 'somente leitura' in r['error'], 'etapa somente leitura: ninguém edita')
 check(A('POST', f'/issues/{R["id"]}/comments', {'body': 'oi'})[0] == 403 and A('PATCH', f'/issues/{R["id"]}', {'status': 'backlog'})[0] == 403, 'somente leitura: sem comentar nem tirar de lá')
 check(not ok(A('GET', f'/issues/{R["id"]}'))['caps']['edit'] and own('PATCH', f'/issues/{R["id"]}', {'status': 'backlog'})[0] == 200, 'só o dono sai da etapa somente leitura')
-an = ok(own('GET', f'/analytics?days=30&workspace={ws["id"]}'))
+an = ok(own('GET', f'/workspaces/{ws["id"]}/analytics?days=30'))
 check(isinstance(an['priorities'], list) and any(p['priority'] == 0 for p in an['priorities']), 'analytics: custo por prioridade')
 names = [x['name'] for x in an['stageTimes']]
 check('Em andamento' in names and 'Arquivada' in names, 'analytics: tempo médio por etapa ' + str(names[:6]))
@@ -325,7 +327,7 @@ idx = lambda txt: next((i for i, b in enumerate(bodies) if txt in b), -1)
 check(d['issue']['status'] == 'in_review' and d['runs'][-1]['holdStage'], 'depois do passo de IA a sequência segue e o mover vem por último')
 check(0 <= idx('passo 1') < idx('terminou') < idx('passo 3') < idx('movida para'), 'regras rodaram na ordem: avisa, IA, depois da IA, move')
 
-an = ok(own('GET', f'/analytics?days=30&workspace={ws["id"]}'))
+an = ok(own('GET', f'/workspaces/{ws["id"]}/analytics?days=30'))
 pp = {p['name']: p for p in an['people']}
 check('ana' in pp and pp['ana']['created'] > 0 and pp['ana']['runs'] > 0 and 'replyHours' in pp['ana'], 'analytics: desempenho por pessoa (criou, pedidos, tempo de resposta)')
 check(pp.get('ana', {}).get('approvals', 0) >= 1 and pp.get('jun', {}).get('openAssigned', -1) >= 0, 'analytics: aprovações e responsabilidades por pessoa')
@@ -372,7 +374,7 @@ for x in ok(own('GET', f'/workspaces/{ws3["id"]}/stages'))[1:]:
 left = ok(own('GET', f'/workspaces/{ws3["id"]}/stages'))
 check(len(left) == 1 and own('DELETE', f'/workspaces/{ws3["id"]}/stages/{left[0]["id"]}')[0] == 400, 'o fluxo precisa de pelo menos uma etapa')
 check(ok(own('GET', f'/issues/{N["id"]}'))['issue']['status'] == left[0]['id'], 'issue de etapa removida vai para a primeira que sobra')
-an = ok(own('GET', f'/analytics?days=30&workspace={ws["id"]}'))
+an = ok(own('GET', f'/workspaces/{ws["id"]}/analytics?days=30'))
 kinds = {x['stage']: x['kind'] for x in an['stageTimes']}
 check(kinds.get('in_progress') == 'ai' and kinds.get('waiting') == 'people' and any(k['kind'] == 'ai' for k in an['kindTimes']), 'analytics classifica as etapas pelas regras: ' + str(kinds))
 # quadro paginado: primeiras N por etapa, total de cada etapa, página por etapa e busca no servidor
@@ -399,5 +401,19 @@ check(ok(own('PUT', f'/labels/{lb["id"]}', {'name': 'defeito', 'color': '#f59e0b
 check(own('POST', f'/workspaces/{ws3["id"]}/labels', {'name': 'defeito'})[0] == 409, 'label com nome repetido é recusada')
 perms = {p['id'] for p in ok(own('GET', '/permissions'))}
 check({'label.view', 'label.create', 'label.update', 'label.delete'} <= perms and 'label.manage' not in perms, 'permissões de label separadas')
+# analytics: do workspace e geral, "só os meus" e "todo mundo" são permissões separadas
+so_meu = ok(own('POST', '/roles', {'name': 'Só meu', 'permissions': ['analytics.view', 'issue.create']}))
+eu = mk('eu', so_meu['id'], [ws['id']]); E2 = login('eu')
+ok(E2('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'minha', 'status': 'backlog'}))
+mine = ok(E2('GET', f'/workspaces/{ws["id"]}/analytics?days=30'))
+check(mine['issues']['created'] == 1 and [p['name'] for p in mine['people']] == ['eu'], 'sem "equipe", o Analytics do workspace mostra só os próprios números')
+check(E2('GET', f'/workspaces/{ws["id"]}/analytics?days=30&person=all')[0] == 403 and E2('GET', f'/workspaces/{ws["id"]}/analytics?days=30&person={ana["id"]}')[0] == 403, 'sem "equipe", não vê os números de todo mundo nem de outra pessoa')
+check(E2('GET', '/analytics?days=30')[0] == 403, 'sem "analytics geral", não abre o geral')
+ok(own('PUT', f'/roles/{so_meu["id"]}', {'name': 'Só meu', 'permissions': ['analytics.view', 'analytics.team', 'analytics.global', 'issue.create']}))
+team = ok(E2('GET', f'/workspaces/{ws["id"]}/analytics?days=30&person=all'))
+check(team['issues']['created'] > 1 and len(team['people']) > 1, 'com "equipe", vê todo mundo no workspace')
+check(ok(E2('GET', f'/workspaces/{ws["id"]}/analytics?days=30&person={ana["id"]}'))['people'][0]['name'] == 'ana', 'com "equipe", vê os números de uma pessoa')
+g = ok(E2('GET', '/analytics?days=30'))
+check([p['name'] for p in g['people']] == ['eu'] and E2('GET', '/analytics?days=30&person=all')[0] == 403, 'geral sem "equipe do geral": só os próprios números')
 print('FALHAS:', fails)
 

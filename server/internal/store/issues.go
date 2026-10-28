@@ -689,14 +689,19 @@ const totalsCols = `coalesce(sum(cost_usd),0)::float8, coalesce(sum(input_tokens
 	count(*), count(*) filter (where status = 'failed')`
 
 // wsIDs nil = todos os workspaces; lista vazia = nenhum.
-func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analytics, error) {
+// Analytics: números dos workspaces informados (nil = todos). person, quando
+// informado, recorta para "os números dessa pessoa": issues que ela criou ou
+// de que é responsável, as execuções delas e as que ela pediu.
+func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int, person string) (*Analytics, error) {
+	who := nilIfEmpty(person)
 	since := time.Now().AddDate(0, 0, -days)
-	where := `where created_at >= $1 and started_at is not null and ($2::uuid[] is null or workspace_id = any($2::uuid[]))`
-	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
+	where := `where created_at >= $1 and started_at is not null and ($2::uuid[] is null or workspace_id = any($2::uuid[]))
+		and ($3::uuid is null or created_by = $3 or issue_id in (select id from issues where created_by = $3 or assignee_id = $3))`
+	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[])) and ($3::uuid is null or i.created_by = $3 or i.assignee_id = $3)`
 	out := &Analytics{Daily: []DayPoint{}, Monthly: []MonthPoint{}, Status: []StatusCount{}, Agents: []AgentPoint{},
 		Models: []ModelPoint{}, Users: []UserPoint{}, Top: []TopIssue{}, Priorities: []PriorityPoint{}, Creators: []UserPoint{}, StageTimes: []StageTime{}, KindTimes: []KindTime{}, People: []PersonStat{}}
 	t := &out.Totals
-	if err := s.DB.QueryRow(ctx, `select `+totalsCols+` from runs `+where, since, wsIDs).
+	if err := s.DB.QueryRow(ctx, `select `+totalsCols+` from runs `+where, since, wsIDs, who).
 		Scan(&t.CostUSD, &t.InputTokens, &t.CachedTokens, &t.OutputTokens, &t.Seconds, &t.Runs, &t.Failed); err != nil {
 		return nil, err
 	}
@@ -706,11 +711,11 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 			count(*) filter (where i.done_at >= $1),
 			count(*) filter (where i.closed = ''),
 			coalesce(avg(extract(epoch from (i.done_at - i.created_at)) / 3600) filter (where i.done_at >= $1), 0)::float8
-		from issues i where `+wsOnly, since, wsIDs).Scan(&is.Created, &is.Resolved, &is.Open, &is.AvgResolveHours); err != nil {
+		from issues i where `+wsOnly, since, wsIDs, who).Scan(&is.Created, &is.Resolved, &is.Open, &is.AvgResolveHours); err != nil {
 		return nil, err
 	}
 
-	rows, err := s.DB.Query(ctx, `select to_char(date_trunc('day', created_at), 'YYYY-MM-DD'), `+totalsCols+` from runs `+where+` group by 1 order by 1`, since, wsIDs)
+	rows, err := s.DB.Query(ctx, `select to_char(date_trunc('day', created_at), 'YYYY-MM-DD'), `+totalsCols+` from runs `+where+` group by 1 order by 1`, since, wsIDs, who)
 	if err != nil {
 		return nil, err
 	}
@@ -730,9 +735,9 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 		select to_char(m.month, 'YYYY-MM'),
 			(select count(*) from issues i where `+wsOnly+` and date_trunc('month', i.created_at) = m.month),
 			(select count(*) from issues i where `+wsOnly+` and date_trunc('month', i.done_at) = m.month),
-			(select coalesce(sum(r.cost_usd),0)::float8 from runs r where ($2::uuid[] is null or r.workspace_id = any($2::uuid[])) and date_trunc('month', r.created_at) = m.month),
-			(select count(*) from runs r where ($2::uuid[] is null or r.workspace_id = any($2::uuid[])) and r.started_at is not null and date_trunc('month', r.created_at) = m.month)
-		from m where $1::timestamptz is not null order by 1`, since, wsIDs)
+			(select coalesce(sum(r.cost_usd),0)::float8 from runs r where ($2::uuid[] is null or r.workspace_id = any($2::uuid[])) and ($3::uuid is null or r.created_by = $3 or r.issue_id in (select id from issues where created_by = $3 or assignee_id = $3)) and date_trunc('month', r.created_at) = m.month),
+			(select count(*) from runs r where ($2::uuid[] is null or r.workspace_id = any($2::uuid[])) and ($3::uuid is null or r.created_by = $3 or r.issue_id in (select id from issues where created_by = $3 or assignee_id = $3)) and r.started_at is not null and date_trunc('month', r.created_at) = m.month)
+		from m where $1::timestamptz is not null order by 1`, since, wsIDs, who)
 	if err != nil {
 		return nil, err
 	}
@@ -747,7 +752,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	rows.Close()
 
 	rows, err = s.DB.Query(ctx, `select i.status, count(*) from issues i where `+wsOnly+`
-		and (i.closed = '' or i.updated_at >= $1) group by 1`, since, wsIDs)
+		and (i.closed = '' or i.updated_at >= $1) group by 1`, since, wsIDs, who)
 	if err != nil {
 		return nil, err
 	}
@@ -758,7 +763,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	}
 	rows.Close()
 
-	rows, err = s.DB.Query(ctx, `select agent_id::text, max(agent_name), `+totalsCols+` from runs `+where+` group by agent_id order by 3 desc`, since, wsIDs)
+	rows, err = s.DB.Query(ctx, `select agent_id::text, max(agent_name), `+totalsCols+` from runs `+where+` group by agent_id order by 3 desc`, since, wsIDs, who)
 	if err != nil {
 		return nil, err
 	}
@@ -772,7 +777,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	}
 	rows.Close()
 
-	rows, err = s.DB.Query(ctx, `select runtime, model, `+totalsCols+` from runs `+where+` group by 1, 2 order by 3 desc`, since, wsIDs)
+	rows, err = s.DB.Query(ctx, `select runtime, model, `+totalsCols+` from runs `+where+` group by 1, 2 order by 3 desc`, since, wsIDs, who)
 	if err != nil {
 		return nil, err
 	}
@@ -788,8 +793,8 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 
 	rows, err = s.DB.Query(ctx, `select r.created_by::text, coalesce(max(u.name), 'Sistema'), count(*), coalesce(sum(r.cost_usd),0)::float8
 		from runs r left join users u on u.id = r.created_by
-		where r.created_at >= $1 and r.started_at is not null and ($2::uuid[] is null or r.workspace_id = any($2::uuid[]))
-		group by r.created_by order by 3 desc limit 10`, since, wsIDs)
+		where r.created_at >= $1 and r.started_at is not null and ($2::uuid[] is null or r.workspace_id = any($2::uuid[])) and ($3::uuid is null or r.created_by = $3 or r.issue_id in (select id from issues where created_by = $3 or assignee_id = $3))
+		group by r.created_by order by 3 desc limit 10`, since, wsIDs, who)
 	if err != nil {
 		return nil, err
 	}
@@ -800,13 +805,13 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 	}
 	rows.Close()
 
-	if err := s.performance(ctx, out, since, wsIDs); err != nil {
+	if err := s.performance(ctx, out, since, wsIDs, who); err != nil {
 		return nil, err
 	}
 
 	rows, err = s.DB.Query(ctx, `select i.id::text, w.key || '-' || i.number, i.title, i.status, coalesce(sum(r.cost_usd),0)::float8, count(r.id)
 		from issues i join workspaces w on w.id = i.workspace_id join runs r on r.issue_id = i.id
-		where r.created_at >= $1 and `+wsOnly+` group by i.id, w.key order by 5 desc limit 8`, since, wsIDs)
+		where r.created_at >= $1 and `+wsOnly+` group by i.id, w.key order by 5 desc limit 8`, since, wsIDs, who)
 	if err != nil {
 		return nil, err
 	}
@@ -820,12 +825,12 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int) (*Analy
 }
 
 // performance: custo por prioridade e por quem criou, tempo por etapa e mediana do ciclo.
-func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time, wsIDs []string) error {
-	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
+func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time, wsIDs []string, who *string) error {
+	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[])) and ($3::uuid is null or i.created_by = $3 or i.assignee_id = $3)`
 	rows, err := s.DB.Query(ctx, `select i.priority, count(distinct i.id), count(r.id), coalesce(sum(r.cost_usd),0)::float8,
 		coalesce(avg(extract(epoch from (coalesce(r.ended_at, now()) - r.started_at))),0)::float8
 		from runs r join issues i on i.id = r.issue_id
-		where r.created_at >= $1 and r.started_at is not null and `+wsOnly+` group by 1 order by 1`, since, wsIDs)
+		where r.created_at >= $1 and r.started_at is not null and `+wsOnly+` group by 1 order by 1`, since, wsIDs, who)
 	if err != nil {
 		return err
 	}
@@ -838,7 +843,7 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 
 	rows, err = s.DB.Query(ctx, `select coalesce(i.created_by::text, ''), coalesce(max(u.name), 'Entrada externa'), count(r.id), coalesce(sum(r.cost_usd),0)::float8
 		from runs r join issues i on i.id = r.issue_id left join users u on u.id = i.created_by
-		where r.created_at >= $1 and r.started_at is not null and `+wsOnly+` group by i.created_by order by 4 desc limit 10`, since, wsIDs)
+		where r.created_at >= $1 and r.started_at is not null and `+wsOnly+` group by i.created_by order by 4 desc limit 10`, since, wsIDs, who)
 	if err != nil {
 		return err
 	}
@@ -858,8 +863,8 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 		percentile_cont(0.5) within group (order by extract(epoch from (l.left_at - l.entered_at)))/3600,
 		array_agg(distinct l.workspace_id::text)
 		from issue_stage_log l left join stages st on st.workspace_id = l.workspace_id and st.id = l.stage
-		where l.left_at >= $1 and ($2::uuid[] is null or l.workspace_id = any($2::uuid[]))
-		group by k order by min(coalesce(st.position, 999))`, since, wsIDs)
+		where l.left_at >= $1 and ($2::uuid[] is null or l.workspace_id = any($2::uuid[])) and ($3::uuid is null or l.issue_id in (select id from issues where created_by = $3 or assignee_id = $3))
+		group by k order by min(coalesce(st.position, 999))`, since, wsIDs, who)
 	if err != nil {
 		return err
 	}
@@ -882,7 +887,7 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 	rows, err = s.DB.Query(ctx, `select l.workspace_id::text || '|' || l.stage, count(*),
 		coalesce(sum(extract(epoch from (l.left_at - l.entered_at))), 0)/3600
 		from issue_stage_log l
-		where l.left_at >= $1 and ($2::uuid[] is null or l.workspace_id = any($2::uuid[])) group by 1`, since, wsIDs)
+		where l.left_at >= $1 and ($2::uuid[] is null or l.workspace_id = any($2::uuid[])) and ($3::uuid is null or l.issue_id in (select id from issues where created_by = $3 or assignee_id = $3)) group by 1`, since, wsIDs, who)
 	if err != nil {
 		return err
 	}
@@ -911,15 +916,15 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 	}
 
 	if err := s.DB.QueryRow(ctx, `select coalesce(percentile_cont(0.5) within group (order by extract(epoch from (i.done_at - i.created_at))), 0)/3600
-		from issues i where i.done_at >= $1 and `+wsOnly, since, wsIDs).Scan(&out.Issues.MedResolveHours); err != nil {
+		from issues i where i.done_at >= $1 and `+wsOnly, since, wsIDs, who).Scan(&out.Issues.MedResolveHours); err != nil {
 		return err
 	}
-	return s.people(ctx, out, since, wsIDs, kindKeys(kinds, "people"))
+	return s.people(ctx, out, since, wsIDs, kindKeys(kinds, "people"), who)
 }
 
 // people: uma linha por pessoa com alguma atividade no período.
 // waitKeys: "workspace|etapa" das etapas em que a issue espera alguém (tempo de resposta).
-func (s *Store) people(ctx context.Context, out *Analytics, since time.Time, wsIDs []string, waitKeys []string) error {
+func (s *Store) people(ctx context.Context, out *Analytics, since time.Time, wsIDs []string, waitKeys []string, who *string) error {
 	w := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
 	rows, err := s.DB.Query(ctx, `select u.id::text, u.name,
 		(select count(*) from issues i where i.created_by = u.id and i.created_at >= $1 and `+w+`),
@@ -932,7 +937,7 @@ func (s *Store) people(ctx context.Context, out *Analytics, since time.Time, wsI
 		coalesce((select sum(r.cost_usd) from runs r join issues i on i.id = r.issue_id where r.created_by = u.id and r.created_at >= $1 and `+w+`), 0)::float8,
 		coalesce((select avg(extract(epoch from (l.left_at - l.entered_at))) from issue_stage_log l join issues i on i.id = l.issue_id
 			where (l.workspace_id::text || '|' || l.stage) = any($3) and l.left_at >= $1 and (i.assignee_id = u.id or i.created_by = u.id) and `+w+`), 0)/3600
-		from users u order by u.name`, since, wsIDs, waitKeys)
+		from users u where ($4::uuid is null or u.id = $4) order by u.name`, since, wsIDs, waitKeys, who)
 	if err != nil {
 		return err
 	}

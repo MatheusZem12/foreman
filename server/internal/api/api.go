@@ -103,6 +103,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 				r.Get("/issues", a.h(a.listIssues))
 				r.Get("/board", a.h(a.board))
 				r.Get("/working", a.h(a.working))
+				r.With(a.can("analytics.view")).Get("/analytics", a.h(a.workspaceAnalytics))
 				r.With(a.can("issue.create")).Post("/issues", a.h(a.createIssue))
 				r.Get("/events", a.events)
 				r.Get("/stages", a.h(a.listStages))
@@ -155,7 +156,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.With(a.can("settings.manage")).Put("/settings/email", a.h(a.saveEmailSettings))
 			r.With(a.can("settings.manage")).Post("/settings/email/test", a.h(a.testEmailSettings))
 
-			r.With(a.can("analytics.view")).Get("/analytics", a.h(a.analytics))
+			r.With(a.can("analytics.global")).Get("/analytics", a.h(a.globalAnalytics))
 			r.Get("/runtimes", a.h(a.runtimes))
 			r.Get("/runtimes/models", a.h(a.runtimeModels))
 		})
@@ -1235,25 +1236,58 @@ func (a *API) runEvents(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- analytics e runtimes ----------
 
-func (a *API) analytics(w http.ResponseWriter, r *http.Request) (any, error) {
+// Analytics tem dois níveis, cada um com duas permissões independentes:
+//   - do workspace (analytics.view): só os números da própria pessoa;
+//     com analytics.team, os de todo mundo ou os de uma pessoa escolhida;
+//   - geral, de todos os workspaces que a pessoa enxerga (analytics.global):
+//     só os próprios; com analytics.global_team, de todo mundo ou de alguém.
+//
+// ?person=me | all | <id>. Sem a permissão de equipe, vale sempre "me".
+func (a *API) workspaceAnalytics(w http.ResponseWriter, r *http.Request) (any, error) {
+	person, err := analyticsPerson(r, "analytics.team")
+	if err != nil {
+		return nil, err
+	}
+	return a.st.Analytics(r.Context(), []string{chi.URLParam(r, "ws")}, analyticsDays(r), person)
+}
+
+func (a *API) globalAnalytics(w http.ResponseWriter, r *http.Request) (any, error) {
+	person, err := analyticsPerson(r, "analytics.global_team")
+	if err != nil {
+		return nil, err
+	}
+	ids, err := a.st.WorkspaceIDsFor(r.Context(), userOf(r))
+	if err != nil {
+		return nil, err
+	}
+	return a.st.Analytics(r.Context(), ids, analyticsDays(r), person)
+}
+
+func analyticsDays(r *http.Request) int {
 	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
 	if days <= 0 || days > 365 {
 		days = 30
 	}
-	// Sem workspace: tudo o que o usuário enxerga (admin: tudo).
-	var ids []string
-	if ws := r.URL.Query().Get("workspace"); ws != "" {
-		if err := a.ensureAccess(r, ws); err != nil {
-			return nil, err
+	return days
+}
+
+// analyticsPerson: de quem são os números ("" = todo mundo).
+func analyticsPerson(r *http.Request, team string) (string, error) {
+	u := userOf(r)
+	p := r.URL.Query().Get("person")
+	switch {
+	case p == "" || p == "me" || p == u.ID:
+		if p == "" && u.Can(team) {
+			return "", nil
 		}
-		ids = []string{ws}
-	} else {
-		var err error
-		if ids, err = a.st.WorkspaceIDsFor(r.Context(), userOf(r)); err != nil {
-			return nil, err
+		return u.ID, nil
+	case u.Can(team):
+		if p == "all" {
+			return "", nil
 		}
+		return p, nil
 	}
-	return a.st.Analytics(r.Context(), ids, days)
+	return "", forbidden("seu perfil só vê os próprios números no Analytics")
 }
 
 // Catálogo de modelos por runtime; ?refresh=1 consulta os CLIs de novo (quem configura agentes).
