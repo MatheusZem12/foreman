@@ -60,8 +60,9 @@ function useBoardLayout(wsId: string) {
   return [layout, save] as const;
 }
 
-// No modo lado a lado: a roda do mouse anda para os lados (a menos que esteja
-// sobre uma lista que rola na vertical) e arrastar o fundo também.
+// No modo lado a lado, a roda do mouse anda para os lados (a menos que esteja
+// sobre uma coluna que rola na vertical). Arrastar o fundo não rola: segurar
+// e arrastar é só para mover cartões; no celular, o dedo rola como sempre.
 function useSideScroll(el: HTMLDivElement | null) {
   useEffect(() => {
     if (!el) return;
@@ -72,32 +73,8 @@ function useSideScroll(el: HTMLDivElement | null) {
       el.scrollLeft += e.deltaY;
       e.preventDefault();
     };
-    let start: { x: number; left: number } | null = null;
-    const onDown = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse' || e.button !== 0) return;
-      if ((e.target as HTMLElement).closest('a,button,input,[data-col-head]')) return;
-      start = { x: e.clientX, left: el.scrollLeft };
-      e.preventDefault(); // não selecionar texto enquanto arrasta
-    };
-    const onMove = (e: PointerEvent) => {
-      if (!start) return;
-      el.scrollLeft = start.left - (e.clientX - start.x);
-      el.style.cursor = 'grabbing';
-    };
-    const onUp = () => {
-      start = null;
-      el.style.cursor = '';
-    };
     el.addEventListener('wheel', onWheel, { passive: false });
-    el.addEventListener('pointerdown', onDown);
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    return () => {
-      el.removeEventListener('wheel', onWheel);
-      el.removeEventListener('pointerdown', onDown);
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
+    return () => el.removeEventListener('wheel', onWheel);
   }, [el]);
 }
 
