@@ -43,18 +43,20 @@ type ctxKey struct{}
 type httpError struct {
 	status int
 	msg    string
+	format string // para traduzir (i18n.go): o formato e os argumentos
+	args   []any
 }
 
 func (e httpError) Error() string { return e.msg }
 
 func bad(format string, a ...any) error {
-	return httpError{http.StatusBadRequest, fmt.Sprintf(format, a...)}
+	return httpError{http.StatusBadRequest, fmt.Sprintf(format, a...), format, a}
 }
 
 func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, ntf *notify.Notifier, static http.Handler) http.Handler {
 	a := &API{cfg: cfg, st: st, hub: h, run: rn, ntf: ntf}
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP, middleware.Recoverer)
+	r.Use(middleware.RealIP, middleware.Recoverer, withLang)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
@@ -175,6 +177,9 @@ func (a *API) h(fn handler) http.HandlerFunc {
 			switch {
 			case errors.As(err, &he):
 				status = he.status
+				if he.format != "" {
+					msg = tr(r.Context(), he.format, he.args...)
+				}
 			case errors.Is(err, store.ErrNotFound):
 				status, msg = http.StatusNotFound, "não encontrado"
 			case errors.Is(err, runner.ErrBusy):
@@ -183,6 +188,9 @@ func (a *API) h(fn handler) http.HandlerFunc {
 				status, msg = http.StatusConflict, "já existe um registro com esse nome/chave"
 			default:
 				log.Printf("%s %s: %v", r.Method, r.URL.Path, err)
+			}
+			if he.format == "" {
+				msg = tr(r.Context(), msg)
 			}
 			writeJSON(w, status, map[string]string{"error": msg})
 			return
@@ -237,7 +245,7 @@ func (a *API) can(perms ...string) func(http.Handler) http.Handler {
 					return
 				}
 			}
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "seu perfil não tem permissão para isso"})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": tr(r.Context(), "seu perfil não tem permissão para isso")})
 		})
 	}
 }
@@ -246,7 +254,7 @@ func (a *API) can(perms ...string) func(http.Handler) http.Handler {
 func (a *API) owner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !userOf(r).IsOwner {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "só o dono do Multica define perfis"})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": tr(r.Context(), "só o dono do Multica define perfis")})
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -314,7 +322,7 @@ func (c credentials) validate() error {
 // o cadastro é só por quem tem user.create.
 func (a *API) postSetup(w http.ResponseWriter, r *http.Request) (any, error) {
 	if n, _ := a.st.CountUsers(r.Context()); n > 0 {
-		return nil, httpError{http.StatusForbidden, "o Multica já foi configurado"}
+		return nil, httpError{status: http.StatusForbidden, msg: "o Multica já foi configurado"}
 	}
 	var c credentials
 	if err := decode(r, &c); err != nil {
@@ -343,7 +351,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) (any, error) {
 	u, err := a.st.UserByEmail(r.Context(), strings.TrimSpace(c.Email))
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(c.Password)) != nil {
 		time.Sleep(400 * time.Millisecond)
-		return nil, httpError{http.StatusUnauthorized, "e-mail ou senha incorretos"}
+		return nil, httpError{status: http.StatusUnauthorized, msg: "e-mail ou senha incorretos"}
 	}
 	return u, a.startSession(w, r, u)
 }
@@ -457,7 +465,7 @@ func (a *API) patchUser(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if target.IsOwner && !me.IsOwner {
-		return nil, httpError{http.StatusForbidden, "só o próprio dono altera a conta dele"}
+		return nil, httpError{status: http.StatusForbidden, msg: "só o próprio dono altera a conta dele"}
 	}
 	var in struct {
 		Name         *string   `json:"name"`
@@ -532,7 +540,11 @@ func (a *API) deleteUser(w http.ResponseWriter, r *http.Request) (any, error) {
 // ---------- perfis de acesso ----------
 
 func (a *API) listPermissions(w http.ResponseWriter, r *http.Request) (any, error) {
-	return store.Permissions, nil
+	out := make([]store.Permission, len(store.Permissions))
+	for i, p := range store.Permissions {
+		out[i] = store.Permission{ID: p.ID, Group: tr(r.Context(), p.Group), Label: tr(r.Context(), p.Label)}
+	}
+	return out, nil
 }
 
 func (a *API) listRoles(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1127,7 +1139,7 @@ func (a *API) addComment(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	// Verifica antes de gravar, para não deixar um pedido "órfão" se o agente estiver ocupado.
 	if in.SendToAgent && !u.Can("issue.run") {
-		return nil, httpError{http.StatusForbidden, "seu perfil não pode executar agentes"}
+		return nil, httpError{status: http.StatusForbidden, msg: "seu perfil não pode executar agentes"}
 	}
 	if in.SendToAgent && in.AgentID != "" && (is.AgentID == nil || *is.AgentID != in.AgentID) {
 		if err := a.canField(r.Context(), u, is, "agentId"); err != nil {
@@ -1135,7 +1147,7 @@ func (a *API) addComment(w http.ResponseWriter, r *http.Request) (any, error) {
 		}
 	}
 	if in.SendToAgent && is.ActiveRun != nil {
-		return nil, httpError{http.StatusConflict, runner.ErrBusy.Error()}
+		return nil, httpError{status: http.StatusConflict, msg: runner.ErrBusy.Error()}
 	}
 	c, err := a.st.AddComment(r.Context(), store.Comment{IssueID: is.ID, UserID: &u.ID, Kind: "comment", Body: in.Body})
 	if err != nil {

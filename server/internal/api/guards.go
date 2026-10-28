@@ -20,7 +20,7 @@ import (
 // "Desenvolvimento" só o Júnior: cada um mexe na sua.
 
 func forbidden(format string, a ...any) error {
-	return httpError{http.StatusForbidden, fmt.Sprintf(format, a...)}
+	return httpError{http.StatusForbidden, fmt.Sprintf(format, a...), format, a}
 }
 
 // Campo da issue → permissão necessária e nome do campo para as travas da etapa.
@@ -52,7 +52,7 @@ func (a *API) whoText(ctx context.Context, w store.Who) string {
 	if roles, err := a.st.ListRoles(ctx); err == nil {
 		for _, r := range roles {
 			if slices.Contains(w.Roles, r.ID) {
-				parts = append(parts, "perfil "+r.Name)
+				parts = append(parts, tr(ctx, "perfil %s", r.Name))
 			}
 		}
 	}
@@ -62,7 +62,7 @@ func (a *API) whoText(ctx context.Context, w store.Who) string {
 		}
 	}
 	if len(parts) == 0 {
-		return "outras pessoas"
+		return tr(ctx, "outras pessoas")
 	}
 	return strings.Join(parts, ", ")
 }

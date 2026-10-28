@@ -410,17 +410,17 @@ func (a *API) workflowWarnings(ctx context.Context, wsID string, stages []store.
 				return u.Name
 			}
 		}
-		return "usuário removido"
+		return tr(ctx, "usuário removido")
 	}
 	checkWho := func(w store.Who, where, stageID, ruleID string) {
 		for _, id := range w.Users {
 			if !access[id] {
-				out = append(out, warning{where, name(id) + " não tem acesso a este workspace", stageID, ruleID})
+				out = append(out, warning{where, tr(ctx, "%s não tem acesso a este workspace", name(id)), stageID, ruleID})
 			}
 		}
 		for _, id := range w.Roles {
 			if !slices.ContainsFunc(roles, func(r store.Role) bool { return r.ID == id }) {
-				out = append(out, warning{where, "um perfil usado aqui foi excluído", stageID, ruleID})
+				out = append(out, warning{where, tr(ctx, "um perfil usado aqui foi excluído"), stageID, ruleID})
 			}
 		}
 	}
@@ -435,19 +435,19 @@ func (a *API) workflowWarnings(ctx context.Context, wsID string, stages []store.
 	for _, r := range rules {
 		var c ruleConfig
 		json.Unmarshal(r.Config, &c)
-		where := "Regra " + firstNonEmptyStr(r.Name, r.Action)
+		where := tr(ctx, "Regra %s", firstNonEmptyStr(r.Name, r.Action))
 		if r.Stage != "" {
-			where = "Etapa " + stageName(r.Stage) + " · " + firstNonEmptyStr(r.Name, actionNames[r.Action], r.Action)
+			where = tr(ctx, "Etapa %s · %s", stageName(r.Stage), firstNonEmptyStr(r.Name, tr(ctx, actionNames[r.Action]), r.Action))
 		}
 		checkWho(store.Who{Roles: c.Roles, Users: c.Users}, where, "", r.ID)
 		if c.LabelID != "" {
 			if l, err := a.st.Label(ctx, c.LabelID); err != nil || l.WorkspaceID != wsID {
-				out = append(out, warning{where, "a label desta regra não existe neste workspace", "", r.ID})
+				out = append(out, warning{where, tr(ctx, "a label desta regra não existe neste workspace"), "", r.ID})
 			}
 		}
 		if c.AgentID != "" {
 			if ag, err := a.st.Agent(ctx, c.AgentID); err != nil || ag.Archived {
-				out = append(out, warning{where, "o agente desta regra foi arquivado", "", r.ID})
+				out = append(out, warning{where, tr(ctx, "o agente desta regra foi arquivado"), "", r.ID})
 			}
 		}
 	}
@@ -506,7 +506,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 				return u.Name
 			}
 		}
-		return "usuário removido"
+		return tr(ctx, "usuário removido")
 	}
 	warns := []warning{}
 	strip := func(ids []string, where string) []string {
@@ -515,7 +515,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 			if access[id] {
 				kept = append(kept, id)
 			} else {
-				warns = append(warns, warning{Where: where, Message: name(id) + " não tem acesso ao destino e sai da lista"})
+				warns = append(warns, warning{Where: where, Message: tr(ctx, "%s não tem acesso ao destino e sai da lista", name(id))})
 			}
 		}
 		return kept
@@ -525,7 +525,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 		rl := &rules[i]
 		var c map[string]any
 		json.Unmarshal(rl.Config, &c)
-		where := "Regra " + firstNonEmptyStr(rl.Name, rl.Action)
+		where := tr(ctx, "Regra %s", firstNonEmptyStr(rl.Name, rl.Action))
 		if list, ok := c["users"].([]any); ok {
 			var ids []string
 			for _, v := range list {
@@ -539,7 +539,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 				(rl.Trigger == "access" && slices.Contains([]string{"allow_act", "allow_enter", "responsible"}, rl.Action) && len(roles) == 0)
 			if needsUsers && len(kept) == 0 && rl.Enabled {
 				rl.Enabled = false
-				warns = append(warns, warning{Where: where, Message: "ficou sem ninguém e vai desativada; escolha pessoas do destino"})
+				warns = append(warns, warning{Where: where, Message: tr(ctx, "ficou sem ninguém e vai desativada; escolha pessoas do destino")})
 			}
 		}
 		if lid, _ := c["labelId"].(string); lid != "" {
@@ -549,7 +549,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 				case idx >= 0:
 					c["labelId"] = destLabels[idx].ID
 				case in.DryRun:
-					warns = append(warns, warning{Where: where, Message: "a label " + l.Name + " será criada no destino"})
+					warns = append(warns, warning{Where: where, Message: tr(ctx, "a label %s será criada no destino", l.Name)})
 				default:
 					if nl, err := a.st.CreateLabel(ctx, in.To, l.Name, l.Color); err == nil {
 						c["labelId"] = nl.ID
@@ -758,16 +758,16 @@ func (a *API) userProfile(w http.ResponseWriter, r *http.Request) (any, error) {
 				var parts []string
 				pol := st.Policy
 				if pol.Act.Has(target) {
-					parts = append(parts, "mexe nas issues")
+					parts = append(parts, tr(ctx, "mexe nas issues"))
 				}
 				if pol.Enter.Has(target) {
-					parts = append(parts, "traz issues")
+					parts = append(parts, tr(ctx, "traz issues"))
 				}
 				if pol.Approvals > 0 && pol.Approvers.Has(target) {
-					parts = append(parts, "aprova")
+					parts = append(parts, tr(ctx, "aprova"))
 				}
 				if pol.Responsible.Has(target) {
-					parts = append(parts, "é responsável")
+					parts = append(parts, tr(ctx, "é responsável"))
 				}
 				if len(parts) > 0 {
 					p.Roles = append(p.Roles, st.Name+": "+strings.Join(parts, ", "))
