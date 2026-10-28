@@ -6,7 +6,7 @@ import {
   ArrowLeft, Check, ChevronDown, ChevronRight, CircleStop, GitMerge, Hand, Lock, MoreHorizontal, Play, Send, Swords, Trash2, Undo2, Wand2
 } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Avatar, Button, Empty, MenuItem, Modal, Popover, Spinner, StatusIcon, Toggle, useToast } from '../components/ui';
+import { Avatar, Button, Empty, MenuItem, Modal, Popover, Spinner, StatusIcon, Toggle, useToast, useConfirm } from '../components/ui';
 import { AgentPicker, AssigneePicker, BranchPicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from '../components/pickers';
 import { api } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
@@ -44,6 +44,7 @@ function patchCache(qc: ReturnType<typeof useQueryClient>, issue: Issue) {
 }
 
 function IssueView({ detail }: { detail: IssueDetail }) {
+  const ask = useConfirm();
   const { issue, runs, comments } = detail;
   // O que esta pessoa pode fazer aqui: permissão do perfil + política da etapa atual.
   const caps = detail.caps;
@@ -158,13 +159,13 @@ function IssueView({ detail }: { detail: IssueDetail }) {
                   <MenuItem onClick={() => { close(); setMerging(true); }}><GitMerge className="size-4" /> {t('Fazer merge escolhendo a branch')}</MenuItem>
                 )}
                 {canMerge && !closed && hasCommits && (
-                  <MenuItem onClick={() => { close(); if (confirm(t('Descartar? Apaga o worktree e a branch da issue (local e remota).'))) act(() => api.post(`/issues/${issue.id}/discard`), t('Descartada')); }}>
+                  <MenuItem onClick={async () => { close(); if (await ask({ title: t('Descartar as alterações?'), message: t('Apaga o worktree e a branch da issue (local e remota).'), confirmText: t('Descartar'), danger: true })) act(() => api.post(`/issues/${issue.id}/discard`), t('Descartada')); }}>
                     <Undo2 className="size-4" /> {t('Descartar alterações')}
                   </MenuItem>
                 )}
-                {canDelete && <MenuItem danger onClick={() => {
+                {canDelete && <MenuItem danger onClick={async () => {
                   close();
-                  if (confirm(t('Excluir a issue, o histórico e as branches?'))) act(async () => { await api.del(`/issues/${issue.id}`); nav(`/w/${ws.key}`); });
+                  if (await ask({ title: t('Excluir a issue?'), message: t('Apaga a issue, o histórico e as branches.'), confirmText: t('Excluir'), danger: true })) act(async () => { await api.del(`/issues/${issue.id}`); nav(`/w/${ws.key}`); });
                 }}><Trash2 className="size-4" /> {t('Excluir issue')}</MenuItem>}
                 {!canDelete && !(canMerge && !closed && hasCommits) && <div className="px-2 py-1.5 text-xs text-mute">{t('Nenhuma ação disponível.')}</div>}
               </>

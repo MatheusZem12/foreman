@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { BookOpen, Check, CheckCircle2, Circle, FileCode2, Plus, Trash2 } from 'lucide-react';
-import { Button, Empty, EmptyState, Field, useToast } from '../components/ui';
+import { Button, Empty, EmptyState, Field, useToast, useConfirm } from '../components/ui';
 import { api } from '../lib/api';
 import { useAgents, useCan, useSkills } from '../lib/queries';
 import { AgentIcon } from '../components/AgentIcon';
@@ -46,6 +46,7 @@ export function SkillsPage() {
 }
 
 function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (id: string | null) => void; onBack: () => void }) {
+  const ask = useConfirm();
   const [s, setS] = useState<Partial<Skill>>(skill ?? { name: '', description: '', content: TEMPLATE, files: [], always: false });
   const [fileIdx, setFileIdx] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -84,7 +85,7 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
     }
   };
   const remove = async () => {
-    if (!s.id || !confirm(t('Excluir a skill {0}? Agentes e issues deixam de recebê-la.', s.name))) return;
+    if (!s.id || !(await ask({ title: t('Excluir a skill {0}?', s.name), message: t('Agentes e issues deixam de recebê-la.'), confirmText: t('Excluir'), danger: true }))) return;
     await api.del(`/skills/${s.id}`);
     qc.invalidateQueries({ queryKey: ['skills'] });
     onDone(null);

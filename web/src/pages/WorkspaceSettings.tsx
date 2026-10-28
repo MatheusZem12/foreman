@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { FolderCog, FolderGit2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Avatar, Button, Empty, Field, Modal, PageHeader, useToast } from '../components/ui';
+import { Avatar, Button, Empty, Field, Modal, PageHeader, useToast, useConfirm } from '../components/ui';
 import { api } from '../lib/api';
 import { can, useCan, useMembers, useRepos, useUsers } from '../lib/queries';
 import type { Repo } from '../lib/types';
 import { t } from '../lib/i18n';
 
 export function WorkspaceSettings() {
+  const ask = useConfirm();
   const { ws } = useWs();
   const { data: repos = [] } = useRepos(ws.id);
   const [editing, setEditing] = useState<Partial<Repo> | null>(null);
@@ -64,7 +65,7 @@ export function WorkspaceSettings() {
                 {canEditRepo && <button onClick={() => setEditing(r)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
                 {canDelRepo && <button
                   onClick={async () => {
-                    if (!confirm(t('Remover {0} do workspace? As issues continuam, sem este repositório.', r.name))) return;
+                    if (!(await ask({ title: t('Remover {0} do workspace?', r.name), message: t('As issues continuam, sem este repositório.'), danger: true }))) return;
                     await api.del(`/repos/${r.id}`);
                     qc.invalidateQueries({ queryKey: ['repos', ws.id] });
                   }}
@@ -84,7 +85,7 @@ export function WorkspaceSettings() {
             <h2 className="font-semibold text-red-400">{t('Excluir workspace')}</h2>
             <p className="mb-3 mt-1 text-xs text-mute">{t('Apaga as issues, o histórico e os vínculos. Os repositórios remotos não são tocados.')}</p>
             <Button variant="danger" onClick={async () => {
-              if (prompt(`Digite ${ws.key} para excluir o workspace "${ws.name}"`) !== ws.key) return;
+              if (!(await ask({ title: t('Excluir o workspace "{0}"?', ws.name), message: t('Apaga as issues, o histórico e os vínculos. Não dá para desfazer.'), confirmText: t('Excluir workspace'), danger: true, typeToConfirm: ws.key }))) return;
               await api.del(`/workspaces/${ws.id}`);
               qc.invalidateQueries({ queryKey: ['workspaces'] });
               location.href = '/';

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { AlertTriangle, Bot, Check, ChevronDown, Copy, Cpu, Gauge, Pencil, Plus, RefreshCw, Sparkles, Trash2, Wallet } from 'lucide-react';
-import { Button, EmptyState, Field, Modal, PageHeader, Popover, useToast } from '../components/ui';
+import { Button, EmptyState, Field, Modal, PageHeader, Popover, useToast, useConfirm } from '../components/ui';
 import { AGENT_COLORS, AGENT_ICONS, AgentIcon, parseAvatar } from '../components/AgentIcon';
 import { api } from '../lib/api';
 import { modelStatus, useCan, useAgents, useModels, useSkills } from '../lib/queries';
@@ -11,6 +11,7 @@ import type { Agent, RuntimeModels } from '../lib/types';
 import { t } from '../lib/i18n';
 
 export function AgentsPage() {
+  const ask = useConfirm();
   const { data: agents = [] } = useAgents();
   const { data: skills = [] } = useSkills();
   const { data: catalog } = useModels();
@@ -22,7 +23,7 @@ export function AgentsPage() {
   const canDelete = useCan('agent.delete');
 
   const remove = async (a: Agent) => {
-    if (!confirm(t('Remover {0}? O histórico de execuções e custos continua.', a.name))) return;
+    if (!(await ask({ title: t('Remover {0}?', a.name), message: t('O histórico de execuções e custos continua.'), danger: true }))) return;
     await api.del(`/agents/${a.id}`);
     qc.invalidateQueries({ queryKey: ['agents'] });
     toast('success', t('Agente removido'));

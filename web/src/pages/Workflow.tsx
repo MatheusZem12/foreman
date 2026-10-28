@@ -12,7 +12,7 @@ import {
   UserCheck, Users, Webhook, Workflow, Zap
 } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Button, Field, Modal, PageHeader, Popover, StatusIcon, Toggle, useToast } from '../components/ui';
+import { Button, Field, Modal, PageHeader, Popover, StatusIcon, Toggle, useToast, useConfirm } from '../components/ui';
 import { AgentIcon } from '../components/AgentIcon';
 import { api } from '../lib/api';
 import { PRIORITIES, localizeStages, stageGroups } from '../lib/constants';
@@ -93,6 +93,7 @@ const OUTCOMES: [string, string][] = [['done', t('Concluída')], ['waiting', t('
 // ---------- página ----------
 
 export function WorkflowPage() {
+  const ask = useConfirm();
   const { ws } = useWs();
   const { data: stages = [] } = useStages(ws.id);
   const { data: rules = [] } = useRules(ws.id);
@@ -153,13 +154,13 @@ export function WorkflowPage() {
     }
   };
   const remove = async (r: Rule) => {
-    if (!confirm(t('Remover esta regra?'))) return;
+    if (!(await ask({ title: t('Remover esta regra?'), danger: true }))) return;
     await api.del(`/rules/${r.id}`);
     refresh();
   };
   const removeStage = async (s: Stage) => {
     const first = stages.find((x) => x.id !== s.id)?.name ?? '';
-    if (!confirm(t('Remover a etapa "{0}"? As issues dela vão para "{1}" e as regras dela são apagadas.', s.name, first))) return;
+    if (!(await ask({ title: t('Remover a etapa "{0}"?', s.name), message: t('As issues dela vão para "{0}" e as regras dela são apagadas.', first), danger: true }))) return;
     try {
       await api.del(`/workspaces/${ws.id}/stages/${s.id}`);
     } catch (err) {

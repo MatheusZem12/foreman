@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react';
-import { Button, Field, PageHeader, useToast } from '../components/ui';
+import { Button, Field, PageHeader, useToast, useConfirm } from '../components/ui';
 import { Page } from './Account';
 import { api } from '../lib/api';
 import { usePermissions, useRoles } from '../lib/queries';
@@ -37,6 +37,7 @@ export function RolesPage() {
 }
 
 function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string | null) => void }) {
+  const ask = useConfirm();
   const { data: perms = [] } = usePermissions();
   const [name, setName] = useState(role?.name ?? '');
   const [on, setOn] = useState<string[]>(role?.permissions ?? ['issue.create', 'issue.comment']);
@@ -67,7 +68,7 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
     }
   };
   const remove = async () => {
-    if (!role || !confirm(t('Excluir o perfil {0}?', role.name))) return;
+    if (!role || !(await ask({ title: t('Excluir o perfil {0}?', role.name), message: t('Quem usa este perfil precisa receber outro antes.'), confirmText: t('Excluir'), danger: true }))) return;
     try {
       await api.del(`/roles/${role.id}`);
       qc.invalidateQueries({ queryKey: ['roles'] });

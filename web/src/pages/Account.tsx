@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, CheckCircle2, IdCard, Mail, Pencil, Plus, Send, Server, Trash2, UserRound, Users, XCircle } from 'lucide-react';
-import { Avatar, Button, Field, Modal, PageHeader, Spinner, Toggle, useToast } from '../components/ui';
+import { Avatar, Button, Field, Modal, PageHeader, Spinner, Toggle, useToast, useConfirm } from '../components/ui';
 import { api } from '../lib/api';
 import { can, useCan, useMe, usePermissions, useRoles, useUsers, useWorkspaces } from '../lib/queries';
 import type { EmailSettings, GitInfo, Runtime, User } from '../lib/types';
@@ -249,6 +249,7 @@ function Runtimes() {
 }
 
 function Members({ me }: { me: User }) {
+  const ask = useConfirm();
   const { data: users = [] } = useUsers();
   const { data: workspaces = [] } = useWorkspaces();
   const [editing, setEditing] = useState<Partial<User> | null>(null);
@@ -279,7 +280,7 @@ function Members({ me }: { me: User }) {
             <Button size="sm" variant="ghost" onClick={() => setViewing(u)}><IdCard className="size-3.5" /> <span className="hidden sm:inline">{t('Ver perfil')}</span></Button>
             {canUpdate && (!u.isOwner || me.isOwner) && <button onClick={() => setEditing(u)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
             {canDelete && u.id !== me.id && !u.isOwner && (
-              <button onClick={async () => { if (confirm(t('Remover {0}?', u.name))) { await api.del(`/users/${u.id}`); qc.invalidateQueries({ queryKey: ['users'] }); } }} className="rounded p-1.5 text-mute hover:bg-hover hover:text-red-400"><Trash2 className="size-4" /></button>
+              <button onClick={async () => { if (await ask({ title: t('Remover {0}?', u.name), message: t('A pessoa perde o acesso; o que ela fez continua no histórico.'), danger: true })) { await api.del(`/users/${u.id}`); qc.invalidateQueries({ queryKey: ['users'] }); } }} className="rounded p-1.5 text-mute hover:bg-hover hover:text-red-400"><Trash2 className="size-4" /></button>
             )}
           </div>
         ))}

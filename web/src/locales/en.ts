@@ -1,6 +1,27 @@
 // Inglês. A chave é o texto em português (o que está no código); o que
 // faltar aqui aparece em português. Gerado a partir de t('…') e revisado.
 const en: Record<string, string> = {
+  // diálogo de confirmação
+  "Não dá para desfazer.": "This can't be undone.",
+  "Confirmar": "Confirm",
+  "Digite {0} para confirmar": "Type {0} to confirm",
+  "Quem usa este perfil precisa receber outro antes.": "Anyone using this role needs another one first.",
+  "Excluir a skill {0}?": "Delete the skill {0}?",
+  "Agentes e issues deixam de recebê-la.": "Agents and issues stop receiving it.",
+  "A pessoa perde o acesso; o que ela fez continua no histórico.": "The person loses access; what they did stays in the history.",
+  "O histórico de execuções e custos continua.": "Run and cost history is kept.",
+  "Ela sai de {0} issue(s).": "It's removed from {0} issue(s).",
+  "Remover a etapa \"{0}\"?": "Remove the stage \"{0}\"?",
+  "As issues dela vão para \"{0}\" e as regras dela são apagadas.": "Its issues go to \"{0}\" and its rules are deleted.",
+  "Descartar as alterações?": "Discard the changes?",
+  "Apaga o worktree e a branch da issue (local e remota).": "Deletes the issue's worktree and branch (local and remote).",
+  "Descartar": "Discard",
+  "Excluir a issue?": "Delete the issue?",
+  "Apaga a issue, o histórico e as branches.": "Deletes the issue, its history and its branches.",
+  "Remover {0} do workspace?": "Remove {0} from the workspace?",
+  "As issues continuam, sem este repositório.": "Issues stay, without this repository.",
+  "Excluir o workspace \"{0}\"?": "Delete the workspace \"{0}\"?",
+  "Apaga as issues, o histórico e os vínculos. Não dá para desfazer.": "Deletes the issues, history and links. This can't be undone.",
   // analytics por workspace/geral e cópia do fluxo
   "Analytics geral": "Overall Analytics",
   "Todos os workspaces a que você tem acesso, somados.": "Every workspace you can access, combined.",

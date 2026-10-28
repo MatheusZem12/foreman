@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ArrowUpRight, Pencil, Plus, Search, Tags, Trash2 } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Button, Field, Modal, PageHeader, useToast } from '../components/ui';
+import { Button, Field, Modal, PageHeader, useToast, useConfirm } from '../components/ui';
 import { api } from '../lib/api';
 import { LABEL_COLORS } from '../lib/constants';
 import { useCan, useLabels } from '../lib/queries';
@@ -14,6 +14,7 @@ import { t } from '../lib/i18n';
 // Labels do workspace: o que cada uma é, quantas issues usam e atalho para o
 // quadro filtrado. Ver, criar, editar e apagar são permissões separadas.
 export function LabelsPage() {
+  const ask = useConfirm();
   const { ws } = useWs();
   const { data: labels = [], isLoading } = useLabels(ws.id);
   const [q, setQ] = useState('');
@@ -33,7 +34,7 @@ export function LabelsPage() {
   const maxUsed = Math.max(1, ...labels.map((l) => l.issues ?? 0));
 
   const remove = async (l: Label) => {
-    if (!confirm(l.issues ? t('Apagar a label "{0}"? Ela sai de {1} issue(s).', l.name, l.issues) : t('Apagar a label "{0}"?', l.name))) return;
+    if (!(await ask({ title: t('Apagar a label "{0}"?', l.name), message: l.issues ? t('Ela sai de {0} issue(s).', l.issues) : undefined, confirmText: t('Apagar'), danger: true }))) return;
     try {
       await api.del(`/labels/${l.id}`);
       qc.invalidateQueries({ queryKey: ['labels', ws.id] });

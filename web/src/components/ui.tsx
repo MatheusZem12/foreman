@@ -333,6 +333,54 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useConfirm() {
-  return (message: string) => window.confirm(message);
+// ---------- confirmação ----------
+
+// Diálogo de confirmação do app, no lugar do confirm()/prompt() do navegador:
+//   const ask = useConfirm();
+//   if (!(await ask({ title: 'Remover esta regra?', danger: true }))) return;
+// typeToConfirm pede para digitar um texto (ex.: a chave do workspace) antes.
+export interface ConfirmOptions {
+  title: string;
+  message?: ReactNode;
+  confirmText?: string;
+  cancelText?: string;
+  danger?: boolean;
+  typeToConfirm?: string;
+}
+type Ask = (o: ConfirmOptions) => Promise<boolean>;
+const ConfirmCtx = createContext<Ask>(async () => false);
+export const useConfirm = () => useContext(ConfirmCtx);
+
+export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<(ConfirmOptions & { resolve: (v: boolean) => void }) | null>(null);
+  const [typed, setTyped] = useState('');
+  const ask = useCallback<Ask>((o) => new Promise((resolve) => { setTyped(''); setState({ ...o, resolve }); }), []);
+  const close = (v: boolean) => {
+    state?.resolve(v);
+    setState(null);
+  };
+  const blocked = !!state?.typeToConfirm && typed.trim() !== state.typeToConfirm;
+  return (
+    <ConfirmCtx.Provider value={ask}>
+      {children}
+      {state && (
+        <Modal open onClose={() => close(false)} title={state.title}
+          footer={<>
+            <Button variant="ghost" onClick={() => close(false)}>{state.cancelText ?? t('Cancelar')}</Button>
+            <Button autoFocus={!state.typeToConfirm} variant={state.danger ? 'danger' : 'primary'} disabled={blocked} onClick={() => close(true)}>
+              {state.confirmText ?? (state.danger ? t('Remover') : t('Confirmar'))}
+            </Button>
+          </>}>
+          <form onSubmit={(e) => { e.preventDefault(); if (!blocked) close(true); }} className="space-y-3">
+            {(state.message || state.danger) && <div className="text-[13px] leading-relaxed text-dim">{state.message ?? t('Não dá para desfazer.')}</div>}
+            {state.typeToConfirm && (
+              <Field label={t('Digite {0} para confirmar', state.typeToConfirm)}>
+                <input autoFocus className="field-input font-mono" value={typed} onChange={(e) => setTyped(e.target.value)} />
+              </Field>
+            )}
+          </form>
+        </Modal>
+      )}
+    </ConfirmCtx.Provider>
+  );
 }

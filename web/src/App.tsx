@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { ToastProvider, Spinner } from './components/ui';
+import { ConfirmProvider, ToastProvider, Spinner } from './components/ui';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Board } from './pages/Board';
@@ -81,6 +81,7 @@ export default function App() {
   return (
     <QueryClientProvider client={qc}>
       <ToastProvider>
+      <ConfirmProvider>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -110,6 +111,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+      </ConfirmProvider>
       </ToastProvider>
     </QueryClientProvider>
   );
