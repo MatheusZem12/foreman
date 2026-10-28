@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { FlowMap } from './FlowMap';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -6,7 +7,7 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  AlertTriangle, ArrowRightLeft, Bot, Check, ChevronDown, Copy, Flag, GitMerge, GitPullRequest, GripVertical, Inbox, Lock,
+  AlertTriangle, ArrowRightLeft, ListOrdered, Map as MapIcon, Bot, Check, ChevronDown, Copy, Flag, GitMerge, GitPullRequest, GripVertical, Inbox, Lock,
   Mail, MessageSquare, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, SquareTerminal, Tag, Trash2, UserCheck,
   Users, Webhook, Workflow, Zap
 } from 'lucide-react';
@@ -102,6 +103,21 @@ export function WorkflowPage() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   // Só com "Ver o fluxo": tudo em modo leitura.
   const canEdit = useCan('workflow.manage');
+  const [view, setView] = useState<'mapa' | 'etapas'>(() => {
+    try {
+      return (localStorage.getItem('mx.flowView') as 'mapa' | 'etapas') || 'mapa';
+    } catch {
+      return 'mapa';
+    }
+  });
+  const pickView = (v: 'mapa' | 'etapas') => {
+    setView(v);
+    try {
+      localStorage.setItem('mx.flowView', v);
+    } catch {
+      /* sem storage */
+    }
+  };
 
   const ordered = useMemo(() => (order ? order.map((id) => stages.find((s) => s.id === id)!).filter(Boolean) : stages), [order, stages]);
   const refresh = () => {
@@ -168,6 +184,18 @@ export function WorkflowPage() {
         )}
         {email && !email.enabled && rules.some((r) => r.action === 'notify' && r.enabled) && <EmailOffAlert count={rules.filter((r) => r.action === 'notify' && r.enabled).length} />}
 
+        <div className="mb-4 flex gap-1 border-b border-line">
+          {([['mapa', 'Mapa do fluxo', MapIcon], ['etapas', 'Etapas e regras', ListOrdered]] as const).map(([id, label, I]) => (
+            <button key={id} onClick={() => pickView(id)}
+              className={clsx('-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] transition-colors', view === id ? 'border-accent font-medium text-fg' : 'border-transparent text-mute hover:text-fg')}>
+              <I className="size-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+
+        {view === 'mapa' && <FlowMap stages={stages} rules={rules} />}
+
+        {view === 'etapas' && <>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={ordered.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             <ol className="relative space-y-3">
@@ -194,6 +222,7 @@ export function WorkflowPage() {
         </section>
 
         {canEdit && <Intake stages={stages} />}
+        </>}
       </div>
       {editingRule && <RuleModal rule={editingRule} stages={stages} onClose={() => setEditingRule(null)} onSaved={refresh} />}
       {editingStage && <StageModal stage={editingStage} stages={stages} onClose={() => setEditingStage(null)} onSaved={refresh} />}
@@ -231,6 +260,7 @@ function StageCard({ readOnly, stage: s, stages, rules, onEdit, onDelete, onAddR
           <span className="rounded-md px-1.5 py-0.5 text-[10px]" style={s.system ? undefined : { background: `${s.color}22`, color: s.color }}>
             {s.system ? <span className="text-mute">sistema</span> : 'personalizada'}
           </span>
+          {s.parallel && <span className="rounded-md bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-300" title="Fica ao lado da etapa anterior e divide a coluna dela no quadro">em paralelo com a anterior</span>}
           {!readOnly && <div className="ml-auto flex items-center gap-0.5">
             <button title="Configurar etapa" onClick={onEdit} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Settings2 className="size-4" /></button>
             {!s.system && <button title="Remover etapa" onClick={onDelete} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
@@ -457,7 +487,7 @@ function StageModal({ stage, stages, onClose, onSaved }: { stage: Partial<Stage>
   const save = async () => {
     setBusy(true);
     try {
-      const body = { name: s.name, color: s.color, after: s.after ?? '', policy: p };
+      const body = { name: s.name, color: s.color, after: s.after ?? '', policy: p, parallel: !!s.parallel };
       if (s.id) await api.put(`/workspaces/${ws.id}/stages/${s.id}`, body);
       else await api.post(`/workspaces/${ws.id}/stages`, body);
       onSaved();
@@ -495,6 +525,13 @@ function StageModal({ stage, stages, onClose, onSaved }: { stage: Partial<Stage>
             </div>
           )}
           {s.system && <p className="text-xs text-mute">{BUILTIN[s.id!]} O nome pode mudar; o comportamento continua.</p>}
+          <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', s.parallel ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
+            <Toggle checked={!!s.parallel} onChange={(parallel) => setS({ ...s, parallel })} />
+            <span>
+              <span className="block text-[13px] font-medium">Em paralelo com a etapa anterior</span>
+              <span className="block text-xs text-mute">Fica ao lado dela no fluxo e divide a mesma coluna no quadro, uma embaixo da outra. Ex.: depois de “Prioridade”, “Difícil” e “Médio” em paralelo, e uma regra manda cada tipo de issue para a sua.</span>
+            </span>
+          </label>
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-dim">Responsáveis da etapa <span className="font-normal text-mute">· recebem o e-mail “responsáveis da etapa”</span></span>
             <WhoPicker value={p.responsible} onChange={(responsible) => setP({ responsible })} empty="ninguém" />
