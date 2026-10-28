@@ -403,13 +403,16 @@ function Column({ status, issues, total, sort, loading, onSort, onMore, agents, 
   // Chegou perto do fim da coluna: busca a próxima página só desta etapa.
   const sentinel = useRef<HTMLDivElement>(null);
   const more = issues.length < total;
+  const latest = useRef(onMore);
+  latest.current = onMore;
+  // Recria o observador quando a página termina: se o fim continuar visível, busca a próxima.
   useEffect(() => {
     const el = sentinel.current;
-    if (!el || !more) return;
-    const io = new IntersectionObserver((e) => e[0].isIntersecting && onMore(), { rootMargin: '200px' });
+    if (!el || !more || loading) return;
+    const io = new IntersectionObserver((e) => e[0].isIntersecting && latest.current(), { rootMargin: '200px' });
     io.observe(el);
     return () => io.disconnect();
-  }, [more, issues.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [more, issues.length, loading]);
   return (
     <section
       ref={setNodeRef}
