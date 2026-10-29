@@ -43,7 +43,7 @@ export interface Member extends User { linked: boolean }
 export interface Workspace { id: string; name: string; key: string; createdAt: string }
 export interface FileEntry { path: string; content: string }
 export interface Repo {
-  id: string; workspaceId: string; name: string; url: string; defaultBranch: string; targetBranch: string;
+  id: string; workspaceId: string; name: string; url: string;
   description: string;
 }
 export interface Skill { id: string; slug: string; name: string; description: string; content: string; files: FileEntry[]; always: boolean; updatedAt: string }

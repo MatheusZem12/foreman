@@ -3,6 +3,7 @@ package runner
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -76,6 +77,18 @@ func (r *Runner) syncRepo(ctx context.Context, repoID, url string) (string, erro
 		return "", err
 	}
 	return dir, nil
+}
+
+// defaultBranch é a branch padrão do remoto (o HEAD dele), de onde as issues
+// partem quando ninguém escolheu outra.
+func defaultBranch(ctx context.Context, dir string) (string, error) {
+	runGit(ctx, dir, "remote", "set-head", "origin", "--auto")
+	for _, ref := range []string{"refs/remotes/origin/HEAD", "HEAD"} {
+		if b := strings.TrimPrefix(strings.TrimSpace(runGit(ctx, dir, "symbolic-ref", "--short", ref).stdout), "origin/"); b != "" && refExists(ctx, dir, "refs/remotes/origin/"+b) {
+			return b, nil
+		}
+	}
+	return "", errors.New("não deu para descobrir a branch padrão do remoto; escolha a base na issue")
 }
 
 func refExists(ctx context.Context, dir, ref string) bool {

@@ -653,14 +653,7 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, bad("informe a URL do repositório")
 	}
 	if strings.TrimSpace(in.Name) == "" {
-		in.Name = strings.TrimSuffix(in.URL[strings.LastIndexAny(in.URL, "/:")+1:], ".git")
-	}
-	in.DefaultBranch = strings.TrimSpace(in.DefaultBranch)
-	if in.DefaultBranch == "" {
-		in.DefaultBranch = "main"
-	}
-	if strings.TrimSpace(in.TargetBranch) == "" {
-		in.TargetBranch = in.DefaultBranch
+		return nil, bad("informe o nome do repositório")
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.ID != "" {

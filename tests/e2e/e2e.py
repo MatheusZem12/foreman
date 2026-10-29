@@ -58,10 +58,11 @@ ok(own('PATCH', f'/users/{bob["id"]}', {'roleId': roles['Membro']['id']}))
 check(Bb('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'agora pode'})[0] == 200, 'trocar o perfil do usuário muda as permissões')
 
 # ---------- repositórios ----------
-st, r = C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/nao-existe.git'})
+check(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/api.git'})[0] == 400, 'repositório sem nome é recusado')
+st, r = C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/nao-existe.git', 'name': 'nao-existe'})
 check(st == 400 and 'não é um repositório git' in r['error'], 'URL que não é repo git é recusada: ' + r.get('error', '')[:70])
 desc = {'api': 'API REST (pedidos e pagamentos)', 'web': 'Front-end React da loja', 'docs': 'Documentação'}
-repos = {n: ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': f'file:///remote/{n}.git', 'defaultBranch': 'main', 'description': desc[n]})) for n in ['api', 'web', 'docs']}
+repos = {n: ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': f'file:///remote/{n}.git', 'name': n, 'description': desc[n]})) for n in ['api', 'web', 'docs']}
 check(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/api.git', 'name': 'API'})[0] == 400, 'nome de repositório repetido é recusado')
 ag = ok(C('POST', '/agents', {'name': 'Fake', 'runtime': 'claude'}))
 
@@ -130,7 +131,7 @@ check(not res['conflict'] and show('api', 'conf.txt') == 'resolvido' and show('w
 # ---------- repositório novo entra nas issues abertas em "todos" ----------
 K = ok(A('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'Aberta', 'status': 'backlog'}))['issue']
 subprocess.run(['git', 'clone', '-q', '--bare', f'{REM}/docs.git', f'{REM}/mobile.git'])
-ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/mobile.git', 'description': 'App mobile'}))
+ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/mobile.git', 'name': 'mobile', 'description': 'App mobile'}))
 check('mobile' in rmap(ok(A('GET', f'/issues/{K["id"]}'))['issue']), 'repositório novo entra nas issues abertas em "todos"')
 st, k2 = A('PUT', f'/issues/{K["id"]}/repos', {'all': False, 'repos': [{'repoId': repos['api']['id'], 'targetBranch': 'main'}]})
 check(st == 200 and list(rmap(k2)) == ['api'] and not k2['allRepos'], 'trocar o escopo da issue para só a api')

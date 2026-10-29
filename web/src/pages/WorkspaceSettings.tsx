@@ -44,7 +44,7 @@ export function WorkspaceSettings() {
         <section>
           <div className="mb-2 flex items-center">
             <h2 className="font-semibold">{t('Repositórios')}</h2>
-            {canAddRepo && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({ defaultBranch: 'main', targetBranch: '' })}><Plus className="size-3.5" /> {t('Adicionar')}</Button>}
+            {canAddRepo && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({})}><Plus className="size-3.5" /> {t('Adicionar')}</Button>}
           </div>
           <p className="mb-3 text-xs text-mute">
             {t('Um workspace pode ter vários repositórios (front, back, mobile…). Cada issue recebe um worktree de cada um e a IA mexe só nos que o pedido exige; a')} <b>{t('descrição')}</b> {t('de cada repositório é o que ela usa para decidir. Só são aceitas URLs git acessíveis pelo servidor (SSH ou HTTPS com token).')}
@@ -57,10 +57,6 @@ export function WorkspaceSettings() {
                   <div className="font-medium">{r.name}</div>
                   {r.description && <div className="text-xs text-dim">{r.description}</div>}
                   <div className="truncate font-mono text-xs text-mute">{r.url.replace(/\/\/[^@/]+@/, '//***@')}</div>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
-                    <span className="rounded bg-hover px-1.5 py-0.5 text-dim">{t('desenvolve a partir de')} {r.defaultBranch}</span>
-                    <span className="rounded bg-hover px-1.5 py-0.5 text-dim">{t('merge em')} {r.targetBranch}</span>
-                  </div>
                 </div>
                 {canEditRepo && <button onClick={() => setEditing(r)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
                 {canDelRepo && <button
@@ -175,21 +171,13 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
   };
 
   return (
-    <Modal open wide onClose={onClose} title={r.id ? t('Editar {0}', repo.name) : t('Adicionar repositório')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancelar')}</Button><Button variant="primary" loading={busy} onClick={save}>{t('Salvar e testar')}</Button></>}>
+    <Modal open wide onClose={onClose} title={r.id ? t('Editar {0}', repo.name) : t('Adicionar repositório')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancelar')}</Button><Button variant="primary" loading={busy} disabled={!r.url?.trim() || !r.name?.trim()} onClick={save}>{t('Salvar e testar')}</Button></>}>
       <div className="space-y-4">
         <Field label={t('URL do git')} hint={t('SSH ou HTTPS; o servidor clona com as credenciais git dele')}>
           <input autoFocus className="field-input font-mono text-xs" value={r.url ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder={t('git@github.com:org/projeto.git')} />
         </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={t('Desenvolver a partir de')} hint={t('cada issue cria a branch dela daqui')}>
-            <input className="field-input font-mono text-xs" value={r.defaultBranch ?? ''} onChange={(e) => set({ defaultBranch: e.target.value })} placeholder={t('dev')} />
-          </Field>
-          <Field label={t('Fazer merge em')} hint={t('dá para trocar em cada issue')}>
-            <input className="field-input font-mono text-xs" value={r.targetBranch ?? ''} onChange={(e) => set({ targetBranch: e.target.value })} placeholder={t('igual à de cima')} />
-          </Field>
-        </div>
         <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
-          <Field label={t('Nome')} hint={t('opcional')}><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('do URL')} /></Field>
+          <Field label={t('Nome')}><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('Ex.: api')} /></Field>
           <Field label={t('Descrição')} hint={t('opcional; ajuda a IA a escolher o repositório')}>
             <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('Ex.: API em Go (pedidos, pagamentos)')} />
           </Field>

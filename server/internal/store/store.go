@@ -64,14 +64,12 @@ type FileEntry struct {
 }
 
 type Repo struct {
-	ID            string    `db:"id" json:"id"`
-	WorkspaceID   string    `db:"workspace_id" json:"workspaceId"`
-	Name          string    `db:"name" json:"name"`
-	URL           string    `db:"url" json:"url"`
-	DefaultBranch string    `db:"default_branch" json:"defaultBranch"`
-	TargetBranch  string    `db:"target_branch" json:"targetBranch"`
-	CreatedAt     time.Time `db:"created_at" json:"createdAt"`
-	Description   string    `db:"description" json:"description"`
+	ID          string    `db:"id" json:"id"`
+	WorkspaceID string    `db:"workspace_id" json:"workspaceId"`
+	Name        string    `db:"name" json:"name"`
+	URL         string    `db:"url" json:"url"`
+	CreatedAt   time.Time `db:"created_at" json:"createdAt"`
+	Description string    `db:"description" json:"description"`
 }
 
 type Skill struct {
@@ -326,13 +324,13 @@ func (s *Store) Repo(ctx context.Context, id string) (*Repo, error) {
 
 func (s *Store) SaveRepo(ctx context.Context, r Repo) (*Repo, error) {
 	if r.ID == "" {
-		return one[Repo](ctx, s, `insert into repos(workspace_id, name, url, default_branch, target_branch, description)
-			values($1,$2,$3,$4,$5,$6) returning *`,
-			r.WorkspaceID, r.Name, r.URL, r.DefaultBranch, r.TargetBranch, r.Description)
+		return one[Repo](ctx, s, `insert into repos(workspace_id, name, url, description)
+			values($1,$2,$3,$4) returning *`,
+			r.WorkspaceID, r.Name, r.URL, r.Description)
 	}
-	return one[Repo](ctx, s, `update repos set name=$2, url=$3, default_branch=$4, target_branch=$5, description=$6
+	return one[Repo](ctx, s, `update repos set name=$2, url=$3, description=$4
 		where id = $1 returning *`,
-		r.ID, r.Name, r.URL, r.DefaultBranch, r.TargetBranch, r.Description)
+		r.ID, r.Name, r.URL, r.Description)
 }
 
 func (s *Store) DeleteRepo(ctx context.Context, id string) error {

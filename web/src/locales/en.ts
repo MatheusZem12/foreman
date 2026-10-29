@@ -1,6 +1,7 @@
 // Inglês. A chave é o texto em português (o que está no código); o que
 // faltar aqui aparece em português. Gerado a partir de t('…') e revisado.
 const en: Record<string, string> = {
+  "padrão do repo": "repo default",
   // diálogo de confirmação
   "Não dá para desfazer.": "This can't be undone.",
   "Confirmar": "Confirm",
@@ -394,8 +395,6 @@ const en: Record<string, string> = {
   "Um workspace pode ter vários repositórios (front, back, mobile…). Cada issue recebe um worktree de cada um e a IA mexe só nos que o pedido exige; a": "A workspace can have several repositories (front end, back end, mobile…). Each issue gets a worktree of each one and the AI only touches the ones the request needs; each repository's",
   "descrição": "description",
   "de cada repositório é o que ela usa para decidir. Só são aceitas URLs git acessíveis pelo servidor (SSH ou HTTPS com token).": "is what it uses to decide. Only git URLs the server can reach are accepted (SSH, or HTTPS with a token).",
-  "desenvolve a partir de": "develops from",
-  "merge em": "merges into",
   "Remover {0} do workspace? As issues continuam, sem este repositório.": "Remove {0} from the workspace? Issues stay, without this repository.",
   "Nenhum repositório. Adicione um para os agentes trabalharem.": "No repositories. Add one so agents can work.",
   "Excluir workspace": "Delete workspace",
@@ -414,13 +413,8 @@ const en: Record<string, string> = {
   "Salvar e testar": "Save and test",
   "URL do git": "Git URL",
   "SSH ou HTTPS; o servidor clona com as credenciais git dele": "SSH or HTTPS; the server clones with its own git credentials",
-  "Desenvolver a partir de": "Develop from",
-  "cada issue cria a branch dela daqui": "each issue creates its branch from here",
-  "Fazer merge em": "Merge into",
-  "dá para trocar em cada issue": "can be changed per issue",
-  "igual à de cima": "same as above",
   "opcional": "optional",
-  "do URL": "from the URL",
+  "Ex.: api": "e.g. api",
   "opcional; ajuda a IA a escolher o repositório": "optional; helps the AI choose the repository",
   "Ex.: API em Go (pedidos, pagamentos)": "E.g. Go API (orders, payments)",
   // pages/FlowMap.tsx
@@ -663,7 +657,7 @@ const en: Record<string, string> = {
   "Branch de destino do PR": "PR target branch",
   "vazio = a de merge da issue": "empty = the issue's merge branch",
   "Abrir como rascunho": "Open as draft",
-  "vazio = a de merge de cada repositório": "empty = each repository's merge branch",
+  "vazio = o destino de cada issue": "empty = each issue's target",
   "curl -X POST https://ci.exemplo.com/deploy -d \"branch=$MULTICA_BRANCH\"": "curl -X POST https://ci.example.com/deploy -d \"branch=$MULTICA_BRANCH\"",
   "MULTICA_ISSUE, _TITLE, _BRANCH, _STAGE, _FROM, _EVENT, _PRIORITY, _README, _WORKSPACE · até 10 min.": "MULTICA_ISSUE, _TITLE, _BRANCH, _STAGE, _FROM, _EVENT, _PRIORITY, _README, _WORKSPACE · up to 10 min.",
   "Ativa": "On",

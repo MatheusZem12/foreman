@@ -197,8 +197,8 @@ func (s *Store) CreateIssue(ctx context.Context, wsID, userID string, in NewIssu
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `insert into issue_repos(issue_id, repo_id, base_branch, target_branch)
-		select $1, r.id, r.default_branch, r.target_branch from repos r
+	if _, err := tx.Exec(ctx, `insert into issue_repos(issue_id, repo_id)
+		select $1, r.id from repos r
 		where r.workspace_id = $2 and (cardinality($3::uuid[]) = 0 or r.id = any($3::uuid[]))`, id, wsID, nz(in.RepoIDs)); err != nil {
 		return nil, err
 	}
@@ -299,8 +299,8 @@ type RepoScope struct {
 // SyncIssueRepos: issue em "todos os repositórios" ganha os que foram
 // adicionados ao workspace depois que ela foi criada.
 func (s *Store) SyncIssueRepos(ctx context.Context, issueID string) error {
-	_, err := s.DB.Exec(ctx, `insert into issue_repos(issue_id, repo_id, base_branch, target_branch)
-		select i.id, r.id, r.default_branch, r.target_branch from issues i join repos r on r.workspace_id = i.workspace_id
+	_, err := s.DB.Exec(ctx, `insert into issue_repos(issue_id, repo_id)
+		select i.id, r.id from issues i join repos r on r.workspace_id = i.workspace_id
 		where i.id = $1 and i.all_repos on conflict do nothing`, issueID)
 	return err
 }
@@ -364,7 +364,7 @@ func (s *Store) SetIssueRepos(ctx context.Context, issueID string, all bool, cho
 	}
 	for _, c := range choices {
 		if _, err := tx.Exec(ctx, `insert into issue_repos(issue_id, repo_id, base_branch, target_branch)
-			select $1, r.id, coalesce(nullif($3, ''), r.default_branch), coalesce(nullif($4, ''), r.target_branch) from repos r
+			select $1, r.id, $3, $4 from repos r
 			where r.id = $2 and r.workspace_id = (select workspace_id from issues where id = $1)
 			on conflict (issue_id, repo_id) do update set
 				base_branch = case when issue_repos.changed then issue_repos.base_branch else excluded.base_branch end,
@@ -373,13 +373,21 @@ func (s *Store) SetIssueRepos(ctx context.Context, issueID string, all bool, cho
 		}
 	}
 	if all {
-		if _, err := tx.Exec(ctx, `insert into issue_repos(issue_id, repo_id, base_branch, target_branch)
-			select i.id, r.id, r.default_branch, r.target_branch from issues i join repos r on r.workspace_id = i.workspace_id
+		if _, err := tx.Exec(ctx, `insert into issue_repos(issue_id, repo_id)
+			select i.id, r.id from issues i join repos r on r.workspace_id = i.workspace_id
 			where i.id = $1 on conflict do nothing`, issueID); err != nil {
 			return err
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// SetRepoBranches grava as branches resolvidas na primeira execução (a padrão
+// do remoto), sem passar por cima do que já foi escolhido na issue.
+func (s *Store) SetRepoBranches(ctx context.Context, issueID, repoID, base, target string) error {
+	_, err := s.DB.Exec(ctx, `update issue_repos set base_branch = coalesce(nullif(base_branch, ''), $3),
+		target_branch = coalesce(nullif(target_branch, ''), $4) where issue_id = $1 and repo_id = $2`, issueID, repoID, base, target)
+	return err
 }
 
 func (s *Store) SetRepoChanged(ctx context.Context, issueID, repoID string, changed bool) error {
@@ -401,10 +409,10 @@ func (s *Store) SetRepoMerged(ctx context.Context, issueID, repoID, target, sha 
 
 // Repositório novo entra nas issues abertas que trabalham com "todos".
 func (s *Store) AddRepoToOpenIssues(ctx context.Context, repo *Repo) error {
-	_, err := s.DB.Exec(ctx, `insert into issue_repos(issue_id, repo_id, base_branch, target_branch)
-		select i.id, $1, $3, $4 from issues i
+	_, err := s.DB.Exec(ctx, `insert into issue_repos(issue_id, repo_id)
+		select i.id, $1 from issues i
 		where i.workspace_id = $2 and i.all_repos and i.closed = '' on conflict do nothing`,
-		repo.ID, repo.WorkspaceID, repo.DefaultBranch, repo.TargetBranch)
+		repo.ID, repo.WorkspaceID)
 	return err
 }
 

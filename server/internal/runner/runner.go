@@ -506,6 +506,20 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				errs[i] = fmt.Errorf("%s: %w", w.Name, err)
 				return
 			}
+			if w.IssueRepo.BaseBranch == "" || w.IssueRepo.TargetBranch == "" {
+				def, err := defaultBranch(ctx, repoDir)
+				if err != nil && w.IssueRepo.BaseBranch == "" {
+					errs[i] = fmt.Errorf("%s: %w", w.Name, err)
+					return
+				}
+				if w.IssueRepo.BaseBranch == "" {
+					w.IssueRepo.BaseBranch = def
+				}
+				if w.IssueRepo.TargetBranch == "" {
+					w.IssueRepo.TargetBranch = w.IssueRepo.BaseBranch
+				}
+				r.st.SetRepoBranches(ctx, issue.ID, w.ID, w.IssueRepo.BaseBranch, w.IssueRepo.TargetBranch)
+			}
 			created, err := r.ensureWorktree(ctx, repoDir, w.wt, issue.Branch, w.base())
 			if err != nil {
 				errs[i] = fmt.Errorf("%s: %w", w.Name, err)

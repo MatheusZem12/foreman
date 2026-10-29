@@ -226,10 +226,10 @@ function IssueRepoRow({ r, locked, onChange }: { r: IssueRepo; locked: boolean; 
       </div>
       <div className="mt-0.5 flex items-center gap-1 text-xs">
         {locked || r.changed || r.mergedInto ? <span className="px-1 font-mono text-[11px] text-mute">{r.baseBranch}</span>
-          : <BranchPicker repoId={r.repoId} value={r.baseBranch} onChange={(baseBranch) => onChange({ baseBranch })} />}
+          : <BranchPicker repoId={r.repoId} value={r.baseBranch} placeholder={t('padrão do repo')} onChange={(baseBranch) => onChange({ baseBranch })} />}
         <span className="text-mute">→</span>
         {locked || r.mergedInto ? <span className="px-1 font-mono text-[11px] text-mute">{r.mergedInto || r.targetBranch}</span>
-          : <BranchPicker repoId={r.repoId} value={r.targetBranch} onChange={(targetBranch) => onChange({ targetBranch })} />}
+          : <BranchPicker repoId={r.repoId} value={r.targetBranch} placeholder={r.baseBranch || t('padrão do repo')} onChange={(targetBranch) => onChange({ targetBranch })} />}
       </div>
     </div>
   );

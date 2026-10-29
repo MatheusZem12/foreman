@@ -837,7 +837,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
             <Toggle checked={!!c.draft} onChange={(draft) => setC({ draft })} label={t('Abrir como rascunho')} />
             {onFail}
           </>}
-          {r.action === 'merge' && <Field label={t('Branch')} hint={t('vazio = a de merge de cada repositório')}><input className="field-input font-mono text-xs" value={c.base ?? ''} onChange={(e) => setC({ base: e.target.value })} placeholder={t('main')} /></Field>}
+          {r.action === 'merge' && <Field label={t('Branch')} hint={t('vazio = o destino de cada issue')}><input className="field-input font-mono text-xs" value={c.base ?? ''} onChange={(e) => setC({ base: e.target.value })} placeholder={t('main')} /></Field>}
           {r.action === 'script' && <>
             <Field label={t('Script (bash)')}>
               <textarea className="field-input font-mono text-xs" rows={4} spellCheck={false} value={c.script ?? ''} onChange={(e) => setC({ script: e.target.value })}
