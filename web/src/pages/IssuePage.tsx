@@ -17,13 +17,13 @@ import { AgentIcon } from '../components/AgentIcon';
 import { locale, t } from '../lib/i18n';
 import { upsertIssue } from '../lib/board';
 
-type Tab = 'atividade' | 'resumo' | 'diff' | 'execucoes';
+type Tab = 'activity' | 'summary' | 'diff' | 'runs';
 
 export function IssuePage() {
   const { ref } = useParams();
   const { ws } = useWs();
   const { data, isLoading, error } = useQuery({ queryKey: ['issue-ref', ref], queryFn: () => api.get<IssueDetail>(`/issues/${ref}`) });
-  // A página usa a chave por id (que o tempo real atualiza); a busca por "LING-12" só resolve o id.
+  // The page uses the key by id (which real time updates); the search by "LING-12" only resolves the id.
   const id = data?.issue.id;
   const detail = useQuery({
     queryKey: ['issue', id],
@@ -34,7 +34,7 @@ export function IssuePage() {
   });
 
   if (isLoading) return <div className="grid h-full place-items-center"><Spinner /></div>;
-  if (error || !detail.data) return <Empty>{t('Issue não encontrada.')} <Link className="text-accent" to={`/w/${ws.key}`}>{t('Voltar')}</Link></Empty>;
+  if (error || !detail.data) return <Empty>{t('Issue not found.')} <Link className="text-accent" to={`/w/${ws.key}`}>{t('Back')}</Link></Empty>;
   return <IssueView detail={detail.data} />;
 }
 
@@ -46,7 +46,7 @@ function patchCache(qc: ReturnType<typeof useQueryClient>, issue: Issue) {
 function IssueView({ detail }: { detail: IssueDetail }) {
   const ask = useConfirm();
   const { issue, runs, comments } = detail;
-  // O que esta pessoa pode fazer aqui: permissão do perfil + política da etapa atual.
+  // What this person can do here: role permission + the current stage's policy.
   const caps = detail.caps;
   const { ws } = useWs();
   const qc = useQueryClient();
@@ -56,7 +56,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
   const canRun = caps.run;
   const canMerge = caps.merge;
   const canDelete = caps.delete;
-  const [tab, setTab] = useState<Tab>('atividade');
+  const [tab, setTab] = useState<Tab>('activity');
   const [merging, setMerging] = useState(false);
   const [showProps, setShowProps] = useState(false);
 
@@ -81,7 +81,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
     }
   };
 
-  // Escopo: todos os repositórios (a IA escolhe) ou só os escolhidos, cada um com base → destino.
+  // Scope: every repository (the AI chooses) or only the chosen ones, each with base → target.
   const saveRepos = async (all: boolean, list: { repoId: string; baseBranch?: string; targetBranch?: string }[]) => {
     try {
       patchCache(qc, await api.put<Issue>(`/issues/${issue.id}/repos`, { all, repos: list }));
@@ -95,7 +95,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
   const active = !!issue.activeRun;
   const pendingRepos = issue.repos.filter((r) => r.changed && !r.mergedInto);
   const hasCommits = pendingRepos.length > 0;
-  // Encerrada pela regra "Encerrar" da etapa; esperando alguém pelo que a IA declarou.
+  // Closed by the stage's "Close" rule; waiting for someone per what the AI declared.
   const closed = !!issue.closed;
   const lastRun = runs[runs.length - 1];
   const needsYou = !active && !closed && (lastRun?.outcome === 'waiting' || lastRun?.outcome === 'incomplete');
@@ -105,19 +105,19 @@ function IssueView({ detail }: { detail: IssueDetail }) {
     <div className="space-y-0.5">
       {caps.reason && <div className="mb-2 flex items-start gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1.5 text-[11px] text-mute"><Lock className="mt-px size-3 shrink-0" /> {caps.reason}</div>}
       <PropRow label={t('Status')}><Gate on={caps.move}><StatusPicker variant="row" value={issue.status} onChange={(status) => patch({ status })} /></Gate></PropRow>
-      <PropRow label={t('Responsável')}><Gate on={caps.assign}><AssigneePicker variant="row" ws={ws.id} value={issue.assigneeId} onChange={(assigneeId) => patch({ assigneeId })} /></Gate></PropRow>
-      <PropRow label={t('Prioridade')}><Gate on={caps.priority}><PriorityPicker variant="row" value={issue.priority} onChange={(priority) => patch({ priority })} /></Gate></PropRow>
-      <PropRow label={t('Agente')}><Gate on={caps.agent}><AgentPicker variant="row" value={issue.agentId} onChange={(agentId) => patch({ agentId })} /></Gate></PropRow>
+      <PropRow label={t('Assignee')}><Gate on={caps.assign}><AssigneePicker variant="row" ws={ws.id} value={issue.assigneeId} onChange={(assigneeId) => patch({ assigneeId })} /></Gate></PropRow>
+      <PropRow label={t('Priority')}><Gate on={caps.priority}><PriorityPicker variant="row" value={issue.priority} onChange={(priority) => patch({ priority })} /></Gate></PropRow>
+      <PropRow label={t('Agent')}><Gate on={caps.agent}><AgentPicker variant="row" value={issue.agentId} onChange={(agentId) => patch({ agentId })} /></Gate></PropRow>
       <PropRow label={t('Labels')}><Gate on={caps.labels}><LabelPicker variant="row" ws={ws.id} value={issue.labelIds} onChange={(labelIds) => patch({ labelIds })} /></Gate></PropRow>
-      <PropRow label={t('Repositórios')}>
+      <PropRow label={t('Repositories')}>
         <Gate on={caps.repos}><RepoScopePicker variant="row" ws={ws.id} value={issue.allRepos ? [] : issue.repos.map((r) => r.repoId)}
           onChange={(ids) => saveRepos(!ids.length, ids.map((repoId) => ({ repoId, ...pick(issue.repos.find((r) => r.repoId === repoId)) })))} /></Gate>
       </PropRow>
       {issue.repos.map((r) => <IssueRepoRow key={r.repoId} r={r} locked={!canEdit || closed} onChange={(b) => setBranch(r.repoId, b)} />)}
       <div className="space-y-1 px-2 pt-3 text-xs text-mute">
         {issue.branch && <div className="truncate font-mono" title={issue.branch}>{issue.branch}</div>}
-        <div>{t('Custo total:')} <span className="text-dim">{money(issue.costUsd)}</span> · {runs.length} {t('execução(ões)')}</div>
-        <div>{t('Criada')} {timeAgo(issue.createdAt)} {t('· atualizada')} {timeAgo(issue.updatedAt)}</div>
+        <div>{t('Total cost:')} <span className="text-dim">{money(issue.costUsd)}</span> · {runs.length} {t('run(s)')}</div>
+        <div>{t('Created')} {timeAgo(issue.createdAt)} {t('· updated')} {timeAgo(issue.updatedAt)}</div>
       </div>
     </div>
   );
@@ -128,46 +128,46 @@ function IssueView({ detail }: { detail: IssueDetail }) {
         <button onClick={() => nav(`/w/${ws.key}`)} className="rounded p-1 text-mute hover:bg-hover hover:text-fg"><ArrowLeft className="size-4" /></button>
         <span className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-xs text-dim">{ws.key}-{issue.number}</span>
         <StatusIcon status={issue.status} />
-        {active && <span className="flex items-center gap-1 text-xs text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {t('trabalhando')}</span>}
+        {active && <span className="flex items-center gap-1 text-xs text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {t('working')}</span>}
         <div className="ml-auto flex items-center gap-1.5">
-          {active && canRun && <Button size="sm" variant="danger" onClick={() => act(() => api.post(`/issues/${issue.id}/cancel`))}><CircleStop className="size-3.5" /> {t('Parar')}</Button>}
+          {active && canRun && <Button size="sm" variant="danger" onClick={() => act(() => api.post(`/issues/${issue.id}/cancel`))}><CircleStop className="size-3.5" /> {t('Stop')}</Button>}
           {canRun && !active && !closed && !runs.length && issue.agentId && (
-            <Button size="sm" variant="primary" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: 'initial' }), t('Na fila do agente'))}><Play className="size-3.5" /> {t('Executar')}</Button>
+            <Button size="sm" variant="primary" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: 'initial' }), t('Queued for the agent'))}><Play className="size-3.5" /> {t('Run')}</Button>
           )}
           {canRun && !active && !closed && lastRun?.status === 'failed' && (
-            <Button size="sm" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: lastRun.kind, request: lastRun.request }), t('Na fila de novo'))}><Undo2 className="size-3.5" /> {t('Tentar de novo')}</Button>
+            <Button size="sm" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: lastRun.kind, request: lastRun.request }), t('Queued again'))}><Undo2 className="size-3.5" /> {t('Try again')}</Button>
           )}
           {canRun && conflict && !active && (
-            <Button size="sm" variant="outline" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: 'conflict' }), t('IA resolvendo o conflito'))}><Swords className="size-3.5" /> {t('Resolver conflito com IA')}</Button>
+            <Button size="sm" variant="outline" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: 'conflict' }), t('AI resolving the conflict'))}><Swords className="size-3.5" /> {t('Resolve conflict with AI')}</Button>
           )}
           {caps.approvals > 0 && !active && (caps.approve || issue.approvals.length > 0) && (
             <Button size="sm" variant="success" disabled={!caps.approve}
-              title={caps.approve ? t('Aprovar: com as aprovações necessárias a issue segue e as regras da etapa de destino rodam') : t('Você já aprovou ou não aprova nesta etapa')}
-              onClick={() => act(() => api.post(`/issues/${issue.id}/approve`), t('Aprovação registrada'))}>
-              <Check className="size-3.5" /> {t('Aprovar')}{caps.approvals > 1 && <span className="opacity-80"> {issue.approvals.length}/{caps.approvals}</span>}
+              title={caps.approve ? t('Approve: once it has the required approvals the issue moves on and the destination stage\'s rules run') : t('You already approved, or you can\'t approve in this stage')}
+              onClick={() => act(() => api.post(`/issues/${issue.id}/approve`), t('Approval recorded'))}>
+              <Check className="size-3.5" /> {t('Approve')}{caps.approvals > 1 && <span className="opacity-80"> {issue.approvals.length}/{caps.approvals}</span>}
             </Button>
           )}
           {canMerge && !active && !closed && hasCommits && !conflict && caps.approvals === 0 && !needsYou && (
             <Button size="sm" variant="success" onClick={() => setMerging(true)}>
-              <GitMerge className="size-3.5" /> {t('Merge')}{pendingRepos.length > 1 ? t(' ({0} repos)', pendingRepos.length) : <span className="hidden sm:inline"> {t('em')} {pendingRepos[0].targetBranch}</span>}
+              <GitMerge className="size-3.5" /> {t('Merge')}{pendingRepos.length > 1 ? t(' ({0} repos)', pendingRepos.length) : <span className="hidden sm:inline"> {t('into')} {pendingRepos[0].targetBranch}</span>}
             </Button>
           )}
           <Popover align="right" trigger={() => <button className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><MoreHorizontal className="size-4" /></button>}>
             {(close) => (
               <>
                 {canMerge && !active && caps.approvals > 0 && hasCommits && !conflict && (
-                  <MenuItem onClick={() => { close(); setMerging(true); }}><GitMerge className="size-4" /> {t('Fazer merge escolhendo a branch')}</MenuItem>
+                  <MenuItem onClick={() => { close(); setMerging(true); }}><GitMerge className="size-4" /> {t('Merge, choosing the branch')}</MenuItem>
                 )}
                 {canMerge && !closed && hasCommits && (
-                  <MenuItem onClick={async () => { close(); if (await ask({ title: t('Descartar as alterações?'), message: t('Apaga o worktree e a branch da issue (local e remota).'), confirmText: t('Descartar'), danger: true })) act(() => api.post(`/issues/${issue.id}/discard`), t('Descartada')); }}>
-                    <Undo2 className="size-4" /> {t('Descartar alterações')}
+                  <MenuItem onClick={async () => { close(); if (await ask({ title: t('Discard the changes?'), message: t('Deletes the issue\'s worktree and branch (local and remote).'), confirmText: t('Discard'), danger: true })) act(() => api.post(`/issues/${issue.id}/discard`), t('Discarded')); }}>
+                    <Undo2 className="size-4" /> {t('Discard changes')}
                   </MenuItem>
                 )}
                 {canDelete && <MenuItem danger onClick={async () => {
                   close();
-                  if (await ask({ title: t('Excluir a issue?'), message: t('Apaga a issue, o histórico e as branches.'), confirmText: t('Excluir'), danger: true })) act(async () => { await api.del(`/issues/${issue.id}`); nav(`/w/${ws.key}`); });
-                }}><Trash2 className="size-4" /> {t('Excluir issue')}</MenuItem>}
-                {!canDelete && !(canMerge && !closed && hasCommits) && <div className="px-2 py-1.5 text-xs text-mute">{t('Nenhuma ação disponível.')}</div>}
+                  if (await ask({ title: t('Delete the issue?'), message: t('Deletes the issue, its history and its branches.'), confirmText: t('Delete'), danger: true })) act(async () => { await api.del(`/issues/${issue.id}`); nav(`/w/${ws.key}`); });
+                }}><Trash2 className="size-4" /> {t('Delete issue')}</MenuItem>}
+                {!canDelete && !(canMerge && !closed && hasCommits) && <div className="px-2 py-1.5 text-xs text-mute">{t('No actions available.')}</div>}
               </>
             )}
           </Popover>
@@ -181,7 +181,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
             <Gate on={caps.edit} block><DescriptionEditor issue={issue} onSave={(description) => patch({ description })} /></Gate>
 
             <button onClick={() => setShowProps(!showProps)} className="mt-4 flex w-full items-center gap-1 rounded-md border border-line px-2 py-1.5 text-xs text-dim lg:hidden">
-              {showProps ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />} {t('Propriedades')}
+              {showProps ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />} {t('Properties')}
             </button>
             {showProps && <div className="mt-2 rounded-lg border border-line p-1 lg:hidden">{properties}</div>}
 
@@ -189,19 +189,19 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 
             <div className="mt-6 flex gap-1 border-b border-line">
               {([
-                ['atividade', t('Atividade')],
-                ['resumo', 'README'],
+                ['activity', t('Activity')],
+                ['summary', 'README'],
                 ['diff', t('Diff')],
-                ['execucoes', t('Execuções')]
+                ['runs', t('Runs')]
               ] as [Tab, string][]).map(([id, label]) => (
                 <button key={id} onClick={() => setTab(id)} className={clsx('-mb-px border-b-2 px-3 py-2 transition-colors', tab === id ? 'border-accent font-medium text-fg' : 'border-transparent text-mute hover:text-fg')}>{label}</button>
               ))}
             </div>
             <div className="pt-4">
-              {tab === 'atividade' && <Activity issue={issue} runs={runs} comments={comments} canComment={caps.comment} />}
-              {tab === 'resumo' && <SummaryTab issue={issue} runs={runs} onSave={(summary) => patch({ summary })} />}
+              {tab === 'activity' && <Activity issue={issue} runs={runs} comments={comments} canComment={caps.comment} />}
+              {tab === 'summary' && <SummaryTab issue={issue} runs={runs} onSave={(summary) => patch({ summary })} />}
               {tab === 'diff' && <DiffTab issue={issue} />}
-              {tab === 'execucoes' && <RunsTable runs={runs} />}
+              {tab === 'runs' && <RunsTable runs={runs} />}
             </div>
           </div>
         </div>
@@ -215,7 +215,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 
 const pick = (r?: IssueRepo) => (r ? { baseBranch: r.baseBranch, targetBranch: r.targetBranch } : {});
 
-// Um repositório da issue: base (fixa depois que a IA mexe) → destino do merge.
+// One of the issue's repositories: base (fixed once the AI touches it) → merge target.
 function IssueRepoRow({ r, locked, onChange }: { r: IssueRepo; locked: boolean; onChange: (b: { baseBranch?: string; targetBranch?: string }) => void }) {
   const state = r.mergedInto ? ['mesclado', 'text-sky-400'] : r.conflict ? ['conflito', 'text-red-400'] : r.changed ? ['alterado', 'text-emerald-400'] : null;
   return (
@@ -226,10 +226,10 @@ function IssueRepoRow({ r, locked, onChange }: { r: IssueRepo; locked: boolean; 
       </div>
       <div className="mt-0.5 flex items-center gap-1 text-xs">
         {locked || r.changed || r.mergedInto ? <span className="px-1 font-mono text-[11px] text-mute">{r.baseBranch}</span>
-          : <BranchPicker repoId={r.repoId} value={r.baseBranch} placeholder={t('padrão do repo')} onChange={(baseBranch) => onChange({ baseBranch })} />}
+          : <BranchPicker repoId={r.repoId} value={r.baseBranch} placeholder={t('repo default')} onChange={(baseBranch) => onChange({ baseBranch })} />}
         <span className="text-mute">→</span>
         {locked || r.mergedInto ? <span className="px-1 font-mono text-[11px] text-mute">{r.mergedInto || r.targetBranch}</span>
-          : <BranchPicker repoId={r.repoId} value={r.targetBranch} placeholder={r.baseBranch || t('padrão do repo')} onChange={(targetBranch) => onChange({ targetBranch })} />}
+          : <BranchPicker repoId={r.repoId} value={r.targetBranch} placeholder={r.baseBranch || t('repo default')} onChange={(targetBranch) => onChange({ targetBranch })} />}
       </div>
     </div>
   );
@@ -280,15 +280,15 @@ function DescriptionEditor({ issue, onSave }: { issue: Issue; onSave: (d: string
           className="field-input"
         />
         <div className="mt-2 flex justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>{t('Cancelar')}</Button>
-          <Button size="sm" variant="primary" onClick={() => { onSave(value); setEditing(false); }}>{t('Salvar')}</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>{t('Cancel')}</Button>
+          <Button size="sm" variant="primary" onClick={() => { onSave(value); setEditing(false); }}>{t('Save')}</Button>
         </div>
       </div>
     );
   }
   return (
     <div onClick={() => setEditing(true)} className="mt-3 min-h-[40px] cursor-text rounded-md px-1 py-1 hover:bg-hover/40">
-      {issue.description ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.description) }} /> : <span className="text-mute">{t('Adicionar descrição…')}</span>}
+      {issue.description ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.description) }} /> : <span className="text-mute">{t('Add a description…')}</span>}
     </div>
   );
 }
@@ -309,7 +309,7 @@ function Activity({ issue, runs, comments, canComment }: { issue: Issue; runs: R
         it.run ? <RunCard key={it.run.id} run={it.run} defaultOpen={it.run.id === lastRunId && (it.run.status === 'running' || it.run.status === 'queued')} />
           : <CommentItem key={it.comment!.id} comment={it.comment!} />
       )}
-      {!items.length && <p className="text-mute">{t('Sem atividade ainda.')}</p>}
+      {!items.length && <p className="text-mute">{t('No activity yet.')}</p>}
       {canComment && <Composer issue={issue} hasRuns={runs.length > 0} />}
     </div>
   );
@@ -327,7 +327,7 @@ function CommentItem({ comment }: { comment: Comment }) {
     <div className={clsx('rounded-xl border p-3.5', comment.kind === 'agent' ? 'border-accent/25 bg-gradient-to-b from-accent/[0.08] to-accent/[0.02]' : 'border-white/[0.07] bg-card/60')}>
       <div className="mb-1.5 flex items-center gap-2 text-xs">
         {agent ? <AgentIcon avatar={agent.avatar} /> : <Avatar name={user?.name} />}
-        <span className="font-medium">{agent?.name ?? user?.name ?? t('alguém')}</span>
+        <span className="font-medium">{agent?.name ?? user?.name ?? t('someone')}</span>
         <span className="text-mute">{timeAgo(comment.createdAt)}</span>
       </div>
       <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(comment.body) }} />
@@ -335,11 +335,11 @@ function CommentItem({ comment }: { comment: Comment }) {
   );
 }
 
-const RUN_LABEL: Record<Run['kind'], string> = { initial: t('Execução'), followup: t('Ajuste'), conflict: t('Resolução de conflito') };
+const RUN_LABEL: Record<Run['kind'], string> = { initial: t('Run'), followup: t('Adjustment'), conflict: t('Conflict resolution') };
 const RUN_STATUS: Record<Run['status'], [string, string]> = {
-  queued: [t('na fila'), 'text-sky-400'],
+  queued: [t('queued'), 'text-sky-400'],
   running: ['rodando', 'text-amber-400'],
-  succeeded: [t('concluída'), 'text-emerald-400'],
+  succeeded: [t('done'), 'text-emerald-400'],
   failed: ['falhou', 'text-red-400'],
   cancelled: ['cancelada', 'text-mute']
 };
@@ -365,7 +365,7 @@ function RunCard({ run, defaultOpen }: { run: Run; defaultOpen: boolean }) {
           {run.commitSha && <span className="font-mono">{run.commitSha}</span>}
         </span>
       </button>
-      {run.request && <div className="border-t border-line bg-card px-3 py-2 text-xs text-dim"><span className="text-mute">{t('Pedido:')} </span>{run.request}</div>}
+      {run.request && <div className="border-t border-line bg-card px-3 py-2 text-xs text-dim"><span className="text-mute">{t('Request:')} </span>{run.request}</div>}
       {open && <RunLog run={run} />}
       {run.error && !open && <div className="border-t border-line px-3 py-1.5 text-xs text-red-400">{run.error}</div>}
     </div>
@@ -390,7 +390,7 @@ function RunLog({ run }: { run: Run }) {
     <div className="border-t border-line bg-bg">
       {prompt && (
         <button onClick={() => setShowPrompt(!showPrompt)} className="w-full px-3 py-1.5 text-left text-[11px] text-mute hover:text-fg">
-          {showPrompt ? '▾' : '▸'} {t('Contexto enviado ao agente')}
+          {showPrompt ? '▾' : '▸'} {t('Context sent to the agent')}
         </button>
       )}
       {showPrompt && prompt && <pre className="max-h-80 overflow-auto whitespace-pre-wrap border-y border-line px-3 py-2 font-mono text-[11px] text-dim">{prompt.body}</pre>}
@@ -403,7 +403,7 @@ function RunLog({ run }: { run: Run }) {
         className="max-h-[60vh] overflow-y-auto px-3 py-2 font-mono text-[12px] leading-relaxed"
       >
         {events?.filter((e) => e.kind !== 'prompt').map((e) => <LogLine key={e.id} ev={e} />)}
-        {!events?.length && <div className="text-mute">{run.status === 'queued' ? t('Aguardando uma vaga…') : t('Sem eventos.')}</div>}
+        {!events?.length && <div className="text-mute">{run.status === 'queued' ? t('Waiting for a free slot…') : t('No events.')}</div>}
       </div>
     </div>
   );
@@ -440,7 +440,7 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
     try {
       const res = await api.post<{ warning?: string }>(`/issues/${issue.id}/comments`, { body, sendToAgent: send && !!agentId, agentId: agentId ?? '' });
       if (res.warning) toast('error', res.warning);
-      else if (send && agentId) toast('success', hasRuns ? t('Ajuste enviado ao agente') : t('Enviado ao agente'));
+      else if (send && agentId) toast('success', hasRuns ? t('Adjustment sent to the agent') : t('Sent to the agent'));
       setBody('');
     } catch (err) {
       toast('error', (err as Error).message);
@@ -455,19 +455,19 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && submit()}
         rows={3}
-        placeholder={send && agentId ? t('Peça um ajuste: vai num chat novo junto com o resumo e os commits da branch…') : t('Comentário…')}
+        placeholder={send && agentId ? t('Ask for an adjustment: it goes to a new chat along with the summary and the branch commits…') : t('Comment…')}
         className="w-full resize-y px-1 leading-relaxed placeholder:text-mute"
       />
       <div className="flex flex-wrap items-center gap-2">
-        {canRun && <Toggle checked={send} onChange={setSend} label={t('Enviar para o agente')} />}
+        {canRun && <Toggle checked={send} onChange={setSend} label={t('Send to the agent')} />}
         {send && <AgentPicker value={agentId} onChange={setAgentId} allowNone={false} />}
-        <Button size="sm" variant="primary" className="ml-auto" loading={busy} onClick={submit}><Send className="size-3.5" /> {send && agentId ? t('Enviar') : t('Comentar')}</Button>
+        <Button size="sm" variant="primary" className="ml-auto" loading={busy} onClick={submit}><Send className="size-3.5" /> {send && agentId ? t('Send') : t('Comment')}</Button>
       </div>
     </div>
   );
 }
 
-// ---------- resumo, diff, execuções, merge ----------
+// ---------- summary, diff, runs, merge ----------
 
 function SummaryTab({ issue, runs, onSave }: { issue: Issue; runs: Run[]; onSave: (s: string) => void }) {
   const [editing, setEditing] = useState(false);
@@ -477,23 +477,23 @@ function SummaryTab({ issue, runs, onSave }: { issue: Issue; runs: Run[]; onSave
   }, [issue.summary, editing]);
   return (
     <div>
-      <p className="mb-3 text-xs text-mute">{t('O registro do que foi feito. O agente reescreve o README ao fim de cada execução; ele e o histórico abaixo vão como anexo para o próximo chat, que sempre começa limpo.')}</p>
+      <p className="mb-3 text-xs text-mute">{t('The record of what was done. The agent rewrites the README at the end of every run; it and the history below are attached to the next chat, which always starts clean.')}</p>
       {editing ? (
         <>
           <textarea value={value} onChange={(e) => setValue(e.target.value)} rows={16} className="field-input font-mono text-[12px]" />
           <div className="mt-2 flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>{t('Cancelar')}</Button>
-            <Button size="sm" variant="primary" onClick={() => { onSave(value); setEditing(false); }}>{t('Salvar')}</Button>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>{t('Cancel')}</Button>
+            <Button size="sm" variant="primary" onClick={() => { onSave(value); setEditing(false); }}>{t('Save')}</Button>
           </div>
         </>
       ) : (
         <div onClick={() => setEditing(true)} className="cursor-text rounded-xl border border-white/[0.08] bg-card/60 p-4">
-          {issue.summary ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.summary) }} /> : <span className="text-mute">{t('Ainda sem README. Ele aparece depois da primeira execução.')}</span>}
+          {issue.summary ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.summary) }} /> : <span className="text-mute">{t('No README yet. It shows up after the first run.')}</span>}
         </div>
       )}
       {runs.some((r) => r.status !== 'queued' && r.status !== 'running') && (
         <div className="mt-6">
-          <div className="mb-2 text-xs font-medium text-dim">{t('Histórico de pedidos')}</div>
+          <div className="mb-2 text-xs font-medium text-dim">{t('Request history')}</div>
           <ol className="relative space-y-3 border-l border-line pl-4">
             {runs.filter((r) => r.status !== 'queued' && r.status !== 'running').map((r) => {
               const [label, color] = runResult(r);
@@ -518,17 +518,17 @@ function SummaryTab({ issue, runs, onSave }: { issue: Issue; runs: Run[]; onSave
   );
 }
 
-// Resultado de uma execução: o que a IA declarou, ou o status técnico.
+// A run's outcome: what the AI declared, or the technical status.
 function runResult(r: Run): [string, string] {
   if (r.status === 'succeeded') {
-    if (r.outcome === 'waiting') return [t('aguardando você'), 'text-orange-400'];
+    if (r.outcome === 'waiting') return [t('waiting for you'), 'text-orange-400'];
     if (r.outcome === 'incomplete') return ['incompleto', 'text-orange-400'];
-    return [t('concluído'), 'text-emerald-400'];
+    return [t('done'), 'text-emerald-400'];
   }
   return RUN_STATUS[r.status];
 }
 
-// A IA parou e precisa de alguém: mostra o que ela pediu e já deixa responder.
+// The AI stopped and needs someone: shows what it asked for and lets you reply right away.
 function WaitingCard({ issue, lastRun }: { issue: Issue; lastRun?: Run }) {
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
@@ -540,7 +540,7 @@ function WaitingCard({ issue, lastRun }: { issue: Issue; lastRun?: Run }) {
     try {
       const res = await api.post<{ warning?: string }>(`/issues/${issue.id}/comments`, { body: reply, sendToAgent: true, agentId: issue.agentId ?? '' });
       if (res.warning) toast('error', res.warning);
-      else toast('success', t('Resposta enviada: o agente continua num chat novo'));
+      else toast('success', t('Reply sent: the agent continues in a new chat'));
       setReply('');
     } catch (err) {
       toast('error', (err as Error).message);
@@ -552,15 +552,15 @@ function WaitingCard({ issue, lastRun }: { issue: Issue; lastRun?: Run }) {
     <div className="mt-5 rounded-xl border border-orange-400/30 bg-gradient-to-b from-orange-400/[0.09] to-orange-400/[0.03] p-4">
       <div className="flex items-center gap-2 text-sm font-medium text-orange-200">
         <Hand className="size-4 text-orange-400" />
-        {lastRun?.outcome === 'incomplete' ? t('A IA não conseguiu terminar') : t('A IA precisa de você')}
+        {lastRun?.outcome === 'incomplete' ? t('The AI couldn\'t finish') : t('The AI needs you')}
       </div>
-      <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-dim">{lastRun?.outcomeNote || t('Veja o último comentário do agente.')}</p>
+      <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-dim">{lastRun?.outcomeNote || t('See the agent\'s last comment.')}</p>
       {canRun && issue.agentId && (
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2} placeholder={t('Responda ou decida aqui; vai para o agente continuar…')}
+          <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2} placeholder={t('Answer or decide here; it goes to the agent to continue…')}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(); }}
             className="field-input flex-1 text-[13px]" />
-          <Button variant="primary" loading={busy} onClick={send} className="sm:self-end"><Send className="size-3.5" /> {t('Responder')}</Button>
+          <Button variant="primary" loading={busy} onClick={send} className="sm:self-end"><Send className="size-3.5" /> {t('Reply')}</Button>
         </div>
       )}
     </div>
@@ -572,13 +572,13 @@ function DiffTab({ issue }: { issue: Issue }) {
   if (isLoading) return <Spinner />;
   const merged = issue.repos.filter((r) => r.mergedInto);
   if (!data.length) {
-    return <p className="text-mute">{merged.length ? t('Mesclada ({0}); as branches foram removidas.', merged.map((r) => `${r.name} → ${r.mergedInto}`).join(', ')) : t('Ainda não há alterações.')}</p>;
+    return <p className="text-mute">{merged.length ? t('Merged ({0}); the branches were removed.', merged.map((r) => `${r.name} → ${r.mergedInto}`).join(', ')) : t('No changes yet.')}</p>;
   }
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <span className="text-xs text-mute">{data.length} {t('repositório(s) alterado(s)')}</span>
-        <Button size="sm" variant="ghost" className="ml-auto" loading={isFetching} onClick={() => refetch()}>{t('Atualizar')}</Button>
+        <span className="text-xs text-mute">{data.length} {t('repository(ies) changed')}</span>
+        <Button size="sm" variant="ghost" className="ml-auto" loading={isFetching} onClick={() => refetch()}>{t('Refresh')}</Button>
       </div>
       {data.map((d) => <RepoDiffView key={d.repoId} d={d} />)}
     </div>
@@ -591,7 +591,7 @@ function RepoDiffView({ d }: { d: RepoDiff }) {
     <section>
       <button onClick={() => setOpen(!open)} className="mb-2 flex w-full items-center gap-1.5 text-left font-medium">
         {open ? <ChevronDown className="size-4 text-mute" /> : <ChevronRight className="size-4 text-mute" />} {d.name}
-        {d.pending && <span className="text-xs font-normal text-amber-400">{t('· alterações não commitadas')}</span>}
+        {d.pending && <span className="text-xs font-normal text-amber-400">{t('· uncommitted changes')}</span>}
       </button>
       {open && (
         <div className="space-y-2">
@@ -620,13 +620,13 @@ function RepoDiffView({ d }: { d: RepoDiff }) {
 }
 
 function RunsTable({ runs }: { runs: Run[] }) {
-  if (!runs.length) return <p className="text-mute">{t('Nenhuma execução.')}</p>;
+  if (!runs.length) return <p className="text-mute">{t('No runs.')}</p>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <thead className="text-mute">
           <tr className="border-b border-line">
-            {[t('Quando'), t('Tipo'), t('Agente'), t('Resultado'), t('Duração'), t('Custo'), t('Tokens in / cache / out'), t('Commit')].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}
+            {[t('When'), t('Type'), t('Agent'), t('Result'), t('Duration'), t('Cost'), t('Tokens in / cache / out'), t('Commit')].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -661,8 +661,8 @@ function MergeModal({ issue, onClose }: { issue: Issue; onClose: () => void }) {
     try {
       const res = await api.post<{ conflict: boolean; repos: RepoMerge[]; error?: string }>(`/issues/${issue.id}/merge`, { targets });
       if (res.error) toast('error', res.error);
-      else if (res.conflict) toast('error', t('Conflito em {0}. Nada foi publicado. Use "Resolver conflito com IA".', res.repos.filter((r) => r.conflict).map((r) => r.name).join(', ')));
-      else toast('success', t('Merge feito: {0}', res.repos.map((r) => `${r.name} → ${r.target} (${r.sha})`).join(', ')));
+      else if (res.conflict) toast('error', t('Conflict in {0}. Nothing was published. Use "Resolve conflict with AI".', res.repos.filter((r) => r.conflict).map((r) => r.name).join(', ')));
+      else toast('success', t('Merged: {0}', res.repos.map((r) => `${r.name} → ${r.target} (${r.sha})`).join(', ')));
       onClose();
     } catch (err) {
       toast('error', (err as Error).message);
@@ -674,11 +674,11 @@ function MergeModal({ issue, onClose }: { issue: Issue; onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title={pending.length > 1 ? t('Fazer merge em {0} repositórios', pending.length) : t('Fazer merge')}
-      footer={<><Button variant="ghost" onClick={onClose}>{t('Cancelar')}</Button><Button variant="success" loading={busy} onClick={submit}><GitMerge className="size-3.5" /> {t('Fazer merge')}</Button></>}
+      title={pending.length > 1 ? t('Merge {0} repositories', pending.length) : t('Merge')}
+      footer={<><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="success" loading={busy} onClick={submit}><GitMerge className="size-3.5" /> {t('Merge')}</Button></>}
     >
       <p className="mb-3 text-dim">
-        {t('Merge')} <code className="font-mono text-xs">{t('--no-ff')}</code> {t('de')} <code className="font-mono text-xs">{issue.branch}</code> {t('em cada repositório alterado. Os merges são feitos primeiro no servidor; se algum der conflito,')} <b>{t('nada')}</b> {t('é publicado.')}
+        {t('Merge')} <code className="font-mono text-xs">{t('--no-ff')}</code> {t('of')} <code className="font-mono text-xs">{issue.branch}</code> {t('in every changed repository. Merges happen on the server first; if any conflicts,')} <b>{t('nothing')}</b> {t('is published.')}
       </p>
       <div className="space-y-2">
         {pending.map((r) => (
@@ -693,7 +693,7 @@ function MergeModal({ issue, onClose }: { issue: Issue; onClose: () => void }) {
   );
 }
 
-// Gate trava um controle quando a pessoa não pode alterá-lo aqui (o servidor confere de novo).
+// Gate locks a control when the person can't change it here (the server checks again).
 function Gate({ on, block, children }: { on: boolean; block?: boolean; children: React.ReactNode }) {
   if (on) return <>{children}</>;
   return <div className={clsx('pointer-events-none select-none opacity-60', !block && 'w-full')} aria-disabled>{children}</div>;

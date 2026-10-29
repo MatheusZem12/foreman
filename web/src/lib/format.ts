@@ -2,7 +2,7 @@ import { locale, t } from './i18n';
 export function timeAgo(iso: string | null | undefined): string {
   if (!iso) return '';
   const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return t('agora');
+  if (s < 60) return t('now');
   if (s < 3600) return t('{0} min', Math.floor(s / 60));
   if (s < 86400) return t('{0} h', Math.floor(s / 3600));
   if (s < 86400 * 30) return t('{0} d', Math.floor(s / 86400));

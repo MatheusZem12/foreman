@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// No servidor cada repositório vira um clone bare em data/repos/<id>.git.
-// As issues trabalham em worktrees desse clone e o resultado é publicado no
-// remoto (push da branch da issue; no merge, push da branch de destino).
+// On the server each repository becomes a bare clone in data/repos/<id>.git.
+// Issues work in worktrees of that clone and the result is published to the
+// remote (push of the issue's branch; on merge, push of the target branch).
 
 type gitResult struct {
 	ok     bool
@@ -54,7 +54,7 @@ func mustGit(ctx context.Context, dir string, args ...string) (string, error) {
 
 var credInURL = regexp.MustCompile(`(https?://)[^/@\s]+@`)
 
-// Remove credenciais embutidas em URLs (https://token@host) das mensagens.
+// Removes credentials embedded in URLs (https://token@host) from messages.
 func redact(s string) string { return credInURL.ReplaceAllString(s, "${1}***@") }
 
 func (r *Runner) repoDir(repoID string) string      { return r.cfg.Path("repos", repoID+".git") }
@@ -79,8 +79,8 @@ func (r *Runner) syncRepo(ctx context.Context, repoID, url string) (string, erro
 	return dir, nil
 }
 
-// defaultBranch é a branch padrão do remoto (o HEAD dele), de onde as issues
-// partem quando ninguém escolheu outra.
+// defaultBranch is the remote's default branch (its HEAD), where issues start
+// from when nobody picked another one.
 func defaultBranch(ctx context.Context, dir string) (string, error) {
 	runGit(ctx, dir, "remote", "set-head", "origin", "--auto")
 	for _, ref := range []string{"refs/remotes/origin/HEAD", "HEAD"} {
@@ -88,15 +88,15 @@ func defaultBranch(ctx context.Context, dir string) (string, error) {
 			return b, nil
 		}
 	}
-	return "", errors.New("não deu para descobrir a branch padrão do remoto; escolha a base na issue")
+	return "", errors.New("couldn't find the remote's default branch; choose the base on the issue")
 }
 
 func refExists(ctx context.Context, dir, ref string) bool {
 	return runGit(ctx, dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}").ok
 }
 
-// ensureWorktree cria (ou reaproveita) o worktree da issue. Ordem de origem da
-// branch: local existente → remota existente (execução anterior já publicada) → base.
+// ensureWorktree creates (or reuses) the issue's worktree. The branch's origin, in order:
+// existing local → existing remote (a previous run already published) → base.
 func (r *Runner) ensureWorktree(ctx context.Context, repoDir, wt, branch, base string) (created bool, err error) {
 	if _, err := os.Stat(filepath.Join(wt, ".git")); err == nil {
 		return false, nil
@@ -111,7 +111,7 @@ func (r *Runner) ensureWorktree(ctx context.Context, repoDir, wt, branch, base s
 		_, err = mustGit(ctx, repoDir, "worktree", "add", "-B", branch, wt, "origin/"+branch)
 	default:
 		if !refExists(ctx, repoDir, "refs/remotes/origin/"+base) {
-			return false, fmt.Errorf("a branch base %q não existe no remoto", base)
+			return false, fmt.Errorf("base branch %q doesn't exist on the remote", base)
 		}
 		_, err = mustGit(ctx, repoDir, "worktree", "add", "--no-track", "-B", branch, wt, "origin/"+base)
 	}
@@ -136,7 +136,7 @@ func conflictedFiles(ctx context.Context, dir string) []string {
 	return lines(runGit(ctx, dir, "diff", "--name-only", "--diff-filter=U").stdout)
 }
 
-// Arquivos que ainda têm marcadores de conflito no disco.
+// Files that still have conflict markers on disk.
 func filesWithMarkers(ctx context.Context, dir string, files []string) []string {
 	if len(files) == 0 {
 		return nil
@@ -155,13 +155,13 @@ func lines(s string) []string {
 	return out
 }
 
-// commitAll commita tudo o que ficou no worktree. Se houver merge em
-// andamento, só conclui quando não sobra marcador de conflito.
+// commitAll commits everything left in the worktree. If a merge is in progress,
+// it only concludes when no conflict marker is left.
 func commitAll(ctx context.Context, dir, message, author string) (string, error) {
 	inMerge := mergeInProgress(ctx, dir)
 	if inMerge {
 		if left := filesWithMarkers(ctx, dir, conflictedFiles(ctx, dir)); len(left) > 0 {
-			return "", fmt.Errorf("ainda há marcadores de conflito em: %s", strings.Join(left, ", "))
+			return "", fmt.Errorf("there are still conflict markers in: %s", strings.Join(left, ", "))
 		}
 	} else if !hasChanges(ctx, dir) {
 		return "", nil
@@ -172,7 +172,7 @@ func commitAll(ctx context.Context, dir, message, author string) (string, error)
 	if !inMerge && runGit(ctx, dir, "diff", "--cached", "--quiet").ok {
 		return "", nil
 	}
-	args := []string{"-c", "user.name=" + author, "-c", "user.email=multica@localhost", "commit", "-q", "--no-verify"}
+	args := []string{"-c", "user.name=" + author, "-c", "user.email=foreman@localhost", "commit", "-q", "--no-verify"}
 	if inMerge {
 		args = append(args, "--no-edit")
 	} else {
@@ -196,7 +196,7 @@ type Diff struct {
 	Available bool   `json:"available"`
 }
 
-const maxPatch = 2 << 20 // 2 MB: diffs maiores são cortados na resposta
+const maxPatch = 2 << 20 // 2 MB: larger diffs are cut in the response
 
 func worktreeDiff(ctx context.Context, wt, base string) Diff {
 	ref := "origin/" + base

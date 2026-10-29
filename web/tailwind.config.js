@@ -13,8 +13,8 @@ export default {
         dim: 'rgb(var(--dim) / <alpha-value>)',
         mute: 'rgb(var(--mute) / <alpha-value>)',
         accent: 'rgb(var(--accent) / <alpha-value>)',
-        // "white/x" é a tinta de sobreposição: branca no tema escuro, preta no
-        // claro. Branco de verdade (texto em cima do roxo) é "snow".
+        // "white/x" is the overlay ink: white in the dark theme, black in the
+        // light one. Real white (text on top of the purple) is "snow".
         white: 'rgb(var(--ink) / <alpha-value>)',
         snow: '#ffffff'
       },

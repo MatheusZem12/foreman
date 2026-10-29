@@ -4,8 +4,8 @@ import {
   ShieldCheck, Sparkles, Terminal, Wand2, Wrench, Zap, type LucideIcon
 } from 'lucide-react';
 
-// O avatar do agente é guardado como "ícone:cor" (ex.: "code:violet").
-// Agentes antigos guardavam um emoji; ele é traduzido para o ícone equivalente.
+// The agent's avatar is stored as "icon:color" (e.g. "code:violet").
+// Old agents stored an emoji; it is translated to the equivalent icon.
 export const AGENT_ICONS: Record<string, LucideIcon> = {
   bot: Bot, sparkles: Sparkles, code: Code2, terminal: Terminal, bug: Bug, test: FlaskConical, wrench: Wrench,
   palette: Palette, search: Search, eye: Eye, review: GitPullRequest, shield: ShieldCheck, rocket: Rocket,

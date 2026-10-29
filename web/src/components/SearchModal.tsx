@@ -14,7 +14,7 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
   const [sel, setSel] = useState(0);
   const [results, setResults] = useState<Issue[]>([]);
   const nav = useNavigate();
-  // A busca roda no servidor (título ou número), um instante depois de parar de digitar.
+  // The search runs on the server (title or number), a moment after typing stops.
   useEffect(() => {
     let alive = true;
     const id = setTimeout(() => {
@@ -44,7 +44,7 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
               if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
               if (e.key === 'Enter' && results[sel]) open(results[sel].number);
             }}
-            placeholder={t('Buscar issues…')}
+            placeholder={t('Search issues…')}
             className="h-11 flex-1"
           />
         </div>
@@ -61,7 +61,7 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
               <span className="truncate">{i.title}</span>
             </button>
           ))}
-          {!results.length && <div className="p-6 text-center text-mute">{t('Nada encontrado.')}</div>}
+          {!results.length && <div className="p-6 text-center text-mute">{t('Nothing found.')}</div>}
         </div>
       </div>
     </div>,

@@ -1,4 +1,4 @@
--- Etapa em paralelo: fica ao lado da etapa anterior no fluxo e divide a mesma
--- coluna no quadro (uma embaixo da outra). Ex.: depois de "Prioridade",
--- "Difícil" e "Médio" em paralelo, cada uma recebendo um tipo de issue.
+-- A parallel stage: it sits next to the previous stage in the workflow and shares the same
+-- board column (one under the other). E.g. after "Priority", "Hard" and "Medium" in
+-- parallel, each receiving one kind of issue.
 alter table stages add column parallel boolean not null default false;

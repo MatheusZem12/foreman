@@ -1,5 +1,5 @@
--- Preferências de visualização de cada pessoa (ex.: a arrumação do quadro de
--- um workspace). Só aparência: nada aqui muda regra, etapa ou permissão.
+-- Each person's view preferences (e.g. how a workspace's board is arranged). Looks only:
+-- nothing here changes a rule, a stage or a permission.
 create table user_prefs (
   user_id    uuid not null references users(id) on delete cascade,
   key        text not null,

@@ -19,7 +19,7 @@ import type { Agent, Issue, Label, Status } from '../lib/types';
 import { AgentIcon } from '../components/AgentIcon';
 import { t } from '../lib/i18n';
 
-// Marca o fim de um arraste: o clique que vem logo depois não deve abrir a issue.
+// Marks the end of a drag: the click right after it must not open the issue.
 let lastDragEnd = 0;
 type View = 'board' | 'list';
 
@@ -34,12 +34,12 @@ function writePref(key: string, v: string) {
   try {
     localStorage.setItem(key, v);
   } catch {
-    /* sem storage */
+    /* no storage */
   }
 }
 
-// A exibição do quadro é de cada pessoa, por workspace (lado a lado ou em
-// grade). A ORDEM das colunas vem só do fluxo: muda em Fluxo e automações.
+// The board's display belongs to each person, per workspace (side by side or in a
+// grid). The column ORDER comes only from the workflow: it changes in Workflow & automations.
 type BoardLayout = { mode: 'side' | 'grid'; perRow: number };
 const DEFAULT_LAYOUT: BoardLayout = { mode: 'side', perRow: 3 };
 
@@ -55,14 +55,14 @@ function useBoardLayout(wsId: string) {
   const save = (patch: Partial<BoardLayout>) => {
     const next = { ...layout, ...patch };
     qc.setQueryData(key, next);
-    api.put(`/me/prefs/board:${wsId}`, next).catch(() => { /* fica só nesta sessão */ });
+    api.put(`/me/prefs/board:${wsId}`, next).catch(() => { /* stays in this session only */ });
   };
   return [layout, save] as const;
 }
 
-// No modo lado a lado, a roda do mouse anda para os lados (a menos que esteja
-// sobre uma coluna que rola na vertical). Arrastar o fundo não rola: segurar
-// e arrastar é só para mover cartões; no celular, o dedo rola como sempre.
+// In side-by-side mode, the mouse wheel moves sideways (unless it is over a column
+// that scrolls vertically). Dragging the background doesn't scroll: holding and
+// dragging is only for moving cards; on phones, the finger scrolls as usual.
 function useSideScroll(el: HTMLDivElement | null) {
   useEffect(() => {
     if (!el) return;
@@ -79,16 +79,16 @@ function useSideScroll(el: HTMLDivElement | null) {
 }
 
 const SORTS: [BoardSort, () => string][] = [
-  ['manual', () => t('Manual (arrastar)')],
-  ['newest', () => t('Mais novas')],
-  ['oldest', () => t('Mais antigas')],
-  ['updated', () => t('Atualização')],
-  ['priority', () => t('Prioridade')]
+  ['manual', () => t('Manual (drag)')],
+  ['newest', () => t('Newest')],
+  ['oldest', () => t('Oldest')],
+  ['updated', () => t('Last updated')],
+  ['priority', () => t('Priority')]
 ];
 
 // Ordem de cada etapa, de cada pessoa (neste navegador). Encerradas: as mais recentes.
 function useStageSorts(wsId: string) {
-  const key = `mx.sorts.${wsId}`;
+  const key = `foreman.sorts.${wsId}`;
   const [sorts, setSorts] = useState<Record<string, BoardSort>>(() => {
     try {
       return JSON.parse(localStorage.getItem(key) ?? '{}');
@@ -122,12 +122,12 @@ export function Board() {
   const qc = useQueryClient();
   const toast = useToast();
 
-  const [view, setView] = useState<View>(() => readPref('mx.view', 'board'));
+  const [view, setView] = useState<View>(() => readPref('foreman.view', 'board'));
   const [who, setWho] = useState<'all' | 'mine' | string>('all');
   const [params] = useSearchParams();
   const [labelFilter, setLabelFilter] = useState<string | null>(() => params.get('label'));
   const [text, setText] = useState('');
-  // Filtros e busca vão para o servidor; o quadro só traz as primeiras de cada etapa.
+  // Filters and search go to the server; the board only brings the first of each stage.
   const q = useDebounced(text.trim(), 300);
   const filters: BoardFilters = { q, who, label: labelFilter ?? '' };
   const [sorts, sortOf, setSort] = useStageSorts(ws.id);
@@ -146,7 +146,7 @@ export function Board() {
       setLoading((l) => ({ ...l, [stage]: false }));
     }
   };
-  // Trocar a ordem de uma etapa recarrega só ela, com o tanto que já estava carregado.
+  // Changing a stage's order reloads only that stage, with as many as were loaded.
   const changeSort = async (stage: string, sort: BoardSort) => {
     setSort(stage, sort);
     const have = (issues ?? []).filter((i) => i.status === stage).length;
@@ -225,19 +225,19 @@ export function Board() {
       list = byStatus[status].filter((i) => i.id !== issue.id);
       index = list.findIndex((i) => i.id === over.id);
     }
-    // Posição entre os vizinhos: um único UPDATE, sem renumerar a coluna.
+    // Position between the neighbours: a single UPDATE, without renumbering the column.
     const before = list[index - 1]?.position;
     const after = list[index]?.position;
     const position =
       before === undefined && after === undefined ? 0 : before === undefined ? after! - 1024 : after === undefined ? before + 1024 : (before + after) / 2;
     if (status === issue.status && position === issue.position) return;
-    if (sortOf(status) !== 'manual' && status === issue.status) return; // reordenar só vale na ordem manual
+    if (sortOf(status) !== 'manual' && status === issue.status) return; // reordering only applies to the manual order
     move(issue, status, position);
   };
 
-  // Etapas que encerram como cancelada ficam escondidas, a não ser que a pessoa peça.
+  // Stages that close as cancelled stay hidden, unless the person asks for them.
   const columns = STATUSES.filter((s) => s.closes !== 'cancelled' || showCancelled).map((s) => s.id);
-  // Etapas em paralelo dividem a mesma coluna, uma embaixo da outra.
+  // Parallel stages share the same column, one under the other.
   const groups = stageGroups(STATUSES.filter((s) => columns.includes(s.id))).map((g) => g.map((s) => s.id));
 
   return (
@@ -246,8 +246,8 @@ export function Board() {
         <h1 className="mr-2 hidden text-[15px] font-semibold tracking-tight md:block">{t('Issues')}</h1>
         <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
           {[
-            ['all', t('Todas')],
-            ['mine', t('Minhas')]
+            ['all', t('All')],
+            ['mine', t('Mine')]
           ].map(([id, label]) => (
             <button key={id} onClick={() => setWho(id)} className={clsx('rounded-md px-2.5 py-1 text-xs transition', who === id ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{label}</button>
           ))}
@@ -255,39 +255,39 @@ export function Board() {
         </div>
         <div className="relative hidden sm:block">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('Filtrar…')} className="field-input h-8 w-52 py-1 pl-8" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('Filter…')} className="field-input h-8 w-52 py-1 pl-8" />
         </div>
         <LabelFilter labels={labels} value={labelFilter} onChange={setLabelFilter} />
         <div className="ml-auto flex items-center gap-1.5">
           <span className={clsx('hidden items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs sm:flex', working ? 'text-amber-400' : 'text-mute')}>
-            <span className={clsx('size-1.5 rounded-full', working ? 'animate-pulse-soft bg-amber-400' : 'bg-mute')} /> {working} {working === 1 ? t('agente trabalhando') : t('agentes trabalhando')}
+            <span className={clsx('size-1.5 rounded-full', working ? 'animate-pulse-soft bg-amber-400' : 'bg-mute')} /> {working} {working === 1 ? t('agent working') : t('agents working')}
           </span>
           <Popover
             align="right"
-            trigger={() => <Chip><ListFilter className="size-3.5" /> <span className="hidden sm:inline">{t('Exibir')}</span></Chip>}
+            trigger={() => <Chip><ListFilter className="size-3.5" /> <span className="hidden sm:inline">{t('View')}</span></Chip>}
           >
             {() => (
               <>
-                <MenuItem selected={showCancelled} onClick={() => setShowCancelled(!showCancelled)}>{t('Mostrar canceladas')}</MenuItem>
+                <MenuItem selected={showCancelled} onClick={() => setShowCancelled(!showCancelled)}>{t('Show cancelled')}</MenuItem>
                 <div className="my-1 border-t border-line" />
-                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Colunas (só para você)')}</div>
-                <MenuItem selected={layout.mode === 'side'} onClick={() => saveLayout({ mode: 'side' })}>{t('Lado a lado')}</MenuItem>
-                <MenuItem selected={layout.mode === 'grid'} onClick={() => saveLayout({ mode: 'grid' })}>{t('Uma embaixo da outra')}</MenuItem>
+                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Columns (just for you)')}</div>
+                <MenuItem selected={layout.mode === 'side'} onClick={() => saveLayout({ mode: 'side' })}>{t('Side by side')}</MenuItem>
+                <MenuItem selected={layout.mode === 'grid'} onClick={() => saveLayout({ mode: 'grid' })}>{t('Stacked')}</MenuItem>
                 {layout.mode === 'grid' && (
                   <div className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-mute">
-                    {t('Por linha')}
+                    {t('Per row')}
                     {[1, 2, 3, 4].map((n) => (
                       <button key={n} onClick={() => saveLayout({ perRow: n })} className={clsx('ml-1 rounded-md px-2 py-0.5', layout.perRow === n ? 'bg-white/10 text-fg' : 'hover:text-fg')}>{n}</button>
                     ))}
                   </div>
                 )}
-                <div className="px-2.5 pb-1 pt-0.5 text-[11px] leading-snug text-mute">{t('A ordem das colunas segue o fluxo (Fluxo e automações).')}</div>
+                <div className="px-2.5 pb-1 pt-0.5 text-[11px] leading-snug text-mute">{t('Column order follows the workflow (Workflow & automations).')}</div>
               </>
             )}
           </Popover>
           <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
-            <button onClick={() => { setView('board'); writePref('mx.view', 'board'); }} className={clsx('rounded-md p-1.5', view === 'board' ? 'bg-white/10 text-fg' : 'text-mute')} title={t('Quadro')}><Columns3 className="size-3.5" /></button>
-            <button onClick={() => { setView('list'); writePref('mx.view', 'list'); }} className={clsx('rounded-md p-1.5', view === 'list' ? 'bg-white/10 text-fg' : 'text-mute')} title={t('Lista')}><List className="size-3.5" /></button>
+            <button onClick={() => { setView('board'); writePref('foreman.view', 'board'); }} className={clsx('rounded-md p-1.5', view === 'board' ? 'bg-white/10 text-fg' : 'text-mute')} title={t('Board')}><Columns3 className="size-3.5" /></button>
+            <button onClick={() => { setView('list'); writePref('foreman.view', 'list'); }} className={clsx('rounded-md p-1.5', view === 'list' ? 'bg-white/10 text-fg' : 'text-mute')} title={t('List')}><List className="size-3.5" /></button>
           </div>
         </div>
       </div>
@@ -338,7 +338,7 @@ function AgentFilter({ agents, value, onChange }: { agents: Agent[]; value: stri
   return (
     <Popover
       trigger={() => (
-        <button className={clsx('rounded-md px-2.5 py-1 text-xs transition', current ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{current ? <span className="inline-flex items-center gap-1.5"><AgentIcon avatar={current.avatar} size={14} />{current.name}</span> : t('Agentes')}</button>
+        <button className={clsx('rounded-md px-2.5 py-1 text-xs transition', current ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{current ? <span className="inline-flex items-center gap-1.5"><AgentIcon avatar={current.avatar} size={14} />{current.name}</span> : t('Agents')}</button>
       )}
     >
       {(close) =>
@@ -359,7 +359,7 @@ function LabelFilter({ labels, value, onChange }: { labels: Label[]; value: stri
     <Popover trigger={() => <Chip className={current ? 'text-fg' : ''}>{current ? <><span className="size-2 rounded-full" style={{ background: current.color }} />{current.name}</> : t('Label')}</Chip>}>
       {(close) => (
         <>
-          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}>{t('Todas')}</MenuItem>
+          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}>{t('All')}</MenuItem>
           {labels.map((l) => (
             <MenuItem key={l.id} selected={l.id === value} onClick={() => { onChange(l.id); close(); }}>
               <span className="size-2 rounded-full" style={{ background: l.color }} /> {l.name}
@@ -377,12 +377,12 @@ function Column({ status, issues, total, sort, loading, onSort, onMore, agents, 
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${status}` });
   const s = statusOf(status);
-  // Chegou perto do fim da coluna: busca a próxima página só desta etapa.
+  // Got near the end of the column: fetch the next page of this stage only.
   const sentinel = useRef<HTMLDivElement>(null);
   const more = issues.length < total;
   const latest = useRef(onMore);
   latest.current = onMore;
-  // Recria o observador quando a página termina: se o fim continuar visível, busca a próxima.
+  // Recreates the observer when the page finishes: if the end is still visible, fetch the next.
   useEffect(() => {
     const el = sentinel.current;
     if (!el || !more || loading) return;
@@ -402,27 +402,27 @@ function Column({ status, issues, total, sort, loading, onSort, onMore, agents, 
       <header data-col-head className="flex items-center gap-2 px-3.5 py-3">
         <StatusIcon status={status} />
         <span className="font-medium">{s.label}</span>
-        {s.parallel && <span className="rounded bg-white/[0.06] px-1 text-[10px] text-mute" title={t('Em paralelo com a etapa de cima')}>{t('paralela')}</span>}
-        <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute" title={more ? t('{0} carregadas de {1}', issues.length, total) : undefined}>{total}</span>
+        {s.parallel && <span className="rounded bg-white/[0.06] px-1 text-[10px] text-mute" title={t('In parallel with the stage above')}>{t('parallel')}</span>}
+        <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute" title={more ? t('{0} loaded of {1}', issues.length, total) : undefined}>{total}</span>
         <Popover align="right" trigger={() => (
-          <button className={clsx('ml-auto rounded p-1 hover:bg-hover hover:text-fg', sort === 'manual' ? 'text-mute' : 'text-accent')} title={t('Ordem desta etapa: {0}', SORTS.find(([k]) => k === sort)![1]())}><ArrowUpDown className="size-3.5" /></button>
+          <button className={clsx('ml-auto rounded p-1 hover:bg-hover hover:text-fg', sort === 'manual' ? 'text-mute' : 'text-accent')} title={t('This stage\'s order: {0}', SORTS.find(([k]) => k === sort)![1]())}><ArrowUpDown className="size-3.5" /></button>
         )}>
           {(close) => (
             <>
-              <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Ordem desta etapa')}</div>
+              <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('This stage\'s order')}</div>
               {SORTS.map(([k, label]) => <MenuItem key={k} selected={sort === k} onClick={() => { onSort(k); close(); }}>{label()}</MenuItem>)}
             </>
           )}
         </Popover>
-        <button onClick={onAdd} className="rounded p-1 text-mute hover:bg-hover hover:text-fg" title={t('Nova issue nesta coluna')}><Plus className="size-3.5" /></button>
+        <button onClick={onAdd} className="rounded p-1 text-mute hover:bg-hover hover:text-fg" title={t('New issue in this column')}><Plus className="size-3.5" /></button>
       </header>
       <div data-col-body className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2.5">
         {issues.map((i) => <Card key={i.id} issue={i} agents={agents} labels={labels} />)}
-        {!issues.length && <div className="mx-1 rounded-xl border border-dashed border-white/[0.07] py-8 text-center text-xs text-mute">{t('Arraste uma issue para cá')}</div>}
+        {!issues.length && <div className="mx-1 rounded-xl border border-dashed border-white/[0.07] py-8 text-center text-xs text-mute">{t('Drag an issue here')}</div>}
         {more && (
           <div ref={sentinel}>
             <button onClick={onMore} disabled={loading} className="w-full rounded-lg py-2 text-xs text-mute hover:bg-white/[0.04] hover:text-fg">
-              {loading ? <Spinner /> : t('Carregar mais ({0} de {1})', issues.length, total)}
+              {loading ? <Spinner /> : t('Load more ({0} of {1})', issues.length, total)}
             </button>
           </div>
         )}
@@ -431,8 +431,8 @@ function Column({ status, issues, total, sort, loading, onSort, onMore, agents, 
   );
 }
 
-// Inclina o cartão arrastado na direção do movimento, proporcional à velocidade,
-// e volta a ficar reto quando o ponteiro para.
+// Tilts the dragged card in the direction of movement, in proportion to the speed,
+// and straightens it again when the pointer stops.
 function Tilt({ children }: { children: React.ReactNode }) {
   const el = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -494,13 +494,13 @@ function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[
     >
       <div className="flex items-center gap-1.5 text-[11px] text-mute">
         <span className="font-mono">{ws.key}-{issue.number}</span>
-        {running && <span className="flex items-center gap-1 rounded-full bg-amber-400/10 px-1.5 text-amber-300"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {t('trabalhando')}</span>}
+        {running && <span className="flex items-center gap-1 rounded-full bg-amber-400/10 px-1.5 text-amber-300"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {t('working')}</span>}
         <span className="ml-auto"><PriorityIcon priority={issue.priority} /></span>
       </div>
       <div className="mt-1.5 font-medium leading-snug">{issue.title}</div>
       {issue.labelIds.length > 0 && <div className="mt-1.5"><LabelDots ids={issue.labelIds} labels={labels} /></div>}
       <div className="mt-2 flex items-center gap-1.5 text-[11px] text-mute">
-        {agent ? <><AgentIcon avatar={agent.avatar} size={16} /><span className="truncate">{agent.name}</span></> : <span>{t('Sem agente')}</span>}
+        {agent ? <><AgentIcon avatar={agent.avatar} size={16} /><span className="truncate">{agent.name}</span></> : <span>{t('No agent')}</span>}
         {issue.costUsd > 0 && <span>· {money(issue.costUsd)}</span>}
         <span className="ml-auto shrink-0">{timeAgo(issue.updatedAt)}</span>
       </div>
@@ -538,13 +538,13 @@ function ListView({ byStatus, columns, agents, labels, counts, loading, onMore }
             })}
             {byStatus[s].length < (counts[s] ?? 0) && (
               <button onClick={() => onMore(s)} disabled={loading[s]} className="w-full border-b border-line/50 py-2 text-xs text-mute hover:bg-hover hover:text-fg">
-                {loading[s] ? <Spinner /> : t('Carregar mais ({0} de {1})', byStatus[s].length, counts[s])}
+                {loading[s] ? <Spinner /> : t('Load more ({0} of {1})', byStatus[s].length, counts[s])}
               </button>
             )}
           </div>
         ) : null
       )}
-      {columns.every((s) => !byStatus[s].length) && <div className="p-10 text-center text-mute">{t('Nenhuma issue. Aperte')} <kbd className="rounded border border-line px-1">{t('C')}</kbd> {t('para criar.')}</div>}
+      {columns.every((s) => !byStatus[s].length) && <div className="p-10 text-center text-mute">{t('No issues. Press')} <kbd className="rounded border border-line px-1">{t('C')}</kbd> {t('to create one.')}</div>}
     </div>
   );
 }

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Toda leitura de issue passa por aqui para trazer os campos calculados.
+// Every issue read goes through here to bring the computed fields.
 const issueSelect = `select i.*,
 	(select r.id::text from runs r where r.issue_id = i.id and r.status in ('queued','running') order by r.created_at desc limit 1) as active_run,
 	coalesce((select sum(r.cost_usd) from runs r where r.issue_id = i.id), 0)::float8 as cost_usd,
@@ -24,8 +24,8 @@ const issueSelect = `select i.*,
 	coalesce((select array_agg(a.user_id::text) from issue_approvals a where a.issue_id = i.id and a.stage = i.status), '{}') as approvals
 	from issues i`
 
-// IssueRepo é um repositório no escopo da issue, com as branches dele e o
-// estado do merge. changed = a IA alterou este repositório.
+// IssueRepo is a repository in the issue's scope, with its branches and the merge
+// state. changed = the AI changed this repository.
 type IssueRepo struct {
 	RepoID       string `json:"repoId"`
 	Name         string `json:"name"`
@@ -57,21 +57,21 @@ func Slugify(s string, max int) string {
 	return t
 }
 
-// IssueQuery: uma página de issues (do quadro, da lista ou da busca). O quadro
-// nunca carrega tudo: pede as primeiras de cada etapa e depois, etapa por
-// etapa, mais um pedaço quando a pessoa rola.
+// IssueQuery: a page of issues (from the board, the list or the search). The board never
+// loads everything: it asks for the first ones of each stage and then, stage by stage,
+// one more chunk when the person scrolls.
 type IssueQuery struct {
 	Stage  string // vazio = todas as etapas (busca)
 	Sort   string // manual | newest | oldest | updated | priority
 	Offset int
 	Limit  int
-	Q      string // título, número (ex.: 42 ou LOJA-42) ou descrição
-	Who    string // "" = todas | mine = criadas por UserID | id de um agente
+	Q      string // title, number (e.g. 42 or SHOP-42) or description
+	Who    string // "" = all | mine = created by UserID | an agent's id
 	Label  string
 	UserID string
 }
 
-// Ordens possíveis (todas com desempate pelo número, para a paginação ser estável).
+// Possible orders (all with the number as a tie-break, so pagination is stable).
 var issueOrder = map[string]string{
 	"manual":   "i.position, i.number desc",
 	"newest":   "i.created_at desc, i.number desc",
@@ -110,7 +110,7 @@ func (q IssueQuery) where(wsID string) (string, []any) {
 	return strings.Join(conds, " and "), args
 }
 
-// PageIssues: uma página na ordem pedida.
+// PageIssues: one page in the requested order.
 func (s *Store) PageIssues(ctx context.Context, wsID string, q IssueQuery) ([]Issue, error) {
 	order, ok := issueOrder[q.Sort]
 	if !ok {
@@ -125,7 +125,7 @@ func (s *Store) PageIssues(ctx context.Context, wsID string, q IssueQuery) ([]Is
 		fmt.Sprintf(` limit $%d offset $%d`, len(args)-1, len(args)), args...)
 }
 
-// StageCounts: quantas issues cada etapa tem com os mesmos filtros (o total da coluna).
+// StageCounts: how many issues each stage has with the same filters (the column's total).
 func (s *Store) StageCounts(ctx context.Context, wsID string, q IssueQuery) (map[string]int, error) {
 	q.Stage = ""
 	where, args := q.where(wsID)
@@ -144,7 +144,7 @@ func (s *Store) StageCounts(ctx context.Context, wsID string, q IssueQuery) (map
 	return out, rows.Err()
 }
 
-// Working: issues com o agente trabalhando agora (o contador do quadro e do menu).
+// Working: issues with the agent working right now (the board's and the menu's counter).
 func (s *Store) Working(ctx context.Context, wsID string) int {
 	var n int
 	s.DB.QueryRow(ctx, `select count(distinct r.issue_id) from runs r join issues i on i.id = r.issue_id
@@ -167,7 +167,7 @@ type NewIssue struct {
 	Priority    int16   `json:"priority"`
 	AgentID     *string `json:"agentId"`
 	AssigneeID  *string `json:"assigneeId"`
-	// Vazio = todos os repositórios do workspace (a IA escolhe onde mexer).
+	// Empty = every repository of the workspace (the AI picks where to work).
 	RepoIDs  []string `json:"repoIds"`
 	LabelIDs []string `json:"labelIds"`
 	SkillIDs []string `json:"skillIds"`
@@ -184,7 +184,7 @@ func (s *Store) CreateIssue(ctx context.Context, wsID, userID string, in NewIssu
 	if err := tx.QueryRow(ctx, `update workspaces set issue_seq = issue_seq + 1 where id = $1 returning issue_seq, key`, wsID).Scan(&number, &key); err != nil {
 		return nil, err
 	}
-	branch := fmt.Sprintf("mx/%s-%d-%s", strings.ToLower(key), number, Slugify(in.Title, 32))
+	branch := fmt.Sprintf("fm/%s-%d-%s", strings.ToLower(key), number, Slugify(in.Title, 32))
 	var id string
 	// Nova issue entra no topo da coluna.
 	err = tx.QueryRow(ctx, `insert into issues(workspace_id, number, title, description, status, priority, position, agent_id,
@@ -221,7 +221,7 @@ func nilIfEmpty(s string) *string {
 	return &s
 }
 
-// Campos que o usuário pode alterar direto (o resto muda pelo fluxo de execução).
+// Fields the user can change directly (the rest changes through the run flow).
 var editableIssueCols = map[string]string{
 	"title": "title", "description": "description", "status": "status", "priority": "priority",
 	"position": "position", "agentId": "agent_id", "labelIds": "label_ids", "skillIds": "skill_ids", "summary": "summary",
@@ -271,7 +271,7 @@ func (s *Store) PatchIssue(ctx context.Context, id string, patch map[string]any)
 	return is, err
 }
 
-// SetIssueFields é usado pelo runner (status, resumo, merge) sem passar pelo filtro de campos editáveis.
+// SetIssueFields is used by the runner (status, summary, merge) without going through the editable-fields filter.
 func (s *Store) SetIssueStatus(ctx context.Context, id, status string) error {
 	var from string
 	err := s.DB.QueryRow(ctx, `update issues i set status = $2, updated_at = now()
@@ -288,16 +288,16 @@ func (s *Store) SetIssueSummary(ctx context.Context, id, summary string) error {
 	return err
 }
 
-// ---------- repositórios da issue ----------
+// ---------- the issue's repositories ----------
 
-// RepoScope é um repositório da issue com tudo o que o runner precisa.
+// RepoScope is one of the issue's repositories with everything the runner needs.
 type RepoScope struct {
 	Repo
 	IssueRepo IssueRepo
 }
 
-// SyncIssueRepos: issue em "todos os repositórios" ganha os que foram
-// adicionados ao workspace depois que ela foi criada.
+// SyncIssueRepos: an issue on "all repositories" gets the ones added to the workspace
+// after it was created.
 func (s *Store) SyncIssueRepos(ctx context.Context, issueID string) error {
 	_, err := s.DB.Exec(ctx, `insert into issue_repos(issue_id, repo_id)
 		select i.id, r.id from issues i join repos r on r.workspace_id = i.workspace_id
@@ -336,14 +336,14 @@ func (s *Store) IssueRepos(ctx context.Context, issueID string) ([]RepoScope, er
 	return out, nil
 }
 
-// RepoChoice é a escolha de um repositório e suas branches para a issue.
+// RepoChoice is the choice of a repository and its branches for the issue.
 type RepoChoice struct {
 	RepoID       string `json:"repoId"`
 	BaseBranch   string `json:"baseBranch"`
 	TargetBranch string `json:"targetBranch"`
 }
 
-// SetIssueRepos troca o escopo. Repositórios que a IA já alterou não saem.
+// SetIssueRepos replaces the scope. Repositories the AI already changed don't leave.
 func (s *Store) SetIssueRepos(ctx context.Context, issueID string, all bool, choices []RepoChoice) error {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -382,8 +382,8 @@ func (s *Store) SetIssueRepos(ctx context.Context, issueID string, all bool, cho
 	return tx.Commit(ctx)
 }
 
-// SetRepoBranches grava as branches resolvidas na primeira execução (a padrão
-// do remoto), sem passar por cima do que já foi escolhido na issue.
+// SetRepoBranches saves the branches resolved on the first run (the remote's default),
+// without overriding what was already chosen on the issue.
 func (s *Store) SetRepoBranches(ctx context.Context, issueID, repoID, base, target string) error {
 	_, err := s.DB.Exec(ctx, `update issue_repos set base_branch = coalesce(nullif(base_branch, ''), $3),
 		target_branch = coalesce(nullif(target_branch, ''), $4) where issue_id = $1 and repo_id = $2`, issueID, repoID, base, target)
@@ -407,7 +407,7 @@ func (s *Store) SetRepoMerged(ctx context.Context, issueID, repoID, target, sha 
 	return err
 }
 
-// Repositório novo entra nas issues abertas que trabalham com "todos".
+// A new repository joins the open issues that work with "all".
 func (s *Store) AddRepoToOpenIssues(ctx context.Context, repo *Repo) error {
 	_, err := s.DB.Exec(ctx, `insert into issue_repos(issue_id, repo_id)
 		select i.id, $1 from issues i
@@ -421,7 +421,7 @@ func (s *Store) DeleteIssue(ctx context.Context, id string) error {
 	return err
 }
 
-// ---------- execuções ----------
+// ---------- runs ----------
 
 func (s *Store) CreateRun(ctx context.Context, issue *Issue, agent *Agent, kind, request string, userID *string, holdStage bool) (*Run, error) {
 	return one[Run](ctx, s, `insert into runs(issue_id, workspace_id, agent_id, agent_name, runtime, model, kind, request, created_by, hold_stage)
@@ -429,7 +429,7 @@ func (s *Store) CreateRun(ctx context.Context, issue *Issue, agent *Agent, kind,
 		issue.ID, issue.WorkspaceID, agent.ID, agent.Name, agent.Runtime, agent.Model, kind, request, userID, holdStage)
 }
 
-// ClaimNextRun pega a execução mais antiga da fila de forma atômica.
+// ClaimNextRun atomically takes the oldest run in the queue.
 func (s *Store) ClaimNextRun(ctx context.Context) (*Run, error) {
 	return one[Run](ctx, s, `update runs set status = 'running', started_at = now()
 		where id = (select id from runs where status = 'queued' order by created_at limit 1 for update skip locked)
@@ -469,9 +469,9 @@ func (s *Store) CancelQueuedRun(ctx context.Context, id string) (bool, error) {
 	return tag.RowsAffected() > 0, err
 }
 
-// RecoverInterrupted marca como falha o que estava rodando quando o servidor caiu.
+// RecoverInterrupted marks as failed whatever was running when the server went down.
 func (s *Store) RecoverInterrupted(ctx context.Context) ([]string, error) {
-	rows, err := s.DB.Query(ctx, `update runs set status = 'failed', error = 'Interrompida: o servidor reiniciou durante a execução.', ended_at = now()
+	rows, err := s.DB.Query(ctx, `update runs set status = 'failed', error = 'Interrupted: the server restarted during the run.', ended_at = now()
 		where status = 'running' returning issue_id::text`)
 	if err != nil {
 		return nil, err
@@ -494,7 +494,7 @@ func (s *Store) Events(ctx context.Context, runID string) ([]RunEvent, error) {
 	return many[RunEvent](ctx, s, `select * from run_events where run_id = $1 order by id`, runID)
 }
 
-// ---------- comentários ----------
+// ---------- comments ----------
 
 func (s *Store) ListComments(ctx context.Context, issueID string) ([]Comment, error) {
 	return many[Comment](ctx, s, `select * from comments where issue_id = $1 order by created_at`, issueID)
@@ -537,11 +537,11 @@ type MonthPoint struct {
 }
 
 type IssueStats struct {
-	Created         int64   `json:"created"`         // criadas no período
-	Resolved        int64   `json:"resolved"`        // concluídas no período
+	Created         int64   `json:"created"`         // created in the period
+	Resolved        int64   `json:"resolved"`        // done in the period
 	Open            int64   `json:"open"`            // abertas agora
-	AvgResolveHours float64 `json:"avgResolveHours"` // criação → conclusão, das concluídas no período
-	MedResolveHours float64 `json:"medResolveHours"` // mediana (não se deixa levar por uma issue esquecida)
+	AvgResolveHours float64 `json:"avgResolveHours"` // creation → done, of the ones done in the period
+	MedResolveHours float64 `json:"medResolveHours"` // median (a forgotten issue doesn't skew it)
 }
 
 // PriorityPoint: custo e tempo por prioridade da issue.
@@ -550,10 +550,10 @@ type PriorityPoint struct {
 	Issues     int64   `json:"issues"`
 	Runs       int64   `json:"runs"`
 	CostUSD    float64 `json:"costUsd"`
-	AvgSeconds float64 `json:"avgSeconds"` // tempo médio de execução do agente
+	AvgSeconds float64 `json:"avgSeconds"` // the agent's average run time
 }
 
-// StageTime: quanto tempo, em média, as issues ficam em cada etapa.
+// StageTime: how long, on average, issues stay in each stage.
 type StageTime struct {
 	Stage    string  `json:"stage"`
 	Name     string  `json:"name"`
@@ -600,7 +600,7 @@ type Analytics struct {
 	Models  []ModelPoint  `json:"models"`
 	Users   []UserPoint   `json:"users"`
 	Top     []TopIssue    `json:"top"`
-	// Desempenho: por prioridade, por quem criou a issue e por etapa.
+	// Performance: per priority, per issue creator and per stage.
 	Priorities []PriorityPoint `json:"priorities"`
 	Creators   []UserPoint     `json:"creators"`
 	StageTimes []StageTime     `json:"stageTimes"`
@@ -616,12 +616,12 @@ type KindTime struct {
 	AvgHours float64 `json:"avgHours"`
 }
 
-// Tipos de etapa, tirados das regras de cada workspace (nada fixo por etapa):
-//   - ai: o agente trabalha ali (destino de "agente começou" ou passo "rodar agente e esperar");
-//   - people: esperando alguém responder (destino de "a IA precisa de você");
-//   - approval: tem regra de aprovação;
-//   - closed: tem regra "Encerrar a issue";
-//   - queue: o resto (fila, trabalho manual).
+// Stage types, taken from each workspace's rules (nothing fixed per stage):
+//   - ai: the agent works there (target of "agent started" or of a "run agent and wait" step);
+//   - people: waiting for someone to answer (target of "the AI needs you");
+//   - approval: has an approval rule;
+//   - closed: has a "Close the issue" rule;
+//   - queue: the rest (queue, manual work).
 func (s *Store) stageKinds(ctx context.Context, wsIDs []string) map[string]string {
 	out := map[string]string{}
 	rows, err := s.DB.Query(ctx, `select workspace_id::text, stage, trigger, action, config, conditions from rules
@@ -677,29 +677,29 @@ func kindKeys(kinds map[string]string, kind string) []string {
 	return keys
 }
 
-// PersonStat: o desempenho de cada pessoa no período.
+// PersonStat: each person's performance in the period.
 type PersonStat struct {
 	UserID       string  `json:"userId"`
 	Name         string  `json:"name"`
-	Created      int64   `json:"created"`      // issues que criou
-	OpenAssigned int64   `json:"openAssigned"` // abertas com ela de responsável, agora
-	Resolved     int64   `json:"resolved"`     // com ela de responsável, concluídas no período
-	ResolveHours float64 `json:"resolveHours"` // média criação → conclusão dessas
+	Created      int64   `json:"created"`      // issues they created
+	OpenAssigned int64   `json:"openAssigned"` // open with them as assignee, now
+	Resolved     int64   `json:"resolved"`     // with them as assignee, done in the period
+	ResolveHours float64 `json:"resolveHours"` // average creation → done of those
 	Comments     int64   `json:"comments"`
 	Approvals    int64   `json:"approvals"`
-	Runs         int64   `json:"runs"` // pedidos ao agente
+	Runs         int64   `json:"runs"` // requests to the agent
 	CostUSD      float64 `json:"costUsd"`
-	ReplyHours   float64 `json:"replyHours"` // quanto as issues dela ficam esperando alguém (etapas "people")
+	ReplyHours   float64 `json:"replyHours"` // how long their issues wait for someone ("people" stages)
 }
 
 const totalsCols = `coalesce(sum(cost_usd),0)::float8, coalesce(sum(input_tokens),0)::int8, coalesce(sum(cached_tokens),0)::int8,
 	coalesce(sum(output_tokens),0)::int8, coalesce(sum(extract(epoch from (coalesce(ended_at, now()) - started_at))),0)::float8,
 	count(*), count(*) filter (where status = 'failed')`
 
-// wsIDs nil = todos os workspaces; lista vazia = nenhum.
-// Analytics: números dos workspaces informados (nil = todos). person, quando
-// informado, recorta para "os números dessa pessoa": issues que ela criou ou
-// de que é responsável, as execuções delas e as que ela pediu.
+// nil wsIDs = all workspaces; an empty list = none.
+// Analytics: numbers of the given workspaces (nil = all). person, when given, narrows to
+// "that person's numbers": issues they created or are the assignee of, their runs and
+// the ones they requested.
 func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int, person string) (*Analytics, error) {
 	who := nilIfEmpty(person)
 	since := time.Now().AddDate(0, 0, -days)
@@ -737,7 +737,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int, person 
 	}
 	rows.Close()
 
-	// Últimos 12 meses, sempre (independe do período escolhido).
+	// The last 12 months, always (regardless of the chosen period).
 	rows, err = s.DB.Query(ctx, `with m as (
 			select generate_series(date_trunc('month', now()) - interval '11 months', date_trunc('month', now()), interval '1 month') as month)
 		select to_char(m.month, 'YYYY-MM'),
@@ -832,7 +832,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int, person 
 	return out, rows.Err()
 }
 
-// performance: custo por prioridade e por quem criou, tempo por etapa e mediana do ciclo.
+// performance: cost per priority and per creator, time per stage and the cycle's median.
 func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time, wsIDs []string, who *string) error {
 	wsOnly := `($2::uuid[] is null or i.workspace_id = any($2::uuid[])) and ($3::uuid is null or i.created_by = $3 or i.assignee_id = $3)`
 	rows, err := s.DB.Query(ctx, `select i.priority, count(distinct i.id), count(r.id), coalesce(sum(r.cost_usd),0)::float8,
@@ -862,11 +862,11 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 	}
 	rows.Close()
 
-	// Passagens encerradas no período, por etapa (mesmo id em vários workspaces vira uma
-	// linha). Etapas que já foram removidas viram uma linha só, "Etapa removida".
+	// Stage passes closed in the period, per stage (the same id in several workspaces
+	// becomes one row). Stages already removed become a single row, "Removed stage".
 	kinds := s.stageKinds(ctx, wsIDs)
 	rows, err = s.DB.Query(ctx, `select case when st.id is null then '' else l.stage end as k,
-		coalesce(max(st.name), 'Etapa removida'), count(*),
+		coalesce(max(st.name), 'Removed stage'), count(*),
 		avg(extract(epoch from (l.left_at - l.entered_at)))/3600,
 		percentile_cont(0.5) within group (order by extract(epoch from (l.left_at - l.entered_at)))/3600,
 		array_agg(distinct l.workspace_id::text)
@@ -930,8 +930,8 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 	return s.people(ctx, out, since, wsIDs, kindKeys(kinds, "people"), who)
 }
 
-// people: uma linha por pessoa com alguma atividade no período.
-// waitKeys: "workspace|etapa" das etapas em que a issue espera alguém (tempo de resposta).
+// people: one row per person with some activity in the period.
+// waitKeys: "workspace|stage" of the stages where the issue waits for someone (response time).
 func (s *Store) people(ctx context.Context, out *Analytics, since time.Time, wsIDs []string, waitKeys []string, who *string) error {
 	w := `($2::uuid[] is null or i.workspace_id = any($2::uuid[]))`
 	rows, err := s.DB.Query(ctx, `select u.id::text, u.name,

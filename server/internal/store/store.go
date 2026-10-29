@@ -1,5 +1,5 @@
-// Package store concentra o acesso ao Postgres. Structs com tags `db` são
-// lidas direto das linhas com pgx.RowToStructByName.
+// Package store centralizes Postgres access. Structs with `db` tags are
+// read straight from the rows with pgx.RowToStructByName.
 package store
 
 import (
@@ -11,11 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrNotFound = errors.New("não encontrado")
+var ErrNotFound = errors.New("not found")
 
 type Store struct {
 	DB *pgxpool.Pool
-	// OnEvent é chamado a cada evento de issue (motor de automações).
+	// OnEvent is called on every issue event (the automation engine).
 	OnEvent func(Event)
 }
 
@@ -31,7 +31,7 @@ type User struct {
 	IsOwner      bool    `db:"is_owner" json:"isOwner"`
 	RoleID       *string `db:"role_id" json:"roleId"`
 	About        string  `db:"about" json:"about"`
-	// Recebe e-mail de issue nova (quando o admin liga as notificações).
+	// Receives e-mail about new issues (when the admin turns notifications on).
 	EmailNotifications bool      `db:"email_notifications" json:"emailNotifications"`
 	CreatedAt          time.Time `db:"created_at" json:"createdAt"`
 	// Vindos de user_view (perfil resolvido).
@@ -39,7 +39,7 @@ type User struct {
 	Permissions []string `db:"permissions" json:"permissions"`
 }
 
-// Can diz se o usuário tem a permissão (o dono tem '*').
+// Can says whether the user has the permission (the owner has '*').
 func (u *User) Can(perm string) bool {
 	for _, p := range u.Permissions {
 		if p == perm || p == "*" {
@@ -55,7 +55,7 @@ type Workspace struct {
 	Key       string    `db:"key" json:"key"`
 	IssueSeq  int       `db:"issue_seq" json:"-"`
 	CreatedAt time.Time `db:"created_at" json:"createdAt"`
-	// Entrada de issues por webhook: o token é segredo (só sai na rota de configuração).
+	// Issue intake through a webhook: the token is a secret (it only leaves through the settings route).
 }
 
 type FileEntry struct {
@@ -124,11 +124,11 @@ type Issue struct {
 	UpdatedAt   time.Time  `db:"updated_at" json:"updatedAt"`
 	AllRepos    bool       `db:"all_repos" json:"allRepos"`
 	DoneAt      *time.Time `db:"done_at" json:"doneAt"`
-	Closed      string     `db:"closed" json:"closed"` // done | cancelled | vazio (aberta), pela regra "Encerrar" da etapa
+	Closed      string     `db:"closed" json:"closed"` // done | cancelled | empty (open), by the stage's "Close" rule
 	AssigneeID  *string    `db:"assignee_id" json:"assigneeId"`
 	StageSince  time.Time  `db:"stage_entered_at" json:"stageSince"`
 	// Calculados na listagem.
-	Approvals []string    `db:"approvals" json:"approvals"` // quem já aprovou na etapa atual
+	Approvals []string    `db:"approvals" json:"approvals"` // who already approved in the current stage
 	Repos     []IssueRepo `db:"repos" json:"repos"`
 	ActiveRun *string     `db:"active_run" json:"activeRun"`
 	CostUSD   float64     `db:"cost_usd" json:"costUsd"`
@@ -157,7 +157,7 @@ type Run struct {
 	EndedAt      *time.Time `db:"ended_at" json:"endedAt"`
 	Outcome      string     `db:"outcome" json:"outcome"`
 	OutcomeNote  string     `db:"outcome_note" json:"outcomeNote"`
-	// Pedida por um passo de etapa: a issue não muda de etapa por causa dela.
+	// Requested by a stage step: the issue doesn't change stage because of it.
 	HoldStage bool `db:"hold_stage" json:"holdStage"`
 }
 
@@ -220,7 +220,7 @@ func nzf(f []FileEntry) []FileEntry {
 	return f
 }
 
-// ---------- usuários e sessões ----------
+// ---------- users and sessions ----------
 
 func (s *Store) CountUsers(ctx context.Context) (int, error) {
 	var n int
@@ -228,7 +228,7 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// Leituras de usuário passam pela view para trazer perfil e permissões.
+// User reads go through the view to bring the role and the permissions.
 func (s *Store) CreateUser(ctx context.Context, email, name, hash string, owner bool, roleID *string) (*User, error) {
 	var id string
 	if err := s.DB.QueryRow(ctx, `insert into users(email, name, password_hash, is_owner, role_id) values(lower($1), $2, $3, $4, $5) returning id`,
@@ -312,7 +312,7 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
 	return err
 }
 
-// ---------- repositórios ----------
+// ---------- repositories ----------
 
 func (s *Store) ListRepos(ctx context.Context, wsID string) ([]Repo, error) {
 	return many[Repo](ctx, s, `select * from repos where workspace_id = $1 order by name`, wsID)
@@ -362,7 +362,7 @@ func (s *Store) DeleteSkill(ctx context.Context, id string) error {
 	return err
 }
 
-// SkillsFor resolve as skills de uma execução: `always` + as do agente + as da issue.
+// SkillsFor resolves a run's skills: `always` + the agent's + the issue's.
 func (s *Store) SkillsFor(ctx context.Context, ids []string) ([]Skill, error) {
 	return many[Skill](ctx, s, `select * from skills where always or id = any($1) order by name`, nz(ids))
 }
@@ -388,7 +388,7 @@ func (s *Store) SaveAgent(ctx context.Context, a Agent) (*Agent, error) {
 		a.ID, a.Name, a.Avatar, a.Runtime, a.Model, a.Effort, a.MaxBudgetUSD, a.Instructions, nz(a.SkillIDs), a.ExtraArgs)
 }
 
-// Arquiva em vez de apagar: o histórico de execuções e custos continua apontando para ele.
+// Archives instead of deleting: the run and cost history keeps pointing at it.
 func (s *Store) ArchiveAgent(ctx context.Context, id string) error {
 	_, err := s.DB.Exec(ctx, `update agents set archived = true where id = $1`, id)
 	return err
@@ -400,7 +400,7 @@ func (s *Store) ListLabels(ctx context.Context, wsID string) ([]Label, error) {
 	return many[Label](ctx, s, `select * from labels where workspace_id = $1 order by name`, wsID)
 }
 
-// LabelStat: a label com quantas issues a usam (abertas e no total).
+// LabelStat: the label with how many issues use it (open and in total).
 type LabelStat struct {
 	Label
 	Issues int `db:"issues" json:"issues"`

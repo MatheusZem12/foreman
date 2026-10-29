@@ -18,7 +18,7 @@ import { SCREENS, can, useMe, useWorkspaces } from './lib/queries';
 import { LAST_WS } from './lib/constants';
 import { t } from './lib/i18n';
 
-// Analytics carrega os gráficos (Recharts) só quando a tela é aberta.
+// Analytics loads the charts (Recharts) only when the screen opens.
 const AnalyticsPage = lazy(() => import('./pages/Analytics').then((m) => ({ default: m.AnalyticsPage })));
 
 const qc = new QueryClient({
@@ -29,33 +29,33 @@ function Home() {
   const { data: workspaces, isLoading } = useWorkspaces();
   const { data: me } = useMe();
   if (isLoading) return <div className="grid h-full place-items-center"><Spinner /></div>;
-  if (!workspaces?.length) return can(me, 'workspace.create') ? <Navigate to="/novo" replace /> : <NoWorkspace />;
+  if (!workspaces?.length) return can(me, 'workspace.create') ? <Navigate to="/new" replace /> : <NoWorkspace />;
   let last = '';
   try {
     last = localStorage.getItem(LAST_WS) || '';
   } catch {
-    /* sem storage */
+    /* no storage */
   }
   const ws = workspaces.find((w) => w.key === last) ?? workspaces[0];
   return <Navigate to={`/w/${ws.key}`} replace />;
 }
 
-// Usuário sem vínculo: alguém com member.manage precisa adicioná-lo a um workspace.
+// A user without a link: someone with member.manage has to add them to a workspace.
 function NoWorkspace() {
   const { data: me } = useMe();
   return (
     <div className="grid min-h-full place-items-center p-4">
       <div className="max-w-sm space-y-3 rounded-xl border border-line bg-panel p-6 text-center">
         <img src="/icon.svg" className="mx-auto size-8" alt="" />
-        <p className="font-medium">{t('Olá,')} {me?.name}!</p>
-        <p className="text-dim">{t('Você ainda não foi adicionado a nenhum workspace. Peça ao administrador para vincular você.')}</p>
-        <button onClick={async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; }} className="text-xs text-mute hover:text-fg">{t('Sair')}</button>
+        <p className="font-medium">{t('Hi,')} {me?.name}!</p>
+        <p className="text-dim">{t('You haven\'t been added to any workspace yet. Ask an administrator to add you.')}</p>
+        <button onClick={async () => { await fetch('/api/logout', { method: 'POST' }); location.href = '/login'; }} className="text-xs text-mute hover:text-fg">{t('Sign out')}</button>
       </div>
     </div>
   );
 }
 
-// Só renderiza para quem tem alguma das permissões (owner = só o dono).
+// Only renders for whoever has one of the permissions (owner = the owner only).
 function Need({ perms, owner, children }: { perms?: string[]; owner?: boolean; children: React.ReactNode }) {
   const { data: me } = useMe();
   const ok = owner ? !!me?.isOwner : can(me, ...(perms ?? []));
@@ -70,7 +70,7 @@ function Authed({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// "/": quem está logado vai para o board; quem não está vê a landing.
+// "/": whoever is signed in goes to the board; whoever isn't sees the landing page.
 function Root() {
   const { data: me, isPending, isError } = useMe();
   if (isPending && !isError) return <div className="grid h-full place-items-center"><Spinner /></div>;
@@ -86,25 +86,25 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Root />} />
-            <Route path="/sobre" element={<Landing />} />
-            <Route path="/novo" element={<Authed><Need perms={['workspace.create']}><Onboarding /></Need></Authed>} />
+            <Route path="/about" element={<Landing />} />
+            <Route path="/new" element={<Authed><Need perms={['workspace.create']}><Onboarding /></Need></Authed>} />
             <Route path="/w/:key" element={<Authed><Layout /></Authed>}>
               <Route index element={<Board />} />
               <Route path="issues/:ref" element={<IssuePage />} />
               <Route path="analytics" element={<Need perms={[...SCREENS.analytics]}><Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage /></Suspense></Need>} />
-              <Route path="analytics-geral" element={<Need perms={[...SCREENS.analyticsGlobal]}><Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage global /></Suspense></Need>} />
+              <Route path="analytics-overall" element={<Need perms={[...SCREENS.analyticsGlobal]}><Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage global /></Suspense></Need>} />
               <Route path="config" element={<SettingsPage />} />
               <Route path="config/:tab" element={<SettingsPage />} />
-              <Route path="fluxo" element={<Need perms={[...SCREENS.fluxo]}><WorkflowPage /></Need>} />
+              <Route path="workflow" element={<Need perms={[...SCREENS.workflow]}><WorkflowPage /></Need>} />
               <Route path="workspace" element={<Need perms={[...SCREENS.workspace]}><WorkspaceSettings /></Need>} />
               <Route path="labels" element={<Need perms={[...SCREENS.labels]}><LabelsPage /></Need>} />
-              <Route path="agentes" element={<Need perms={[...SCREENS.agentes]}><AgentsPage /></Need>} />
+              <Route path="agents" element={<Need perms={[...SCREENS.agents]}><AgentsPage /></Need>} />
               <Route path="skills" element={<Need perms={[...SCREENS.skills]}><SkillsPage /></Need>} />
-              {/* Endereços antigos das telas gerais levam para a aba certa de Configurações gerais. */}
-              {['usuarios', 'permissoes', 'servidor', 'conta'].map((tt) => (
+              {/* Old addresses of the general screens lead to the right tab of General settings. */}
+              {['users', 'permissions', 'server', 'account'].map((tt) => (
                 <Route key={tt} path={tt} element={<Navigate to={`../config/${tt}`} replace />} />
               ))}
-              {['config/fluxo', 'config/workspace', 'config/agentes', 'config/skills'].map((tt) => (
+              {['config/workflow', 'config/workspace', 'config/agents', 'config/skills'].map((tt) => (
                 <Route key={tt} path={tt} element={<Navigate to={`../${tt.slice(7)}`} replace />} />
               ))}
             </Route>

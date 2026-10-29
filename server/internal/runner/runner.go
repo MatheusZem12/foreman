@@ -1,10 +1,10 @@
-// Package runner executa os agentes. A fila mora no banco (runs.status =
-// 'queued'), então sobrevive a reinícios e dá para escalar o paralelismo só
-// mudando MULTICA_MAX_PARALLEL.
+// Package runner runs the agents. The queue lives in the database (runs.status =
+// 'queued'), so it survives restarts and parallelism scales just by changing
+// FOREMAN_MAX_PARALLEL.
 //
-// Cada execução começa num chat limpo. A continuidade vem do resumo
-// cumulativo (issues.summary) que o próprio agente reescreve ao terminar,
-// mais o log de commits da branch: contexto pequeno, custo baixo.
+// Every run starts in a clean chat. Continuity comes from the cumulative summary
+// (issues.summary) the agent itself rewrites when it finishes, plus the branch's
+// commit log: a small context, a low cost.
 package runner
 
 import (
@@ -23,9 +23,9 @@ import (
 	"syscall"
 	"time"
 
-	"multica/internal/config"
-	"multica/internal/hub"
-	"multica/internal/store"
+	"foreman/internal/config"
+	"foreman/internal/hub"
+	"foreman/internal/store"
 )
 
 type Runner struct {
@@ -68,13 +68,13 @@ func (r *Runner) lockRepo(id string) func() {
 	return mu.Unlock
 }
 
-// Start recupera execuções interrompidas e começa a consumir a fila.
+// Start recovers interrupted runs and starts consuming the queue.
 func (r *Runner) Start(ctx context.Context) {
 	ids, err := r.st.RecoverInterrupted(ctx)
 	if err != nil {
-		log.Printf("runner: recuperar execuções: %v", err)
+		log.Printf("runner: recover runs: %v", err)
 	}
-	// Execução interrompida (servidor caiu) conta como falha: as regras decidem a etapa.
+	// An interrupted run (the server went down) counts as a failure: the rules decide the stage.
 	for _, id := range ids {
 		r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: id, Outcome: "failed"})
 	}
@@ -113,7 +113,7 @@ func (r *Runner) dispatch(ctx context.Context) {
 		go func() {
 			defer func() {
 				if p := recover(); p != nil {
-					log.Printf("runner: pânico na execução %s: %v", run.ID, p)
+					log.Printf("runner: panic in run %s: %v", run.ID, p)
 					r.st.FinishRun(context.Background(), run.ID, store.RunResult{Status: "failed", Error: fmt.Sprint(p)})
 				}
 				r.mu.Lock()
@@ -126,7 +126,7 @@ func (r *Runner) dispatch(ctx context.Context) {
 	}
 }
 
-// ---------- publicação de eventos ----------
+// ---------- event publishing ----------
 
 func (r *Runner) PublishIssue(ctx context.Context, id string) {
 	if is, err := r.st.Issue(ctx, id); err == nil {
@@ -156,15 +156,15 @@ func (r *Runner) systemComment(ctx context.Context, issue *store.Issue, runID *s
 
 // ---------- enfileirar / cancelar ----------
 
-var ErrBusy = errors.New("essa issue já tem uma execução na fila ou rodando")
+var ErrBusy = errors.New("this issue already has a run queued or running")
 
 func (r *Runner) Enqueue(ctx context.Context, issue *store.Issue, agentID, kind, request string, userID *string) (*store.Run, error) {
 	return r.enqueue(ctx, issue, agentID, kind, request, userID, false)
 }
 
-// EnqueueInStage: execução pedida por um passo de etapa. A issue continua na
-// etapa enquanto o agente trabalha e o runner não a move ao terminar; quem
-// decide o próximo passo é a sequência de regras da etapa.
+// EnqueueInStage: a run requested by a stage step. The issue stays in the stage while
+// the agent works and the runner doesn't move it when it finishes; the stage's rule
+// sequence decides the next step.
 func (r *Runner) EnqueueInStage(ctx context.Context, issue *store.Issue, agentID, kind, request string) (*store.Run, error) {
 	return r.enqueue(ctx, issue, agentID, kind, request, nil, true)
 }
@@ -177,27 +177,27 @@ func (r *Runner) enqueue(ctx context.Context, issue *store.Issue, agentID, kind,
 		agentID = *issue.AgentID
 	}
 	if agentID == "" {
-		return nil, errors.New("atribua um agente à issue")
+		return nil, errors.New("assign an agent to the issue")
 	}
 	agent, err := r.st.Agent(ctx, agentID)
 	if err != nil {
-		return nil, errors.New("agente não encontrado")
+		return nil, errors.New("agent not found")
 	}
 	if kind == "followup" && strings.TrimSpace(request) == "" {
-		return nil, errors.New("descreva o ajuste")
+		return nil, errors.New("describe the adjustment")
 	}
-	// Sem repositório não há onde trabalhar: recusa já no pedido (a regra ou
-	// a tela mostram o motivo e a issue fica onde está).
+	// Without a repository there is nowhere to work: refuse right at the request (the rule
+	// or the screen shows the reason and the issue stays where it is).
 	r.st.SyncIssueRepos(ctx, issue.ID)
 	if scope, err := r.st.IssueRepos(ctx, issue.ID); err == nil && len(scope) == 0 {
-		return nil, errors.New("o workspace não tem repositório: cadastre um em Workspace e membros")
+		return nil, errors.New("the workspace has no repository: add one under Workspace")
 	}
 	run, err := r.st.CreateRun(ctx, issue, agent, kind, request, userID, hold)
 	if err != nil {
 		return nil, err
 	}
-	// Pedido ao agente (quadro, comentário, resposta, regra que não espera): as
-	// regras de "Agente começou" decidem a etapa. Passo de etapa (hold) não dispara.
+	// A request to the agent (board, comment, reply, a rule that doesn't wait): the
+	// "Agent started" rules decide the stage. A stage step (hold) doesn't trigger them.
 	if !hold {
 		r.st.Emit(ctx, store.Event{Kind: "run_started", IssueID: issue.ID, ActorID: userID})
 	}
@@ -225,7 +225,7 @@ func (r *Runner) Cancel(ctx context.Context, runID string) error {
 	r.mu.Unlock()
 	if a != nil && a.cmd != nil && a.cmd.Process != nil {
 		pid := a.cmd.Process.Pid
-		syscall.Kill(-pid, syscall.SIGTERM) // grupo inteiro: inclui os subprocessos do agente
+		syscall.Kill(-pid, syscall.SIGTERM) // the whole group: includes the agent's subprocesses
 		time.AfterFunc(10*time.Second, func() { syscall.Kill(-pid, syscall.SIGKILL) })
 	}
 	return nil
@@ -237,12 +237,12 @@ func (r *Runner) isCancelled(runID string) bool {
 	return r.active[runID] != nil && r.active[runID].cancelled
 }
 
-// ---------- execução ----------
+// ---------- execution ----------
 
 func (r *Runner) skillDir(s store.Skill) string { return r.cfg.Path("skills", s.Slug) }
 func (r *Runner) issueDir(id string) string     { return r.cfg.Path("issues", id) }
 
-// Materializa as skills do banco em disco para o agente ler (e rodar scripts).
+// Materializes the database skills on disk for the agent to read (and run scripts).
 func (r *Runner) materializeSkills(skills []store.Skill) {
 	for _, s := range skills {
 		dir := r.skillDir(s)
@@ -280,10 +280,10 @@ type agentCmd struct {
 	preamble string
 }
 
-// Isolamento: o agente roda sem pedir aprovação, mas dentro do sandbox do
-// próprio CLI (bubblewrap no Linux). Grava só na pasta da issue e no cache de
-// pacotes do Multica; o resto do disco fica somente leitura. Rede liberada
-// (instalar dependências, consultar documentação).
+// Isolation: the agent runs without asking for approval, but inside the CLI's own
+// sandbox (bubblewrap on Linux). It writes only to the issue's folder and to Foreman's
+// package cache; the rest of the disk is read-only. Network allowed (installing
+// dependencies, reading documentation).
 func (r *Runner) sandboxed() bool {
 	r.sandboxOnce.Do(func() {
 		r.sandboxOK = runCmd(context.Background(), "bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "true").ok
@@ -297,8 +297,8 @@ func (r *Runner) cacheDir() string {
 	return d
 }
 
-// Caches de gerenciadores de pacote apontam para a pasta de cache do Multica
-// (fora dela o sandbox não deixa gravar).
+// Package-manager caches point to Foreman's cache folder (outside it the sandbox
+// doesn't allow writing).
 func (r *Runner) cacheEnv() []string {
 	c := r.cacheDir()
 	return []string{
@@ -333,7 +333,7 @@ func (r *Runner) agentCommand(a *store.Agent, wt, system string, addDirs, writab
 		args = append(append(args, splitArgs(a.ExtraArgs)...), "-")
 		pre := ""
 		if system != "" {
-			pre = system + "\n\n---\n\n" // Codex não tem "append system prompt"
+			pre = system + "\n\n---\n\n" // Codex has no "append system prompt"
 		}
 		return agentCmd{bin: r.cfg.CodexBin, args: args, preamble: pre}
 	}
@@ -381,7 +381,7 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
-		return outcome{exitErr: fmt.Errorf("não foi possível iniciar %s: %w", ac.bin, err)}
+		return outcome{exitErr: fmt.Errorf("couldn't start %s: %w", ac.bin, err)}
 	}
 	r.mu.Lock()
 	if a := r.active[run.ID]; a != nil {
@@ -404,7 +404,7 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 		sc.Buffer(make([]byte, 64*1024), 4<<20)
 		for sc.Scan() {
 			t := strings.TrimSpace(sc.Text())
-			// Codex escreve progresso no stderr; só vale mostrar o que parece erro.
+			// Codex writes progress to stderr; it is only worth showing what looks like an error.
 			if t != "" && (run.Runtime != "codex" || strings.Contains(strings.ToLower(t), "error")) {
 				r.logEvent(ctx, run, "error", clip(t, 800))
 			}
@@ -448,16 +448,16 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 	return o
 }
 
-// repoWork é um repositório da issue já preparado no disco.
+// repoWork is one of the issue's repositories, already prepared on disk.
 type repoWork struct {
 	store.RepoScope
-	slug string // nome da subpasta no diretório da issue
+	slug string // name of the subfolder in the issue's directory
 	wt   string // worktree
 }
 
 func (w *repoWork) base() string { return w.IssueRepo.BaseBranch }
 
-// slugs dá a cada repositório uma subpasta única e legível.
+// slugs gives each repository a unique, readable subfolder.
 func slugs(scope []store.RepoScope) []string {
 	seen := map[string]int{}
 	out := make([]string, len(scope))
@@ -472,9 +472,9 @@ func slugs(scope []store.RepoScope) []string {
 	return out
 }
 
-// prepare atualiza os clones e garante um worktree por repositório, em
-// paralelo (o fetch é o que mais demora). Clones são compartilhados entre
-// issues, então um worktree novo custa só o checkout.
+// prepare updates the clones and ensures one worktree per repository, in parallel
+// (the fetch is what takes longest). Clones are shared between issues, so a new
+// worktree only costs the checkout.
 func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue) ([]*repoWork, error) {
 	r.st.SyncIssueRepos(ctx, issue.ID)
 	scope, err := r.st.IssueRepos(ctx, issue.ID)
@@ -482,10 +482,10 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 		return nil, err
 	}
 	if len(scope) == 0 {
-		return nil, errors.New("o workspace não tem repositório: cadastre um em Workspace e membros")
+		return nil, errors.New("the workspace has no repository: add one under Workspace")
 	}
 	root := r.worktreeDir(issue.ID)
-	// Layout antigo (um worktree direto na pasta da issue): recria no novo.
+	// Old layout (one worktree straight in the issue's folder): recreate it in the new one.
 	if fileExists(filepath.Join(root, ".git")) {
 		os.RemoveAll(root)
 	}
@@ -526,7 +526,7 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				return
 			}
 			if created {
-				r.logEvent(ctx, run, "info", fmt.Sprintf("%s/ → branch %s a partir de %s", w.slug, issue.Branch, w.base()))
+				r.logEvent(ctx, run, "info", fmt.Sprintf("%s/ → branch %s from %s", w.slug, issue.Branch, w.base()))
 			}
 		}(i)
 	}
@@ -541,7 +541,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	r.publishRun(run)
 	issue, err := r.st.Issue(ctx, run.IssueID)
 	if err != nil {
-		r.st.FinishRun(ctx, run.ID, store.RunResult{Status: "failed", Error: "issue não encontrada"})
+		r.st.FinishRun(ctx, run.ID, store.RunResult{Status: "failed", Error: "issue not found"})
 		return
 	}
 	r.PublishIssue(ctx, issue.ID)
@@ -557,9 +557,9 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 			r.logEvent(ctx, run, "error", res.Error)
 		}
 		final, _ := r.st.FinishRun(ctx, run.ID, res)
-		// O resultado vira o evento "execução terminou"; as regras do fluxo
-		// decidem para onde a issue vai. A IA declara se terminou; sem
-		// declaração, vale como concluído.
+		// The result becomes the "run finished" event; the workflow rules decide where
+		// the issue goes. The AI declares whether it finished; without a declaration, it
+		// counts as done.
 		kind := outcome.Kind
 		switch {
 		case res.Status == "cancelled":
@@ -571,7 +571,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		}
 		r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: issue.ID, Outcome: kind, ActorID: run.CreatedBy})
 		if res.Status == "failed" {
-			r.systemComment(ctx, issue, &run.ID, "A execução falhou: "+res.Error)
+			r.systemComment(ctx, issue, &run.ID, "The run failed: "+res.Error)
 		}
 		if final != nil {
 			r.publishRun(final)
@@ -581,7 +581,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 
 	ws, err := r.st.Workspace(ctx, issue.WorkspaceID)
 	if err != nil {
-		res.Error = "workspace não encontrado"
+		res.Error = "workspace not found"
 		return
 	}
 	if run.AgentID == nil {
@@ -590,7 +590,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	}
 	agent, err := r.st.Agent(ctx, *run.AgentID)
 	if err != nil {
-		res.Error = "agente não encontrado"
+		res.Error = "agent not found"
 		return
 	}
 	var requester *store.User
@@ -598,15 +598,15 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		requester, _ = r.st.UserByID(ctx, *run.CreatedBy)
 	}
 
-	r.logEvent(ctx, run, "info", "Preparando os repositórios")
+	r.logEvent(ctx, run, "info", "Preparing the repositories")
 	if works, err = r.prepare(ctx, run, issue); err != nil {
 		res.Error = err.Error()
 		return
 	}
-	author := agent.Name + " (Multica)"
+	author := agent.Name + " (Foreman)"
 	ref := fmt.Sprintf("%s-%d", ws.Key, issue.Number)
 
-	// --- conflito: traz o destino para a branch da issue em cada repo travado ---
+	// --- conflict: bring the target into the issue's branch in each locked repo ---
 	conflicts := map[string][]string{}
 	if run.Kind == "conflict" {
 		for _, w := range works {
@@ -615,31 +615,31 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 			}
 			target := w.IssueRepo.TargetBranch
 			if mergeInProgress(ctx, w.wt) {
-				r.logEvent(ctx, run, "info", w.slug+": continuando o merge que ficou pela metade")
+				r.logEvent(ctx, run, "info", w.slug+": resuming the merge that was left halfway")
 			} else {
-				if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (pendências)", author); err != nil {
+				if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (pending changes)", author); err != nil {
 					res.Error = w.Name + ": " + err.Error()
 					return
 				}
 				r.logEvent(ctx, run, "info", fmt.Sprintf("%s: git merge origin/%s → %s", w.slug, target, issue.Branch))
-				m := runGit(ctx, w.wt, "-c", "user.name="+author, "-c", "user.email=multica@localhost", "merge", "--no-edit", "origin/"+target)
+				m := runGit(ctx, w.wt, "-c", "user.name="+author, "-c", "user.email=foreman@localhost", "merge", "--no-edit", "origin/"+target)
 				if m.ok {
 					r.publishBranch(ctx, run, w, issue.Branch)
 					r.st.SetRepoConflict(ctx, issue.ID, w.ID, "", false)
-					r.logEvent(ctx, run, "info", w.slug+": merge sem conflitos")
+					r.logEvent(ctx, run, "info", w.slug+": merge without conflicts")
 					continue
 				}
 			}
 			files := conflictedFiles(ctx, w.wt)
 			if len(files) == 0 {
-				res.Error = w.Name + ": o merge falhou sem conflitos de arquivo; veja o worktree"
+				res.Error = w.Name + ": the merge failed without file conflicts; check the worktree"
 				return
 			}
 			conflicts[w.slug] = files
-			r.logEvent(ctx, run, "info", w.slug+": conflitos em "+strings.Join(files, ", "))
+			r.logEvent(ctx, run, "info", w.slug+": conflicts in "+strings.Join(files, ", "))
 		}
 		if len(conflicts) == 0 {
-			r.logEvent(ctx, run, "info", "Nada para a IA resolver.")
+			r.logEvent(ctx, run, "info", "Nothing for the AI to resolve.")
 			res.Status = "succeeded"
 			return
 		}
@@ -691,21 +691,21 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	if agent.Model != "" {
 		desc += " " + agent.Model
 	}
-	r.logEvent(ctx, run, "info", fmt.Sprintf("%s · %s · %d skill(s) · %d repositório(s)", agent.Name, desc, len(skills), len(works)))
+	r.logEvent(ctx, run, "info", fmt.Sprintf("%s · %s · %d skill(s) · %d repositor(ies)", agent.Name, desc, len(skills), len(works)))
 	if !r.sandboxed() {
-		r.logEvent(ctx, run, "info", "Sandbox indisponível (bubblewrap): o agente roda sem isolamento de disco. Instale o pacote bubblewrap no servidor.")
+		r.logEvent(ctx, run, "info", "Sandbox unavailable (bubblewrap): the agent runs without disk isolation. Install the bubblewrap package on the server.")
 	}
 
 	o := r.spawn(ctx, run, ac, ac.preamble+prompt, cwd, agentEnv(append(r.cacheEnv(),
-		"MULTICA_SUMMARY="+summaryPath,
-		"MULTICA_STATUS="+statusPath,
-		"MULTICA_ISSUE="+ref,
+		"FOREMAN_SUMMARY="+summaryPath,
+		"FOREMAN_STATUS="+statusPath,
+		"FOREMAN_ISSUE="+ref,
 	)...))
 	if o.result != nil {
 		res.CostUSD, res.InputTokens, res.CachedTokens, res.OutputTokens = o.result.Cost, o.result.In, o.result.Cached, o.result.Out
 	}
 
-	// --- commit e publicação, repo a repo (inclusive em falha: nada se perde) ---
+	// --- commit and publish, repo by repo (failures included: nothing is lost) ---
 	label := ""
 	if run.Kind != "initial" {
 		label = " (" + map[string]string{"followup": "ajuste", "conflict": "conflito"}[run.Kind] + ")"
@@ -742,20 +742,20 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		r.st.SetIssueSummary(ctx, issue.ID, s)
 	} else if !r.isCancelled(run.ID) {
 		r.st.SetIssueSummary(ctx, issue.ID, fallbackSummary(issue, run, firstNonEmpty(finalText(o), o.lastText), strings.Join(stats, "\n\n")))
-		r.logEvent(ctx, run, "info", "O agente não atualizou o resumo; registrei um resumo automático.")
+		r.logEvent(ctx, run, "info", "The agent didn't update the summary; I recorded an automatic one.")
 	}
 
-	// --- o que a IA declarou: concluído, aguardando alguém ou incompleto ---
+	// --- what the AI declared: done, waiting for someone, or incomplete ---
 	outcome = readOutcome(statusPath)
 	if outcome.Kind != "" {
 		r.st.SetRunOutcome(ctx, run.ID, outcome.Kind, outcome.Note)
 	}
 	if outcome.Kind == "waiting" || outcome.Kind == "incomplete" {
-		label := map[string]string{"waiting": "A IA precisa de você", "incomplete": "A IA não conseguiu terminar"}[outcome.Kind]
-		r.systemComment(ctx, issue, &run.ID, fmt.Sprintf("**%s:** %s\n\nResponda com um comentário enviado ao agente para continuar.", label, firstNonEmpty(outcome.Note, "sem detalhes")))
+		label := map[string]string{"waiting": "The AI needs you", "incomplete": "The AI couldn't finish"}[outcome.Kind]
+		r.systemComment(ctx, issue, &run.ID, fmt.Sprintf("**%s:** %s\n\nReply with a comment sent to the agent to continue.", label, firstNonEmpty(outcome.Note, "no details")))
 	}
 
-	// --- resposta do agente vira comentário na issue ---
+	// --- the agent's answer becomes a comment on the issue ---
 	if text := strings.TrimSpace(firstNonEmpty(finalText(o), o.lastText)); text != "" {
 		if c, err := r.st.AddComment(ctx, store.Comment{IssueID: issue.ID, AgentID: &agent.ID, RunID: &run.ID, Kind: "agent", Body: text}); err == nil {
 			r.hub.Publish(hub.Event{Type: "comment", WorkspaceID: issue.WorkspaceID, Data: c})
@@ -766,7 +766,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	case cerr != nil:
 		res.Error = cerr.Error()
 	case o.exitErr != nil:
-		res.Error = "o agente terminou com erro: " + o.exitErr.Error()
+		res.Error = "the agent ended with an error: " + o.exitErr.Error()
 		if o.result != nil && o.result.IsError {
 			res.Error = o.result.Body
 		}
@@ -791,13 +791,13 @@ func fileExists(p string) bool {
 
 func (r *Runner) publishBranch(ctx context.Context, run *store.Run, w *repoWork, branch string) {
 	if err := pushBranch(ctx, w.wt, branch); err != nil {
-		r.logEvent(ctx, run, "error", w.slug+": não consegui publicar a branch no remoto: "+err.Error())
+		r.logEvent(ctx, run, "error", w.slug+": couldn't publish the branch to the remote: "+err.Error())
 		return
 	}
 	r.logEvent(ctx, run, "info", w.slug+": branch publicada "+branch)
 }
 
-// hasCommits: a branch da issue tem commits além da base neste repositório.
+// hasCommits: the issue's branch has commits beyond the base in this repository.
 func (r *Runner) hasCommits(ctx context.Context, w *repoWork) bool {
 	if !fileExists(w.wt) {
 		return false
@@ -812,25 +812,25 @@ func fallbackSummary(issue *store.Issue, run *store.Run, text, stat string) stri
 	} else {
 		fmt.Fprintf(&b, "# %s\n\n", issue.Title)
 	}
-	fmt.Fprintf(&b, "## Execução de %s (%s)\n_Gerado automaticamente: o agente não atualizou o resumo._\n\n", time.Now().Format("02/01 15:04"), run.Kind)
+	fmt.Fprintf(&b, "## Run of %s (%s)\n_Generated automatically: the agent didn't update the summary._\n\n", time.Now().Format("01/02 15:04"), run.Kind)
 	if run.Request != "" {
-		b.WriteString("**Pedido:** " + run.Request + "\n\n")
+		b.WriteString("**Request:** " + run.Request + "\n\n")
 	}
 	if text != "" {
-		b.WriteString("**Resposta final:**\n" + clip(text, 1500) + "\n\n")
+		b.WriteString("**Final answer:**\n" + clip(text, 1500) + "\n\n")
 	}
 	if stat != "" {
-		b.WriteString("**Arquivos:**\n```\n" + stat + "\n```\n")
+		b.WriteString("**Files:**\n```\n" + stat + "\n```\n")
 	}
 	return b.String()
 }
 
-// ---------- resultado declarado e histórico ----------
+// ---------- declared result and history ----------
 
 type runOutcome struct{ Kind, Note string }
 
-// readOutcome lê a linha que a IA escreveu em STATUS: "concluido",
-// "aguardando: …" ou "incompleto: …".
+// readOutcome reads the line the AI wrote in STATUS: "done", "waiting: …" or
+// "incomplete: …" (the Portuguese words from before the rename are still accepted).
 func readOutcome(path string) runOutcome {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -850,10 +850,10 @@ func readOutcome(path string) runOutcome {
 	return runOutcome{}
 }
 
-// runHistory resume as execuções anteriores da issue para o próximo chat.
+// runHistory summarizes the issue's previous runs for the next chat.
 func runHistory(runs []store.Run, current string) string {
-	kinds := map[string]string{"initial": "pedido inicial", "followup": "ajuste", "conflict": "resolver conflito"}
-	outcomes := map[string]string{"done": "concluído", "waiting": "aguardando alguém", "incomplete": "incompleto"}
+	kinds := map[string]string{"initial": "initial request", "followup": "adjustment", "conflict": "resolve conflict"}
+	outcomes := map[string]string{"done": "done", "waiting": "waiting for someone", "incomplete": "incomplete"}
 	var lines []string
 	for _, r := range runs {
 		if r.ID == current || r.Status == "queued" || r.Status == "running" {
@@ -863,7 +863,7 @@ func runHistory(runs []store.Run, current string) string {
 		if req := strings.TrimSpace(r.Request); req != "" {
 			line += fmt.Sprintf(": %q", clip(strings.ReplaceAll(req, "\n", " "), 160))
 		}
-		result := map[string]string{"succeeded": "ok", "failed": "falhou", "cancelled": "cancelada"}[r.Status]
+		result := map[string]string{"succeeded": "ok", "failed": "failed", "cancelled": "cancelled"}[r.Status]
 		if o := outcomes[r.Outcome]; o != "" {
 			result = o
 		}
@@ -877,7 +877,7 @@ func runHistory(runs []store.Run, current string) string {
 		lines = append(lines, line)
 	}
 	if len(lines) > 15 {
-		lines = append([]string{fmt.Sprintf("- … %d execuções mais antigas", len(lines)-15)}, lines[len(lines)-15:]...)
+		lines = append([]string{fmt.Sprintf("- … %d older runs", len(lines)-15)}, lines[len(lines)-15:]...)
 	}
 	return strings.Join(lines, "\n")
 }

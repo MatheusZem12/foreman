@@ -18,13 +18,13 @@
   --chart-4: #c98500;
   --chart-5: #d55181;
   --chart-grid: rgb(var(--ink) / 0.06);
-  --ink: 255 255 255;   /* sobreposições (white/x no Tailwind) */
+  --ink: 255 255 255;   /* overlays (white/x in Tailwind) */
   --shadow: 0.6;
   color-scheme: dark;
 }
 
-/* Tema claro: mesmas variáveis, outros valores. data-theme é posto antes do
-   React carregar (index.html), então não pisca. */
+/* Light theme: the same variables, other values. data-theme is set before React
+   loads (index.html), so it doesn't flicker. */
 :root[data-theme='light'] {
   --bg: 246 246 248;
   --panel: 255 255 255;
@@ -40,14 +40,14 @@
   --chart-grid: rgb(0 0 0 / 0.07);
   color-scheme: light;
 }
-/* Tons claros de status (feitos para fundo escuro) escurecem no tema claro. */
+/* Light status tones (made for a dark background) darken in the light theme. */
 :root[data-theme='light'] :is(.text-red-200, .text-red-300, .text-red-400) { color: #c62828; }
 :root[data-theme='light'] :is(.text-emerald-200, .text-emerald-300, .text-emerald-400) { color: #047857; }
 :root[data-theme='light'] :is(.text-amber-100, .text-amber-200, .text-amber-300) { color: #92400e; }
 :root[data-theme='light'] .text-amber-400 { color: #b45309; }
 :root[data-theme='light'] :is(.text-sky-300, .text-sky-400, .text-sky-400\/80) { color: #0369a1; }
 :root[data-theme='light'] :is(.text-orange-200, .text-orange-400) { color: #c2410c; }
-/* Faixas escurecidas (rodapé de diálogo, blocos de código) ficam sutis. */
+/* Darkened strips (dialog footer, code blocks) stay subtle. */
 :root[data-theme='light'] :is(.bg-black\/10, .bg-black\/20, .bg-black\/30) { background-color: rgb(0 0 0 / 0.03); }
 :root[data-theme='light'] :is(.bg-black\/50, .bg-black\/60, .bg-black\/70) { background-color: rgb(20 20 30 / 0.35); }
 
@@ -60,11 +60,11 @@ body {
 * { scrollbar-width: thin; scrollbar-color: rgb(var(--line)) transparent; }
 ::selection { background: rgb(var(--accent) / 0.35); }
 
-/* Ícones lucide mais finos e consistentes. */
+/* Thinner, consistent lucide icons. */
 .lucide { stroke-width: 1.75; }
 
-/* Sem contorno do navegador: campos "soltos" (título, descrição) não ganham borda
-   ao focar; o foco por teclado em botões e links usa um anel discreto. */
+/* No browser outline: "loose" fields (title, description) get no border on focus;
+   keyboard focus on buttons and links uses a discreet ring. */
 input, textarea, select { @apply bg-transparent; outline: none !important; }
 :focus { outline: none; }
 button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
@@ -81,9 +81,9 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
 textarea.field-input { @apply resize-y leading-relaxed; }
 select.field-input { @apply cursor-pointer pr-8; }
 
-/* Superfícies */
-/* Página: sempre a largura toda da área de conteúdo, com o mesmo respiro
-   nas laterais em todas as telas (quadro, fluxo, analytics, configurações…). */
+/* Surfaces */
+/* Page: always the full width of the content area, with the same side padding on
+   every screen (board, workflow, analytics, settings…). */
 .page { @apply w-full px-4 pb-24 pt-4 md:px-8 md:pt-8; }
 .surface { @apply rounded-xl border border-line bg-panel; box-shadow: 0 1px 0 0 rgb(var(--ink) / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / var(--shadow)); }
 .surface-hover { @apply transition hover:border-white/15 hover:bg-card; }
@@ -147,7 +147,7 @@ code, kbd, pre { font-variant-ligatures: none; }
   50% { translate: 40px 24px; }
 }
 
-/* Brilho que atravessa o botão no hover. */
+/* A shine that crosses the button on hover. */
 .btn-shine { position: relative; overflow: hidden; }
 .btn-shine::after {
   content: ''; position: absolute; inset: 0;
@@ -156,7 +156,7 @@ code, kbd, pre { font-variant-ligatures: none; }
 }
 .btn-shine:hover::after { transition: transform .7s ease; transform: translateX(120%); }
 
-/* Luz que segue o mouse. */
+/* A light that follows the mouse. */
 .spot::before {
   content: ''; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
   opacity: 0; transition: opacity .3s;

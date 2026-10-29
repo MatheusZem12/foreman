@@ -1,4 +1,4 @@
--- O quadro carrega as issues por etapa e em páginas; cada ordem tem índice.
+-- The board loads issues per stage and in pages; each order has an index.
 create index if not exists issues_stage_position_idx on issues(workspace_id, status, position, number);
 create index if not exists issues_stage_created_idx on issues(workspace_id, status, created_at, number);
 create index if not exists issues_stage_updated_idx on issues(workspace_id, status, updated_at, number);

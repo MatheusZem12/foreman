@@ -10,13 +10,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"multica/internal/store"
+	"foreman/internal/store"
 )
 
-// Usuários e perfis são globais; o acesso a workspaces não. Toda referência a
-// uma pessoa no fluxo (acesso a etapa, responsável, destinatário, aprovador)
-// precisa ser de alguém com acesso ao workspace: o servidor recusa ao salvar,
-// e a tela de fluxo alerta quando alguém perde o acesso depois.
+// Users and roles are global; workspace access isn't. Every reference to a person in
+// the workflow (stage access, assignee, recipient, approver) has to be someone with
+// access to the workspace: the server refuses on save, and the workflow screen warns
+// when someone loses access later.
 
 // ---------- etapas ----------
 
@@ -24,17 +24,17 @@ func (a *API) listStages(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.Stages(r.Context(), chi.URLParam(r, "ws"))
 }
 
-// A etapa em si é só nome, posição e se fica em paralelo com a anterior; quem
-// pode, travas e aprovação são regras de acesso. A cor sai da paleta sozinha.
+// The stage itself is just a name, a position and whether it runs in parallel with the
+// previous one; who may, locks and approval are access rules. The color comes from the palette.
 type stageInput struct {
 	Name     string `json:"name"`
 	After    string `json:"after"`    // etapa depois da qual a nova entra
-	Parallel *bool  `json:"parallel"` // ao lado da etapa anterior
+	Parallel *bool  `json:"parallel"` // next to the previous stage
 }
 
 var stagePalette = []string{"#a78bfa", "#22d3ee", "#34d399", "#fbbf24", "#f472b6", "#60a5fa", "#a3e635", "#fb923c", "#94a3b8"}
 
-// nextColor: a primeira cor da paleta que nenhuma etapa usa (ou a que se repete menos).
+// nextColor: the first palette color no stage uses (or the least repeated one).
 func nextColor(stages []store.Stage) string {
 	best, min := stagePalette[0], 1<<30
 	for _, c := range stagePalette {
@@ -64,7 +64,7 @@ func positionAfter(stages []store.Stage, after string) float64 {
 	return stages[len(stages)-1].Position + 10
 }
 
-// checkWho: perfis existem e usuários têm acesso ao workspace.
+// checkWho: roles exist and users have access to the workspace.
 func (a *API) checkWho(ctx context.Context, wsID string, w store.Who, what string) error {
 	roles, err := a.st.ListRoles(ctx)
 	if err != nil {
@@ -72,7 +72,7 @@ func (a *API) checkWho(ctx context.Context, wsID string, w store.Who, what strin
 	}
 	for _, id := range w.Roles {
 		if !slices.ContainsFunc(roles, func(r store.Role) bool { return r.ID == id }) {
-			return bad("%s: perfil inexistente", what)
+			return bad("%s: role doesn't exist", what)
 		}
 	}
 	ids, err := a.st.WorkspaceUserIDs(ctx, wsID)
@@ -85,7 +85,7 @@ func (a *API) checkWho(ctx context.Context, wsID string, w store.Who, what strin
 			if u, err := a.st.UserByID(ctx, id); err == nil {
 				name = u.Name
 			}
-			return bad("%s: %s não tem acesso a este workspace", what, name)
+			return bad("%s: %s doesn't have access to this workspace", what, name)
 		}
 	}
 	return nil
@@ -100,7 +100,7 @@ func (a *API) saveStage(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
-		return nil, bad("dê um nome à etapa")
+		return nil, bad("give the stage a name")
 	}
 	all, err := a.st.Stages(ctx, wsID)
 	if err != nil {
@@ -142,11 +142,11 @@ func (a *API) orderStages(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if len(in.IDs) != len(all) {
-		return nil, bad("envie a ordem de todas as etapas")
+		return nil, bad("send the order of every stage")
 	}
 	for _, s := range all {
 		if !slices.Contains(in.IDs, s.ID) {
-			return nil, bad("etapa faltando na ordem: %s", s.Name)
+			return nil, bad("stage missing from the order: %s", s.Name)
 		}
 	}
 	if err := a.st.SetStageOrder(ctx, wsID, in.IDs); err != nil {
@@ -161,7 +161,7 @@ func (a *API) deleteStage(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if all, _ := a.st.Stages(r.Context(), st.WorkspaceID); len(all) <= 1 {
-		return nil, bad("o fluxo precisa de pelo menos uma etapa")
+		return nil, bad("the workflow needs at least one stage")
 	}
 	return nil, a.st.DeleteStage(r.Context(), st)
 }
@@ -181,7 +181,7 @@ func (a *API) listRules(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.ListRules(r.Context(), chi.URLParam(r, "ws"))
 }
 
-// ruleConfig é a parte da config que o servidor confere.
+// ruleConfig is the part of the config the server checks.
 type ruleConfig struct {
 	To      string   `json:"to"`
 	Roles   []string `json:"roles"`
@@ -201,90 +201,90 @@ var notifyTargets = map[string]bool{"requester": true, "creator": true, "assigne
 
 func (a *API) checkRule(ctx context.Context, in *store.Rule) error {
 	if !store.RuleTriggers[in.Trigger] {
-		return bad("gatilho desconhecido")
+		return bad("unknown trigger")
 	}
 	if in.Trigger == "access" {
 		return a.checkAccess(ctx, in)
 	}
 	if !store.RuleActions[in.Action] {
-		return bad("ação desconhecida")
+		return bad("unknown action")
 	}
 	if store.TriggerNeedsStage(in.Trigger) {
 		if !a.st.ValidStage(ctx, in.WorkspaceID, in.Stage) {
-			return bad("escolha a etapa do gatilho")
+			return bad("choose the trigger's stage")
 		}
 	} else {
 		in.Stage = ""
 	}
 	var cond store.Conditions
 	if len(in.Conditions) > 0 && json.Unmarshal(in.Conditions, &cond) != nil {
-		return bad("condições inválidas")
+		return bad("invalid conditions")
 	}
 	for _, st := range cond.Stages {
 		if !a.st.ValidStage(ctx, in.WorkspaceID, st) {
-			return bad("etapa inválida nos filtros")
+			return bad("invalid stage in the filters")
 		}
 	}
 	if in.Trigger == "stale" && cond.Hours <= 0 {
-		return bad("informe depois de quantas horas parada")
+		return bad("enter after how many idle hours")
 	}
 	if in.Trigger == "cost_over" && cond.Cost <= 0 {
-		return bad("informe o valor em US$")
+		return bad("enter the amount in US$")
 	}
 	var c ruleConfig
 	if len(in.Config) > 0 && json.Unmarshal(in.Config, &c) != nil {
-		return bad("configuração inválida")
+		return bad("invalid configuration")
 	}
 	who := store.Who{Roles: c.Roles, Users: c.Users}
 	switch in.Action {
 	case "notify":
 		if !notifyTargets[c.To] {
-			return bad("escolha para quem notificar")
+			return bad("choose whom to notify")
 		}
 		if c.To == "roles" && len(c.Roles) == 0 || c.To == "users" && len(c.Users) == 0 {
-			return bad("escolha ao menos um perfil ou usuário")
+			return bad("choose at least one role or user")
 		}
-		if err := a.checkWho(ctx, in.WorkspaceID, who, "Destinatários"); err != nil {
+		if err := a.checkWho(ctx, in.WorkspaceID, who, "Recipients"); err != nil {
 			return err
 		}
 	case "assign":
 		if (c.Mode == "" || c.Mode == "user") && len(c.Users) == 0 || c.Mode == "balance" && who.Empty() {
-			return bad("escolha quem vai ser o responsável")
+			return bad("choose who will be the assignee")
 		}
-		if err := a.checkWho(ctx, in.WorkspaceID, who, "Responsável"); err != nil {
+		if err := a.checkWho(ctx, in.WorkspaceID, who, "Assignee"); err != nil {
 			return err
 		}
 	case "move":
 		if c.To == "" || (store.TriggerNeedsStage(in.Trigger) && c.To == in.Stage) || !a.st.ValidStage(ctx, in.WorkspaceID, c.To) {
-			return bad("escolha a etapa de destino (diferente da do gatilho)")
+			return bad("choose the target stage (different from the trigger's)")
 		}
 	case "webhook":
 		if !strings.HasPrefix(c.URL, "http://") && !strings.HasPrefix(c.URL, "https://") {
-			return bad("informe a URL do webhook (http/https)")
+			return bad("enter the webhook URL (http/https)")
 		}
 	case "script":
 		if strings.TrimSpace(c.Script) == "" {
-			return bad("escreva o script")
+			return bad("write the script")
 		}
 	case "set_agent":
 		if _, err := a.st.Agent(ctx, c.AgentID); err != nil {
-			return bad("escolha o agente")
+			return bad("choose the agent")
 		}
 	case "add_label":
 		l, err := a.st.Label(ctx, c.LabelID)
 		if err != nil || l.WorkspaceID != in.WorkspaceID {
-			return bad("escolha uma label deste workspace")
+			return bad("choose a label from this workspace")
 		}
 	case "comment":
 		if strings.TrimSpace(c.Message) == "" {
-			return bad("escreva o comentário")
+			return bad("write the comment")
 		}
 	}
 	if c.OnFail != "" && !a.st.ValidStage(ctx, in.WorkspaceID, c.OnFail) {
-		return bad("etapa de falha inválida")
+		return bad("invalid failure stage")
 	}
 	if c.OnWait != "" && !a.st.ValidStage(ctx, in.WorkspaceID, c.OnWait) {
-		return bad("etapa inválida")
+		return bad("invalid stage")
 	}
 	return nil
 }
@@ -292,51 +292,51 @@ func (a *API) checkRule(ctx context.Context, in *store.Rule) error {
 var lockFields = []string{"title", "description", "priority", "labels", "agent", "repos", "assignee"}
 var requirements = []string{"agent", "assignee", "description", "changes"}
 
-// checkAccess: regra de acesso (quem pode, travas, requisitos, limite,
-// aprovação, responsáveis) de uma etapa. Não tem filtros: vale sempre.
+// checkAccess: a stage's access rule (who may, locks, requirements, limit, approval,
+// owners). It has no filters: it always applies.
 func (a *API) checkAccess(ctx context.Context, in *store.Rule) error {
 	if !store.AccessActions[in.Action] {
-		return bad("ação desconhecida")
+		return bad("unknown action")
 	}
 	if !a.st.ValidStage(ctx, in.WorkspaceID, in.Stage) {
-		return bad("escolha a etapa")
+		return bad("choose the stage")
 	}
 	in.Conditions = json.RawMessage("{}")
 	var c store.AccessConfig
 	if len(in.Config) > 0 && json.Unmarshal(in.Config, &c) != nil {
-		return bad("configuração inválida")
+		return bad("invalid configuration")
 	}
 	who := store.Who{Roles: c.Roles, Users: c.Users}
 	switch in.Action {
 	case "allow_act", "allow_enter", "responsible":
 		if who.Empty() {
-			return bad("escolha ao menos um perfil ou pessoa")
+			return bad("choose at least one role or person")
 		}
 	case "lock_fields":
 		if len(c.Fields) == 0 || slices.ContainsFunc(c.Fields, func(f string) bool { return !slices.Contains(lockFields, f) }) {
-			return bad("escolha o que fica travado")
+			return bad("choose what gets locked")
 		}
 	case "require":
 		if len(c.Requires) == 0 || slices.ContainsFunc(c.Requires, func(f string) bool { return !slices.Contains(requirements, f) }) {
-			return bad("escolha o que a issue precisa ter")
+			return bad("choose what the issue must have")
 		}
 	case "wip":
 		if c.WIP < 1 {
-			return bad("informe o limite de issues")
+			return bad("enter the issue limit")
 		}
 	case "close":
 		if c.Kind != "done" && c.Kind != "cancelled" {
-			return bad("escolha se a issue fica concluída ou cancelada")
+			return bad("choose whether the issue ends up done or cancelled")
 		}
 	case "approval":
 		if c.Approvals < 1 || c.Approvals > 10 {
-			return bad("de 1 a 10 aprovações")
+			return bad("from 1 to 10 approvals")
 		}
 		if c.To == "" || c.To == in.Stage || !a.st.ValidStage(ctx, in.WorkspaceID, c.To) {
-			return bad("escolha para onde a issue vai quando aprovada")
+			return bad("choose where the issue goes once approved")
 		}
 	}
-	return a.checkWho(ctx, in.WorkspaceID, who, "Pessoas da regra")
+	return a.checkWho(ctx, in.WorkspaceID, who, "People in the rule")
 }
 
 func (a *API) saveRule(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -371,7 +371,7 @@ func (a *API) saveRule(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.SaveRule(ctx, in)
 }
 
-// orderRules grava a ordem em que as regras rodam (uma lista de ids).
+// orderRules saves the order the rules run in (a list of ids).
 func (a *API) orderRules(w http.ResponseWriter, r *http.Request) (any, error) {
 	var in struct {
 		IDs []string `json:"ids"`
@@ -400,11 +400,11 @@ func (a *API) deleteRule(w http.ResponseWriter, r *http.Request) (any, error) {
 // ---------- alertas ----------
 
 var actionNames = map[string]string{
-	"allow_act": "quem mexe", "allow_enter": "quem traz issues", "read_only": "somente leitura", "lock_fields": "campos travados",
-	"require": "requisitos", "wip": "limite de issues", "approval": "aprovação", "responsible": "responsáveis",
-	"notify": "notificar", "webhook": "webhook", "move": "mover", "run_agent": "rodar agente", "open_pr": "abrir PR", "merge": "merge",
-	"script": "script", "set_agent": "definir agente", "set_priority": "definir prioridade", "add_label": "adicionar label",
-	"assign": "definir responsável", "comment": "comentar", "stop_agent": "parar o agente", "close": "encerrar a issue",
+	"allow_act": "who works on it", "allow_enter": "who brings issues", "read_only": "read-only", "lock_fields": "locked fields",
+	"require": "requirements", "wip": "issue limit", "approval": "approval", "responsible": "owners",
+	"notify": "notify", "webhook": "webhook", "move": "move", "run_agent": "run agent", "open_pr": "open PR", "merge": "merge",
+	"script": "script", "set_agent": "set agent", "set_priority": "set priority", "add_label": "add label",
+	"assign": "set assignee", "comment": "comment", "stop_agent": "stop the agent", "close": "close the issue",
 }
 
 type warning struct {
@@ -414,8 +414,8 @@ type warning struct {
 	RuleID  string `json:"ruleId,omitempty"`
 }
 
-// workflowWarnings: referências a pessoas sem acesso, perfis ou labels que
-// sumiram, agentes arquivados. Usado na tela de fluxo e na duplicação.
+// workflowWarnings: references to people without access, roles or labels that
+// disappeared, archived agents. Used on the workflow screen and in duplication.
 func (a *API) workflowWarnings(ctx context.Context, wsID string, stages []store.Stage, rules []store.Rule) []warning {
 	out := []warning{}
 	access, _ := a.st.WorkspaceUserIDs(ctx, wsID)
@@ -427,17 +427,17 @@ func (a *API) workflowWarnings(ctx context.Context, wsID string, stages []store.
 				return u.Name
 			}
 		}
-		return tr(ctx, "usuário removido")
+		return tr(ctx, "removed user")
 	}
 	checkWho := func(w store.Who, where, stageID, ruleID string) {
 		for _, id := range w.Users {
 			if !access[id] {
-				out = append(out, warning{where, tr(ctx, "%s não tem acesso a este workspace", name(id)), stageID, ruleID})
+				out = append(out, warning{where, tr(ctx, "%s doesn't have access to this workspace", name(id)), stageID, ruleID})
 			}
 		}
 		for _, id := range w.Roles {
 			if !slices.ContainsFunc(roles, func(r store.Role) bool { return r.ID == id }) {
-				out = append(out, warning{where, tr(ctx, "um perfil usado aqui foi excluído"), stageID, ruleID})
+				out = append(out, warning{where, tr(ctx, "a role used here was deleted"), stageID, ruleID})
 			}
 		}
 	}
@@ -452,19 +452,19 @@ func (a *API) workflowWarnings(ctx context.Context, wsID string, stages []store.
 	for _, r := range rules {
 		var c ruleConfig
 		json.Unmarshal(r.Config, &c)
-		where := tr(ctx, "Regra %s", tr(ctx, firstNonEmptyStr(actionNames[r.Action], r.Action)))
+		where := tr(ctx, "Rule %s", tr(ctx, firstNonEmptyStr(actionNames[r.Action], r.Action)))
 		if r.Stage != "" {
-			where = tr(ctx, "Etapa %s · %s", stageName(r.Stage), tr(ctx, firstNonEmptyStr(actionNames[r.Action], r.Action)))
+			where = tr(ctx, "Stage %s · %s", stageName(r.Stage), tr(ctx, firstNonEmptyStr(actionNames[r.Action], r.Action)))
 		}
 		checkWho(store.Who{Roles: c.Roles, Users: c.Users}, where, "", r.ID)
 		if c.LabelID != "" {
 			if l, err := a.st.Label(ctx, c.LabelID); err != nil || l.WorkspaceID != wsID {
-				out = append(out, warning{where, tr(ctx, "a label desta regra não existe neste workspace"), "", r.ID})
+				out = append(out, warning{where, tr(ctx, "this rule's label doesn't exist in this workspace"), "", r.ID})
 			}
 		}
 		if c.AgentID != "" {
 			if ag, err := a.st.Agent(ctx, c.AgentID); err != nil || ag.Archived {
-				out = append(out, warning{where, tr(ctx, "o agente desta regra foi arquivado"), "", r.ID})
+				out = append(out, warning{where, tr(ctx, "this rule's agent was archived"), "", r.ID})
 			}
 		}
 	}
@@ -487,13 +487,13 @@ func (a *API) getWarnings(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- duplicar o fluxo ----------
 
-// copyWorkflow substitui o fluxo do destino pelo da origem, igual: etapas,
-// regras e regras de acesso. O fluxo do destino é desfeito; issues em etapas
-// que deixam de existir vão para a primeira etapa. Pessoas sem acesso ao
-// destino são copiadas como estão e aparecem nos alertas do destino para a
-// pessoa corrigir (elas não ganham acesso nem recebem nada por isso). Só as
-// labels mudam: são do workspace, então são achadas ou criadas pelo nome.
-// dryRun devolve o que vai acontecer, para confirmar antes.
+// copyWorkflow replaces the destination's workflow with the origin's, as is: stages,
+// rules and access rules. The destination's workflow is undone; issues in stages that
+// stop existing go to the first stage. People without access to the destination are
+// copied as they are and show up in the destination's warnings for someone to fix
+// (they gain no access nor receive anything because of it). Only labels change: they
+// belong to the workspace, so they are matched or created by name.
+// dryRun returns what will happen, to confirm first.
 func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) {
 	ctx := r.Context()
 	from := chi.URLParam(r, "ws")
@@ -505,7 +505,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 		return nil, err
 	}
 	if in.To == "" || in.To == from {
-		return nil, bad("escolha outro workspace de destino")
+		return nil, bad("choose another destination workspace")
 	}
 	if err := a.ensureAccess(r, in.To); err != nil {
 		return nil, err
@@ -550,7 +550,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 		case idx >= 0:
 			c["labelId"] = destLabels[idx].ID
 		case in.DryRun:
-			notes = append(notes, warning{Where: tr(ctx, "Regra %s", tr(ctx, firstNonEmptyStr(actionNames[rl.Action], rl.Action))), Message: tr(ctx, "a label %s será criada no destino", l.Name)})
+			notes = append(notes, warning{Where: tr(ctx, "Rule %s", tr(ctx, firstNonEmptyStr(actionNames[rl.Action], rl.Action))), Message: tr(ctx, "the label %s will be created in the destination", l.Name)})
 		default:
 			if nl, err := a.st.CreateLabel(ctx, in.To, l.Name, l.Color); err == nil {
 				c["labelId"] = nl.ID
@@ -559,7 +559,7 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 		}
 		rl.Config, _ = json.Marshal(c)
 	}
-	// O que vai precisar de ajuste no destino (pessoas sem acesso, perfis apagados…).
+	// What will need fixing in the destination (people without access, deleted roles…).
 	warns := append(a.workflowWarnings(ctx, in.To, stages, rules), notes...)
 	out := map[string]any{"warnings": warns, "stages": len(stages), "rules": len(rules),
 		"replaced": map[string]int{"stages": len(oldStages), "rules": len(oldRules)}, "movedIssues": moved}
@@ -574,8 +574,8 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 
 // ---------- aprovar ----------
 
-// approveIssue registra a aprovação da pessoa na etapa atual. Quando atinge
-// o número que a etapa pede, a issue segue para o destino da aprovação.
+// approveIssue records the person's approval in the current stage. When it reaches the
+// number the stage asks for, the issue moves on to the approval's destination.
 func (a *API) approveIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	ctx := r.Context()
 	is, err := a.loadIssue(r)
@@ -585,21 +585,21 @@ func (a *API) approveIssue(w http.ResponseWriter, r *http.Request) (any, error) 
 	u := userOf(r)
 	st, p := a.policyOf(ctx, is.WorkspaceID, is.Status)
 	if st == nil || p.Approvals <= 0 {
-		return nil, bad("esta etapa não tem aprovação")
+		return nil, bad("this stage has no approval")
 	}
 	if p.ReadOnly && !u.IsOwner {
-		return nil, forbidden("%s é somente leitura", st.Name)
+		return nil, forbidden("%s is read-only", st.Name)
 	}
 	if !u.IsOwner {
-		if err := need(u, "issue.approve", "aprovar issues"); err != nil {
+		if err := need(u, "issue.approve", "approve issues"); err != nil {
 			return nil, err
 		}
 		if !p.Approvers.Empty() && !p.Approvers.Includes(u) {
-			return nil, forbidden("em %s, só %s aprova", st.Name, a.whoText(ctx, p.Approvers))
+			return nil, forbidden("in %s, only %s approves", st.Name, a.whoText(ctx, p.Approvers))
 		}
 	}
 	if is.ActiveRun != nil {
-		return nil, bad("espere a execução terminar para aprovar")
+		return nil, bad("wait for the run to finish before approving")
 	}
 	n, err := a.st.Approve(ctx, is.ID, is.Status, u.ID)
 	if err != nil {
@@ -611,7 +611,7 @@ func (a *API) approveIssue(w http.ResponseWriter, r *http.Request) (any, error) 
 			return nil, err
 		}
 	} else {
-		a.run.SystemComment(ctx, is, fmt.Sprintf("✓ %s aprovou (%d de %d).", u.Name, n, p.Approvals))
+		a.run.SystemComment(ctx, is, fmt.Sprintf("✓ %s approved (%d of %d).", u.Name, n, p.Approvals))
 	}
 	is, _ = a.st.Issue(ctx, is.ID)
 	a.publishIssue(is)
@@ -634,21 +634,21 @@ func (a *API) skillAgents(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.ListAgents(r.Context())
 }
 
-// ---------- perfil de uma pessoa ----------
+// ---------- a person's profile ----------
 
 type profileWorkspace struct {
 	ID       string   `json:"id"`
 	Name     string   `json:"name"`
 	Key      string   `json:"key"`
-	Roles    []string `json:"roles"`    // o que faz em cada etapa (ex.: "Triagem: mexe nas issues, aprova")
-	Rules    int      `json:"rules"`    // regras que citam a pessoa (destinatário, responsável)
-	Open     int      `json:"open"`     // issues abertas com ela de responsável
-	Created  int      `json:"created"`  // issues que ela criou
-	Resolved int      `json:"resolved"` // com ela de responsável, concluídas
+	Roles    []string `json:"roles"`    // what they do in each stage (e.g. "Triage: works on issues, approves")
+	Rules    int      `json:"rules"`    // rules that mention the person (recipient, assignee)
+	Open     int      `json:"open"`     // open issues with them as assignee
+	Created  int      `json:"created"`  // issues they created
+	Resolved int      `json:"resolved"` // with them as assignee, done
 }
 
-// userProfile: quem a pessoa é e o que faz em cada workspace que quem
-// pergunta também enxerga.
+// userProfile: who the person is and what they do in each workspace that whoever asks
+// also sees.
 func (a *API) userProfile(w http.ResponseWriter, r *http.Request) (any, error) {
 	ctx := r.Context()
 	target, err := a.st.UserByID(ctx, chi.URLParam(r, "id"))
@@ -674,16 +674,16 @@ func (a *API) userProfile(w http.ResponseWriter, r *http.Request) (any, error) {
 				var parts []string
 				pol := st.Policy
 				if pol.Act.Has(target) {
-					parts = append(parts, tr(ctx, "mexe nas issues"))
+					parts = append(parts, tr(ctx, "works on issues"))
 				}
 				if pol.Enter.Has(target) {
-					parts = append(parts, tr(ctx, "traz issues"))
+					parts = append(parts, tr(ctx, "brings issues"))
 				}
 				if pol.Approvals > 0 && pol.Approvers.Has(target) {
-					parts = append(parts, tr(ctx, "aprova"))
+					parts = append(parts, tr(ctx, "approves"))
 				}
 				if pol.Responsible.Has(target) {
-					parts = append(parts, tr(ctx, "é responsável"))
+					parts = append(parts, tr(ctx, "is an owner"))
 				}
 				if len(parts) > 0 {
 					p.Roles = append(p.Roles, st.Name+": "+strings.Join(parts, ", "))

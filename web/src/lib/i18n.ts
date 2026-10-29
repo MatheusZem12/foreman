@@ -1,16 +1,20 @@
-import en from '../locales/en';
+import ptBR from '../locales/pt-BR';
 
-// Idioma e tema da pessoa, guardados neste navegador. O texto em português é a
-// própria chave: t('Salvar') vira "Save" em inglês e, se faltar tradução,
-// continua em português. {0}, {1}… recebem os valores: t('{0} regra(s)', n).
-// Trocar o idioma recarrega a página (os textos fixos são lidos ao carregar).
+// The person's language and theme, kept in this browser. The English text is the key
+// itself: t('Save') becomes "Salvar" in Portuguese and, if a translation is missing,
+// stays in English. {0}, {1}… receive the values: t('{0} rule(s)', n).
+// Switching the language reloads the page (fixed texts are read on load).
 
 export type Lang = 'pt-BR' | 'en';
 export type Theme = 'system' | 'light' | 'dark';
 
 function read(key: string) {
   try {
-    return localStorage.getItem(key);
+    // Preferences saved before the rename used the `foreman.` prefix: read them once.
+    const legacy = key.replace(/^foreman\./, 'foreman.');
+    const value = localStorage.getItem(key) ?? localStorage.getItem(legacy);
+    if (value !== null && localStorage.getItem(key) === null) localStorage.setItem(key, value);
+    return value;
   } catch {
     return null;
   }
@@ -19,18 +23,18 @@ function write(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
   } catch {
-    /* sem storage: vale só nesta visita */
+    /* no storage: it only lasts this visit */
   }
 }
 
 export const lang: Lang = (() => {
-  const saved = read('mx.lang');
+  const saved = read('foreman.lang');
   if (saved === 'en' || saved === 'pt-BR') return saved;
   return typeof navigator !== 'undefined' && !navigator.language?.toLowerCase().startsWith('pt') ? 'en' : 'pt-BR';
 })();
 export const locale = lang === 'en' ? 'en-US' : 'pt-BR';
 
-const dict: Record<string, string> = lang === 'en' ? en : {};
+const dict: Record<string, string> = lang === 'pt-BR' ? ptBR : {};
 
 export function t(text: string, ...args: (string | number | undefined | null)[]): string {
   let out = dict[text] ?? text;
@@ -41,20 +45,20 @@ export function t(text: string, ...args: (string | number | undefined | null)[])
 }
 
 export function setLang(l: Lang) {
-  write('mx.lang', l);
+  write('foreman.lang', l);
   location.reload();
 }
 
-export const theme = (): Theme => (read('mx.theme') as Theme) || 'system';
+export const theme = (): Theme => (read('foreman.theme') as Theme) || 'system';
 
-// Aplica o tema (o index.html já faz isso antes do React, para não piscar).
+// Applies the theme (index.html already does it before React, so it doesn't flicker).
 export function applyTheme(t: Theme = theme()) {
   const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#111113' : '#f6f6f8');
 }
 export function setTheme(t: Theme) {
-  write('mx.theme', t);
+  write('foreman.theme', t);
   applyTheme(t);
 }
 if (typeof window !== 'undefined') {

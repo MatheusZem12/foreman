@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -7,12 +7,12 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon.svg" />
-    <title>Multica</title>
+    <title>Foreman</title>
     <script>
-      // Tema antes do React: sem piscar claro/escuro ao abrir.
+      // Theme before React: no light/dark flicker on open.
       (function () {
         var t = 'system';
-        try { t = localStorage.getItem('mx.theme') || 'system'; } catch (e) {}
+        try { t = localStorage.getItem('foreman.theme') || localStorage.getItem('mx.theme') || 'system'; } catch (e) {}
         var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.dataset.theme = dark ? 'dark' : 'light';
         if (!dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f6f6f8');

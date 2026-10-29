@@ -1,4 +1,4 @@
--- Quando a issue foi concluída: base dos gráficos de "resolvidas por mês".
+-- When the issue was done: the basis of the "resolved per month" charts.
 alter table issues add column done_at timestamptz;
 update issues set done_at = updated_at where status = 'done';
 

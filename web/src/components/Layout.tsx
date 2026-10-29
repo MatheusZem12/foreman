@@ -47,7 +47,7 @@ export function Layout() {
       try {
         localStorage.setItem(LAST_WS, ws.key);
       } catch {
-        /* sem storage */
+        /* no storage */
       }
     }
   }, [ws]);
@@ -94,11 +94,11 @@ export function Layout() {
           </main>
         </div>
 
-        {/* Botão flutuante de nova issue no celular (fora da página da issue, onde cobriria o comentário) */}
+        {/* Floating new-issue button on phones (outside the issue page, where it would cover the comment) */}
         {!loc.pathname.includes('/issues/') && <button
           onClick={() => setNewIssue({})}
           className="fixed bottom-5 right-5 z-30 grid size-14 place-items-center rounded-2xl bg-gradient-to-b from-accent to-accent/80 text-snow shadow-[0_10px_30px_-8px_rgb(var(--accent)/0.8)] active:scale-95 md:hidden"
-          aria-label={t('Nova issue')}
+          aria-label={t('New issue')}
         >
           <Plus className="size-6" />
         </button>}
@@ -160,9 +160,9 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
                   <span className="grid size-5 place-items-center rounded bg-hover text-[11px] font-bold">{w.name[0]}</span> {w.name}
                 </MenuItem>
               ))}
-              {can(me, 'workspace.create') && <MenuItem onClick={() => { setCreating(true); close(); }}><Plus className="size-4 text-mute" /> {t('Novo workspace')}</MenuItem>}
+              {can(me, 'workspace.create') && <MenuItem onClick={() => { setCreating(true); close(); }}><Plus className="size-4 text-mute" /> {t('New workspace')}</MenuItem>}
               <div className="my-1 border-t border-line" />
-              <MenuItem danger onClick={logout}><LogOut className="size-4" /> {t('Sair')}</MenuItem>
+              <MenuItem danger onClick={logout}><LogOut className="size-4" /> {t('Sign out')}</MenuItem>
             </>
           )}
         </Popover>
@@ -171,40 +171,40 @@ function Sidebar({ ws, workspaces, onSearch, onNew, onClose }: { ws: Workspace; 
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2">
         <button onClick={onSearch} className="flex h-8 items-center gap-2.5 rounded-md px-2 text-dim hover:bg-hover hover:text-fg">
-          <Search className="size-4" /> <span className="flex-1 text-left">{t('Buscar')}</span>
+          <Search className="size-4" /> <span className="flex-1 text-left">{t('Search')}</span>
           <kbd className="hidden rounded border border-line px-1 text-[10px] text-mute md:inline">{t('Ctrl K')}</kbd>
         </button>
         <button onClick={onNew} className="flex h-8 items-center gap-2.5 rounded-md px-2 text-dim hover:bg-hover hover:text-fg">
-          <Plus className="size-4" /> <span className="flex-1 text-left">{t('Nova issue')}</span>
+          <Plus className="size-4" /> <span className="flex-1 text-left">{t('New issue')}</span>
           <kbd className="hidden rounded border border-line px-1 text-[10px] text-mute md:inline">{t('C')}</kbd>
         </button>
 
-        <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Trabalho')}</div>
+        <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Work')}</div>
         {link(base, <LayoutGrid className="size-4" />, t('Issues'), working ? (
           <span className="flex items-center gap-1 text-[11px] text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" />{working}</span>
         ) : null)}
         {canSee(me, 'analytics') && link(`${base}/analytics`, <BarChart3 className="size-4" />, t('Analytics'))}
-        {canSee(me, 'analyticsGlobal') && link(`${base}/analytics-geral`, <Globe2 className="size-4" />, t('Analytics geral'))}
+        {canSee(me, 'analyticsGlobal') && link(`${base}/analytics-overall`, <Globe2 className="size-4" />, t('Overall Analytics'))}
 
-        {(canSee(me, 'fluxo') || canSee(me, 'workspace') || canSee(me, 'labels')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Workspace')}</div>}
-        {canSee(me, 'fluxo') && link(`${base}/fluxo`, <Workflow className="size-4" />, t('Fluxo e automações'))}
-        {canSee(me, 'workspace') && link(`${base}/workspace`, <FolderCog className="size-4" />, t('Repositórios e pessoas'))}
+        {(canSee(me, 'workflow') || canSee(me, 'workspace') || canSee(me, 'labels')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Workspace')}</div>}
+        {canSee(me, 'workflow') && link(`${base}/workflow`, <Workflow className="size-4" />, t('Workflow & automations'))}
+        {canSee(me, 'workspace') && link(`${base}/workspace`, <FolderCog className="size-4" />, t('Repositories & people'))}
         {canSee(me, 'labels') && link(`${base}/labels`, <Tags className="size-4" />, t('Labels'))}
 
-        {(canSee(me, 'agentes') || canSee(me, 'skills')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('IA')}</div>}
-        {canSee(me, 'agentes') && link(`${base}/agentes`, <Bot className="size-4" />, t('Agentes'))}
+        {(canSee(me, 'agents') || canSee(me, 'skills')) && <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('AI')}</div>}
+        {canSee(me, 'agents') && link(`${base}/agents`, <Bot className="size-4" />, t('Agents'))}
         {canSee(me, 'skills') && link(`${base}/skills`, <BookOpen className="size-4" />, t('Skills'))}
 
-        <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Configurações')}</div>
-        {link(`${base}/config`, <Settings className="size-4" />, t('Configurações gerais'))}
+        <div className="mb-1 mt-4 px-2 text-[11px] font-medium text-mute">{t('Settings')}</div>
+        {link(`${base}/config`, <Settings className="size-4" />, t('General settings'))}
       </nav>
 
       <div className="space-y-0.5 border-t border-line px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        {link('/sobre', <CircleHelp className="size-4" />, t('Como funciona'))}
+        {link('/about', <CircleHelp className="size-4" />, t('How it works'))}
         <PrefsQuick className="px-1 pt-1" />
       </div>
 
-      <Modal open={creating} onClose={() => setCreating(false)} title={t('Novo workspace')}>
+      <Modal open={creating} onClose={() => setCreating(false)} title={t('New workspace')}>
         <CreateWorkspaceForm onDone={(w) => { setCreating(false); nav(`/w/${w.key}/workspace`); }} />
       </Modal>
     </>

@@ -1,4 +1,4 @@
-module multica
+module foreman
 
 go 1.23
 

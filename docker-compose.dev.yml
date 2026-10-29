@@ -1,4 +1,4 @@
-# Desenvolvimento: expõe o Postgres em localhost:5432.
+# Development: exposes Postgres on localhost:5432.
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
 services:
   db:

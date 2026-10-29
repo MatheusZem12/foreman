@@ -13,14 +13,14 @@ import (
 	"time"
 )
 
-// Catálogo de modelos: montado a partir dos próprios CLIs, para o formulário do
-// agente oferecer só o que existe e acompanhar lançamentos sem ninguém digitar nada.
+// Model catalog: built from the CLIs themselves, so the agent form only offers what
+// exists and keeps up with releases without anyone typing anything.
 //
-//   - Codex: `codex debug models` devolve o catálogo oficial (o próprio Codex o
-//     atualiza); sem rede, cai no cache dele (~/.codex/models_cache.json).
-//   - Claude: os aliases (opus, sonnet…) sempre apontam para a versão mais nova e
-//     vêm do `claude --help`; nomes completos vêm da API da Anthropic quando há
-//     ANTHROPIC_API_KEY, ou dos modelos já usados nesta máquina.
+//   - Codex: `codex debug models` returns the official catalog (Codex itself keeps it
+//     up to date); without network, it falls back to its cache (~/.codex/models_cache.json).
+//   - Claude: the aliases (opus, sonnet…) always point to the newest version and
+//     come from `claude --help`; full names come from the Anthropic API when there is an
+//     ANTHROPIC_API_KEY, or from the models already used on this machine.
 
 type ModelOption struct {
 	ID            string   `json:"id"`
@@ -35,7 +35,7 @@ type RuntimeModels struct {
 	Runtime   string        `json:"runtime"`
 	Installed bool          `json:"installed"`
 	Models    []ModelOption `json:"models"`
-	Efforts   []string      `json:"efforts"` // níveis aceitos pelo CLI
+	Efforts   []string      `json:"efforts"` // levels the CLI accepts
 	Source    string        `json:"source"`
 	FetchedAt time.Time     `json:"fetchedAt"`
 	Error     string        `json:"error,omitempty"`
@@ -49,7 +49,7 @@ type modelCache struct {
 	at   time.Time
 }
 
-// Models devolve o catálogo em cache; force refaz a consulta aos CLIs.
+// Models returns the cached catalog; force queries the CLIs again.
 func (r *Runner) Models(ctx context.Context, force bool) []RuntimeModels {
 	r.models.mu.Lock()
 	defer r.models.mu.Unlock()
@@ -61,7 +61,7 @@ func (r *Runner) Models(ctx context.Context, force bool) []RuntimeModels {
 	return r.models.data
 }
 
-// Atualiza o catálogo ao subir e periodicamente, em segundo plano.
+// Refreshes the catalog on start and periodically, in the background.
 func (r *Runner) refreshModelsLoop(ctx context.Context) {
 	r.Models(ctx, true)
 	t := time.NewTicker(modelsTTL)
@@ -81,7 +81,7 @@ var (
 	reParens = regexp.MustCompile(`\(([a-z]+(?:,\s*[a-z]+)+)\)`)
 )
 
-// helpBlock recorta o texto de uma opção no --help (até a próxima opção).
+// helpBlock cuts an option's text out of --help (up to the next option).
 func helpBlock(help, flag string) string {
 	i := strings.Index(help, flag)
 	if i < 0 {
@@ -95,10 +95,10 @@ func helpBlock(help, flag string) string {
 }
 
 var claudeAliasInfo = map[string]string{
-	"opus":   "O mais capaz; sempre a versão mais nova",
-	"sonnet": "Equilíbrio entre qualidade, velocidade e custo; sempre a versão mais nova",
-	"haiku":  "O mais rápido e barato; sempre a versão mais nova",
-	"fable":  "Sempre a versão mais nova da família Fable",
+	"opus":   "The most capable; always the newest version",
+	"sonnet": "A balance of quality, speed and cost; always the newest version",
+	"haiku":  "The fastest and cheapest; always the newest version",
+	"fable":  "Always the newest version of the Fable family",
 }
 
 func (r *Runner) claudeModels(ctx context.Context) RuntimeModels {
@@ -106,12 +106,12 @@ func (r *Runner) claudeModels(ctx context.Context) RuntimeModels {
 	help := runCmd(ctx, r.cfg.ClaudeBin, "--help")
 	out.Installed = help.ok
 	if !help.ok {
-		out.Error = "claude não encontrado no servidor"
+		out.Error = "claude not found on the server"
 		return out
 	}
 	text := help.stdout + "\n" + help.stderr
 
-	// Aliases citados pelo próprio CLI + os aliases clássicos, que continuam válidos.
+	// Aliases the CLI itself mentions + the classic aliases, which are still valid.
 	aliases := []string{}
 	seen := map[string]bool{}
 	for _, m := range reQuoted.FindAllStringSubmatch(helpBlock(text, "--model <model>"), -1) {
@@ -129,7 +129,7 @@ func (r *Runner) claudeModels(ctx context.Context) RuntimeModels {
 	for _, a := range aliases {
 		desc := claudeAliasInfo[a]
 		if desc == "" {
-			desc = "Alias: sempre a versão mais nova"
+			desc = "Alias: always the newest version"
 		}
 		out.Models = append(out.Models, ModelOption{ID: a, Label: strings.ToUpper(a[:1]) + a[1:], Description: desc, Group: "alias"})
 	}
@@ -138,13 +138,13 @@ func (r *Runner) claudeModels(ctx context.Context) RuntimeModels {
 	}
 	out.Source = "claude --help"
 
-	// Nomes completos: API da Anthropic (com chave) ou os já usados nesta máquina.
+	// Full names: the Anthropic API (with a key) or the ones already used on this machine.
 	if full, err := anthropicModels(ctx); err == nil && len(full) > 0 {
 		out.Models = append(out.Models, full...)
-		out.Source += " + API da Anthropic"
+		out.Source += " + Anthropic API"
 	} else if used := claudeUsedModels(); len(used) > 0 {
 		out.Models = append(out.Models, used...)
-		out.Source += " + histórico local"
+		out.Source += " + local history"
 	}
 	return out
 }
@@ -180,7 +180,7 @@ func anthropicModels(ctx context.Context) ([]ModelOption, error) {
 	return out, nil
 }
 
-// Modelos que o Claude Code já usou neste computador (estatísticas locais dele).
+// Models Claude Code has already used on this computer (its local statistics).
 func claudeUsedModels() []ModelOption {
 	home, _ := os.UserHomeDir()
 	b, err := os.ReadFile(filepath.Join(home, ".claude", "stats-cache.json"))
@@ -202,7 +202,7 @@ func claudeUsedModels() []ModelOption {
 	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
 	var out []ModelOption
 	for _, id := range ids {
-		out = append(out, ModelOption{ID: id, Label: id, Description: "Versão fixa, já usada neste computador", Group: "used"})
+		out = append(out, ModelOption{ID: id, Label: id, Description: "Pinned version, already used on this computer", Group: "used"})
 	}
 	return out
 }
@@ -231,7 +231,7 @@ func (r *Runner) codexModels(ctx context.Context) RuntimeModels {
 	default:
 		out.Installed = runCmd(ctx, r.cfg.CodexBin, "--version").ok
 		if !out.Installed {
-			out.Error = "codex não encontrado no servidor"
+			out.Error = "codex not found on the server"
 			return out
 		}
 		home := os.Getenv("CODEX_HOME")
@@ -240,11 +240,11 @@ func (r *Runner) codexModels(ctx context.Context) RuntimeModels {
 			home = filepath.Join(h, ".codex")
 		}
 		if b, err := os.ReadFile(filepath.Join(home, "models_cache.json")); err == nil && json.Unmarshal(b, &cat) == nil && len(cat.Models) > 0 {
-			out.Source = "cache do Codex"
+			out.Source = "Codex cache"
 		} else if b := runCmd(ctx, r.cfg.CodexBin, "debug", "models", "--bundled"); b.ok && json.Unmarshal([]byte(b.stdout), &cat) == nil {
-			out.Source = "catálogo embutido no Codex"
+			out.Source = "catalog built into Codex"
 		} else {
-			out.Error = "não foi possível ler o catálogo do Codex"
+			out.Error = "couldn't read the Codex catalog"
 			return out
 		}
 	}

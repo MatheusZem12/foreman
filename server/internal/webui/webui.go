@@ -1,4 +1,4 @@
-// Package webui embute o build do front-end (web/dist copiado para cá).
+// Package webui embeds the front-end build (web/dist copied here).
 package webui
 
 import (
@@ -11,8 +11,8 @@ import (
 //go:embed all:dist
 var dist embed.FS
 
-// Handler serve os arquivos estáticos e devolve index.html para qualquer rota
-// desconhecida (o roteamento é do lado do cliente).
+// Handler serves the static files and returns index.html for any unknown route
+// (routing happens on the client side).
 func Handler() http.Handler {
 	sub, _ := fs.Sub(dist, "dist")
 	files := http.FileServer(http.FS(sub))
@@ -30,7 +30,7 @@ func Handler() http.Handler {
 		}
 		index, err := fs.ReadFile(sub, "index.html")
 		if err != nil {
-			http.Error(w, "front-end não compilado (rode o build do web/)", http.StatusNotFound)
+			http.Error(w, "front end not built (run the web/ build)", http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

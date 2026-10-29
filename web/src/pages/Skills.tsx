@@ -25,21 +25,21 @@ export function SkillsPage() {
       <aside className={clsx('shrink-0 border-line md:w-72 md:border-r', selected && 'hidden md:block')}>
         <div className="flex items-center gap-2 p-4 pb-2">
           <h1 className="text-lg font-semibold">{t('Skills')}</h1>
-          {canCreate && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setSelected('new')}><Plus className="size-3.5" /> {t('Nova')}</Button>}
+          {canCreate && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setSelected('new')}><Plus className="size-3.5" /> {t('New')}</Button>}
         </div>
-        <p className="px-4 pb-3 text-xs text-mute">{t('Instruções e scripts reutilizáveis. Indexe as skills nos agentes: todo agente já sai com o seu pacote de skills. Editou aqui, vale para todos.')}</p>
+        <p className="px-4 pb-3 text-xs text-mute">{t('Reusable instructions and scripts. Index skills on agents: every agent ships with its bundle of skills. Edit here and it applies everywhere.')}</p>
         <div className="space-y-0.5 px-2 pb-4">
           {skills.map((s) => (
             <button key={s.id} onClick={() => setSelected(s.id)} className={clsx('w-full rounded-md px-2.5 py-2 text-left hover:bg-hover', selected === s.id && 'bg-hover')}>
-              <div className="flex items-center gap-2 font-medium">{s.name} {s.always && <span className="rounded bg-accent/15 px-1.5 text-[10px] text-accent">{t('sempre')}</span>}</div>
+              <div className="flex items-center gap-2 font-medium">{s.name} {s.always && <span className="rounded bg-accent/15 px-1.5 text-[10px] text-accent">{t('always')}</span>}</div>
               <div className="line-clamp-2 text-xs text-mute">{s.description}</div>
             </button>
           ))}
-          {!skills.length && <Empty className="mx-2 rounded-xl border border-dashed border-line py-8 text-xs">{t('Nenhuma skill ainda. Skills são guias e scripts que você indexa nos agentes.')}</Empty>}
+          {!skills.length && <Empty className="mx-2 rounded-xl border border-dashed border-line py-8 text-xs">{t('No skills yet. Skills are guides and scripts you index on agents.')}</Empty>}
         </div>
       </aside>
       <div className={clsx('min-w-0 flex-1 overflow-y-auto', !selected && 'hidden md:block')}>
-        {selected ? <SkillEditor key={selected} skill={current} onDone={(id) => setSelected(id)} onBack={() => setSelected(null)} /> : <div className="p-6"><EmptyState icon={BookOpen} title={skills.length ? t('Selecione uma skill') : t('Nenhuma skill ainda')} action={canCreate && <Button variant="primary" onClick={() => setSelected('new')}><Plus className="size-4" /> {t('Nova skill')}</Button>}>{t('Instruções e scripts reutilizáveis. Indexe nos agentes: chamou o agente, vai o pacote de skills dele.')}</EmptyState></div>}
+        {selected ? <SkillEditor key={selected} skill={current} onDone={(id) => setSelected(id)} onBack={() => setSelected(null)} /> : <div className="p-6"><EmptyState icon={BookOpen} title={skills.length ? t('Select a skill') : t('No skills yet')} action={canCreate && <Button variant="primary" onClick={() => setSelected('new')}><Plus className="size-4" /> {t('New skill')}</Button>}>{t('Reusable instructions and scripts. Index them on agents: call the agent and its bundle of skills goes along.')}</EmptyState></div>}
       </div>
     </div>
   );
@@ -56,12 +56,12 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
   const canDelete = useCan('skill.delete');
   const files = s.files ?? [];
   const { data: agents = [] } = useAgents();
-  // Vínculo: todas as issues (qualquer agente), agentes escolhidos ou nenhum ainda.
+  // Link: every issue (any agent), chosen agents or none yet.
   const linked = agents.filter((a) => skill && a.skillIds.includes(skill.id)).map((a) => a.id);
   const [scope, setScope] = useState<'all' | 'agents' | 'none'>(skill?.always ? 'all' : linked.length ? 'agents' : 'none');
   const [agentIds, setAgentIds] = useState<string[] | null>(null);
   const chosen = agentIds ?? linked;
-  // Os agentes chegam depois: se a skill já estava vinculada a algum, mostra isso.
+  // The agents arrive later: if the skill was already linked to one, it shows that.
   useEffect(() => {
     if (agentIds === null && scope === 'none' && linked.length) setScope('agents');
   }, [linked.length]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -76,7 +76,7 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
       await api.put(`/skills/${saved.id}/agents`, { agentIds: scope === 'agents' ? chosen : [] });
       qc.invalidateQueries({ queryKey: ['skills'] });
       qc.invalidateQueries({ queryKey: ['agents'] });
-      toast('success', t('Skill salva'));
+      toast('success', t('Skill saved'));
       onDone(saved.id);
     } catch (err) {
       toast('error', (err as Error).message);
@@ -85,7 +85,7 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
     }
   };
   const remove = async () => {
-    if (!s.id || !(await ask({ title: t('Excluir a skill {0}?', s.name), message: t('Agentes e issues deixam de recebê-la.'), confirmText: t('Excluir'), danger: true }))) return;
+    if (!s.id || !(await ask({ title: t('Delete the skill {0}?', s.name), message: t('Agents and issues stop receiving it.'), confirmText: t('Delete'), danger: true }))) return;
     await api.del(`/skills/${s.id}`);
     qc.invalidateQueries({ queryKey: ['skills'] });
     onDone(null);
@@ -95,19 +95,19 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
     <div className="page space-y-4">
       <div className="flex items-center gap-2">
         <button onClick={onBack} className="text-xs text-mute md:hidden">{t('← Skills')}</button>
-        <span className="font-mono text-xs text-mute">{s.slug ? `skills/${s.slug}/SKILL.md` : t('nova skill')}</span>
+        <span className="font-mono text-xs text-mute">{s.slug ? `skills/${s.slug}/SKILL.md` : t('new skill')}</span>
         <div className="ml-auto flex gap-2">
-          {s.id && canDelete && <Button size="sm" variant="ghost" onClick={remove}><Trash2 className="size-3.5" /> {t('Excluir')}</Button>}
-          {canSave && <Button size="sm" variant="primary" loading={busy} onClick={save}>{t('Salvar')}</Button>}
+          {s.id && canDelete && <Button size="sm" variant="ghost" onClick={remove}><Trash2 className="size-3.5" /> {t('Delete')}</Button>}
+          {canSave && <Button size="sm" variant="primary" loading={busy} onClick={save}>{t('Save')}</Button>}
         </div>
       </div>
-      {/* Sem permissão de salvar: a skill aparece só para leitura. */}
+      {/* Without permission to save: the skill shows read-only. */}
       <fieldset disabled={!canSave} className="contents">
-      <Field label={t('Nome')}><input className="field-input" autoFocus={!s.id} value={s.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('deploy-hmg, padrao-de-commits…')} /></Field>
+      <Field label={t('Name')}><input className="field-input" autoFocus={!s.id} value={s.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('deploy-staging, commit-style…')} /></Field>
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-dim">{t('Vincular a')} <span className="font-normal text-mute">{t('· a skill é uma instrução; vai junto em toda execução de quem estiver vinculado')}</span></span>
+        <span className="text-xs font-medium text-dim">{t('Link to')} <span className="font-normal text-mute">{t('· a skill is an instruction; it goes along on every run of whatever is linked')}</span></span>
         <div className="grid gap-2 sm:grid-cols-3">
-          {([['all', t('Todas as issues'), t('Qualquer agente, em qualquer issue')], ['agents', t('Agentes escolhidos'), t('Só quando estes agentes rodarem')], ['none', t('Nenhum por enquanto'), t('Fica guardada para vincular depois')]] as const).map(([id, title, desc]) => (
+          {([['all', t('Every issue'), t('Any agent, on any issue')], ['agents', t('Chosen agents'), t('Only when these agents run')], ['none', t('None for now'), t('Kept to link later')]] as const).map(([id, title, desc]) => (
             <button key={id} type="button" onClick={() => setScope(id)}
               className={clsx('rounded-xl border p-3 text-left transition', scope === id ? 'border-accent/60 bg-accent/10' : 'border-line bg-white/[0.02] hover:border-white/15')}>
               <div className="flex items-center gap-1.5 text-[13px] font-medium">{scope === id ? <CheckCircle2 className="size-3.5 text-accent" /> : <Circle className="size-3.5 text-mute" />} {title}</div>
@@ -126,19 +126,19 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
                 </button>
               );
             })}
-            {!agents.length && <span className="text-xs text-mute">{t('Nenhum agente criado ainda.')}</span>}
+            {!agents.length && <span className="text-xs text-mute">{t('No agents created yet.')}</span>}
           </div>
         )}
       </div>
-      <Field label={t('Descrição')} hint={t('o agente decide pela descrição se deve ler a skill; seja específico')}>
-        <input className="field-input" value={s.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('Como publicar em homologação. Use quando a issue pedir deploy.')} />
+      <Field label={t('Description')} hint={t('the agent uses the description to decide whether to read the skill; be specific')}>
+        <input className="field-input" value={s.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('How to deploy to staging. Use when the issue asks for a deploy.')} />
       </Field>
-      <Field label={t('Conteúdo (markdown)')}>
+      <Field label={t('Content (markdown)')}>
         <textarea className="field-input min-h-[280px] font-mono text-[12px]" value={s.content ?? ''} onChange={(e) => set({ content: e.target.value })} spellCheck={false} />
       </Field>
       <div>
         <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-dim">
-          {t('Arquivos da skill')} <span className="font-normal text-mute">{t('· scripts ficam ao lado do SKILL.md; comece com #! para ficar executável')}</span>
+          {t('Skill files')} <span className="font-normal text-mute">{t('· scripts sit next to SKILL.md; start with #! to make them executable')}</span>
           <button onClick={() => { set({ files: [...files, { path: `script${files.length + 1}.sh`, content: '#!/usr/bin/env bash\nset -euo pipefail\n' }] }); setFileIdx(files.length); }} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg"><Plus className="size-3.5" /></button>
         </div>
         <div className="space-y-1">
@@ -147,7 +147,7 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
               <div className="flex items-center gap-2 px-2 py-1">
                 <FileCode2 className="size-3.5 text-mute" />
                 <input value={f.path} onChange={(e) => setFile(i, { path: e.target.value })} className="flex-1 font-mono text-xs" />
-                <button onClick={() => setFileIdx(fileIdx === i ? null : i)} className="text-xs text-mute hover:text-fg">{fileIdx === i ? t('fechar') : t('editar')}</button>
+                <button onClick={() => setFileIdx(fileIdx === i ? null : i)} className="text-xs text-mute hover:text-fg">{fileIdx === i ? t('close') : t('edit')}</button>
                 <button onClick={() => set({ files: files.filter((_, j) => j !== i) })} className="text-mute hover:text-red-400"><Trash2 className="size-3.5" /></button>
               </div>
               {fileIdx === i && <textarea value={f.content} onChange={(e) => setFile(i, { content: e.target.value })} rows={10} spellCheck={false} className="w-full border-t border-line bg-bg p-2 font-mono text-[12px]" />}

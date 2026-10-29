@@ -1,6 +1,6 @@
-// Etapa: o id de uma etapa do workspace (as do fluxo padrão usam ids legíveis, como "todo").
+// Stage: the id of a workspace stage (the default workflow's use readable ids, such as "todo").
 export type Status = 'backlog' | 'todo' | 'in_progress' | 'waiting' | 'in_review' | 'blocked' | 'done' | 'cancelled' | (string & {});
-// Papel da etapa no fluxo, tirado das regras (analytics).
+// The stage's role in the workflow, taken from the rules (analytics).
 export type StageKind = 'ai' | 'people' | 'approval' | 'closed' | 'queue';
 export interface Who { roles?: string[]; users?: string[] }
 export type LockField = 'title' | 'description' | 'priority' | 'labels' | 'agent' | 'repos' | 'assignee';
@@ -58,7 +58,7 @@ export interface Issue {
   labelIds: string[]; skillIds: string[]; summary: string; createdBy: string | null;
   createdAt: string; updatedAt: string; activeRun: string | null; costUsd: number;
   assigneeId: string | null; stageSince: string; approvals: string[];
-  closed: '' | 'done' | 'cancelled'; // pela regra "Encerrar" da etapa
+  closed: '' | 'done' | 'cancelled'; // by the stage's "Close" rule
 }
 export interface IssueRepo {
   repoId: string; name: string; baseBranch: string; targetBranch: string;
@@ -76,7 +76,7 @@ export interface Comment {
   id: string; issueId: string; userId: string | null; agentId: string | null; runId: string | null;
   kind: 'comment' | 'agent' | 'system'; body: string; createdAt: string;
 }
-// O que a pessoa pode fazer nesta issue agora (perfil + política da etapa).
+// What the person can do on this issue right now (role + stage policy).
 export interface Caps {
   edit: boolean; move: boolean; comment: boolean; priority: boolean; labels: boolean; agent: boolean; repos: boolean;
   assign: boolean; run: boolean; approve: boolean; merge: boolean; delete: boolean; approvals: number; approveTo: string; reason?: string;

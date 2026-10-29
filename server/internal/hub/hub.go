@@ -1,5 +1,5 @@
-// Package hub distribui eventos em tempo real (via SSE) para quem está
-// olhando um workspace: issue mudou, execução andou, chegou log novo.
+// Package hub distributes real-time events (over SSE) to whoever is looking at a
+// workspace: an issue changed, a run moved on, a new log line arrived.
 package hub
 
 import (

@@ -1,6 +1,6 @@
--- Menos configuração: o agente sempre roda isolado no worktree (sandbox do CLI),
--- então não há mais "permissão" por agente; e o repositório é só URL, branches
--- e descrição: setup, arquivos de ambiente, instruções e branches protegidas saem.
+-- Less configuration: the agent always runs isolated in the worktree (the CLI's sandbox),
+-- so there is no per-agent "permission" anymore; and a repository is just URL, branches
+-- and description: setup, environment files, instructions and protected branches go away.
 alter table agents drop column permission;
 alter table repos
   drop column protected_branches,

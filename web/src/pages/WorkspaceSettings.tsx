@@ -27,27 +27,27 @@ export function WorkspaceSettings() {
     if (!name.trim() || name === ws.name) return;
     await api.patch(`/workspaces/${ws.id}`, { name });
     qc.invalidateQueries({ queryKey: ['workspaces'] });
-    toast('success', t('Nome salvo'));
+    toast('success', t('Name saved'));
   };
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="page space-y-8">
         <section>
-          <PageHeader icon={FolderCog} title={t('Workspace')} description={t('Nome, repositórios git e pessoas deste workspace.')} />
+          <PageHeader icon={FolderCog} title={t('Workspace')} description={t('Name, git repositories and people of this workspace.')} />
           <div className="flex items-end gap-2">
-            <Field label={t('Nome')} className="flex-1"><input className="field-input" value={name} disabled={!canRename} onChange={(e) => setName(e.target.value)} onBlur={saveName} /></Field>
-            <Field label={t('Chave')}><input className="field-input w-24 font-mono" value={ws.key} disabled /></Field>
+            <Field label={t('Name')} className="flex-1"><input className="field-input" value={name} disabled={!canRename} onChange={(e) => setName(e.target.value)} onBlur={saveName} /></Field>
+            <Field label={t('Key')}><input className="field-input w-24 font-mono" value={ws.key} disabled /></Field>
           </div>
         </section>
 
         <section>
           <div className="mb-2 flex items-center">
-            <h2 className="font-semibold">{t('Repositórios')}</h2>
-            {canAddRepo && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({})}><Plus className="size-3.5" /> {t('Adicionar')}</Button>}
+            <h2 className="font-semibold">{t('Repositories')}</h2>
+            {canAddRepo && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setEditing({})}><Plus className="size-3.5" /> {t('Add')}</Button>}
           </div>
           <p className="mb-3 text-xs text-mute">
-            {t('Um workspace pode ter vários repositórios (front, back, mobile…). Cada issue recebe um worktree de cada um e a IA mexe só nos que o pedido exige; a')} <b>{t('descrição')}</b> {t('de cada repositório é o que ela usa para decidir. Só são aceitas URLs git acessíveis pelo servidor (SSH ou HTTPS com token).')}
+            {t('A workspace can have several repositories (front end, back end, mobile…). Each issue gets a worktree of each one and the AI only touches the ones the request needs; each repository\'s')} <b>{t('description')}</b> {t('is what it uses to decide. Only git URLs the server can reach are accepted (SSH, or HTTPS with a token).')}
           </p>
           <div className="space-y-2">
             {repos.map((r) => (
@@ -61,7 +61,7 @@ export function WorkspaceSettings() {
                 {canEditRepo && <button onClick={() => setEditing(r)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
                 {canDelRepo && <button
                   onClick={async () => {
-                    if (!(await ask({ title: t('Remover {0} do workspace?', r.name), message: t('As issues continuam, sem este repositório.'), danger: true }))) return;
+                    if (!(await ask({ title: t('Remove {0} from the workspace?', r.name), message: t('Issues stay, without this repository.'), danger: true }))) return;
                     await api.del(`/repos/${r.id}`);
                     qc.invalidateQueries({ queryKey: ['repos', ws.id] });
                   }}
@@ -69,7 +69,7 @@ export function WorkspaceSettings() {
                 ><Trash2 className="size-4" /></button>}
               </div>
             ))}
-            {!repos.length && <Empty className="rounded-lg border border-dashed border-line">{t('Nenhum repositório. Adicione um para os agentes trabalharem.')}</Empty>}
+            {!repos.length && <Empty className="rounded-lg border border-dashed border-line">{t('No repositories. Add one so agents can work.')}</Empty>}
           </div>
         </section>
 
@@ -78,14 +78,14 @@ export function WorkspaceSettings() {
 
         {canDelWs && (
           <section className="rounded-xl border border-red-500/30 p-4">
-            <h2 className="font-semibold text-red-400">{t('Excluir workspace')}</h2>
-            <p className="mb-3 mt-1 text-xs text-mute">{t('Apaga as issues, o histórico e os vínculos. Os repositórios remotos não são tocados.')}</p>
+            <h2 className="font-semibold text-red-400">{t('Delete workspace')}</h2>
+            <p className="mb-3 mt-1 text-xs text-mute">{t('Deletes the issues, history and links. Remote repositories aren\'t touched.')}</p>
             <Button variant="danger" onClick={async () => {
-              if (!(await ask({ title: t('Excluir o workspace "{0}"?', ws.name), message: t('Apaga as issues, o histórico e os vínculos. Não dá para desfazer.'), confirmText: t('Excluir workspace'), danger: true, typeToConfirm: ws.key }))) return;
+              if (!(await ask({ title: t('Delete the workspace "{0}"?', ws.name), message: t('Deletes the issues, history and links. This can\'t be undone.'), confirmText: t('Delete workspace'), danger: true, typeToConfirm: ws.key }))) return;
               await api.del(`/workspaces/${ws.id}`);
               qc.invalidateQueries({ queryKey: ['workspaces'] });
               location.href = '/';
-            }}><Trash2 className="size-3.5" /> {t('Excluir')}</Button>
+            }}><Trash2 className="size-3.5" /> {t('Delete')}</Button>
           </section>
         )}
       </div>
@@ -94,7 +94,7 @@ export function WorkspaceSettings() {
   );
 }
 
-// Quem tem "ver todos os workspaces" enxerga este sem vínculo; os demais só se vinculados aqui.
+// Whoever has "see every workspace" sees this one without a link; the others only if linked here.
 function MembersSection({ wsId }: { wsId: string }) {
   const { data: members = [] } = useMembers(wsId);
   const { data: users = [] } = useUsers();
@@ -111,19 +111,19 @@ function MembersSection({ wsId }: { wsId: string }) {
     await api.put(`/workspaces/${wsId}/members/${pick}`, {});
     setPick('');
     refresh();
-    toast('success', t('Pessoa vinculada ao workspace'));
+    toast('success', t('Person added to the workspace'));
   };
   return (
     <section>
-      <h2 className="mb-1 font-semibold">{t('Membros')}</h2>
-      <p className="mb-3 text-xs text-mute">{t('Quem está vinculado vê e trabalha nas issues deste workspace. Perfis com "ver todos os workspaces" já têm acesso. Usuários novos se criam em Usuários.')}</p>
+      <h2 className="mb-1 font-semibold">{t('Members')}</h2>
+      <p className="mb-3 text-xs text-mute">{t('Whoever is added sees and works on this workspace\'s issues. Roles with "see every workspace" already have access. New users are created under Users.')}</p>
       <div className="mb-3 divide-y divide-line rounded-lg border border-line bg-panel">
         {members.map((m) => (
           <div key={m.id} className="flex items-center gap-3 p-2.5">
             <Avatar name={m.name} size={26} />
             <div className="min-w-0 flex-1"><div className="font-medium">{m.name}</div><div className="truncate text-xs text-mute">{m.email}</div></div>
-            {can(m, 'workspace.all') ? <span className="text-xs text-mute">{m.isOwner ? t('dono') : m.roleName} {t('· acesso a todos')}</span> : (
-              <button onClick={async () => { await api.del(`/workspaces/${wsId}/members/${m.id}`); refresh(); }} className="rounded px-2 py-1 text-xs text-mute hover:bg-hover hover:text-red-400">{t('Desvincular')}</button>
+            {can(m, 'workspace.all') ? <span className="text-xs text-mute">{m.isOwner ? t('owner') : m.roleName} {t('· access to all')}</span> : (
+              <button onClick={async () => { await api.del(`/workspaces/${wsId}/members/${m.id}`); refresh(); }} className="rounded px-2 py-1 text-xs text-mute hover:bg-hover hover:text-red-400">{t('Remove')}</button>
             )}
           </div>
         ))}
@@ -131,10 +131,10 @@ function MembersSection({ wsId }: { wsId: string }) {
       {available.length > 0 && (
         <div className="flex max-w-md gap-2">
           <select className="field-input" value={pick} onChange={(e) => setPick(e.target.value)}>
-            <option value="">{t('Vincular pessoa…')}</option>
+            <option value="">{t('Add person…')}</option>
             {available.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
           </select>
-          <Button onClick={add} disabled={!pick}>{t('Vincular')}</Button>
+          <Button onClick={add} disabled={!pick}>{t('Add')}</Button>
         </div>
       )}
     </section>
@@ -155,12 +155,12 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
       const saved = r.id ? await api.put<Repo>(`/repos/${r.id}`, body) : await api.post<Repo>(`/workspaces/${wsId}/repos`, body);
       qc.invalidateQueries({ queryKey: ['repos', wsId] });
       qc.invalidateQueries({ queryKey: ['branches', saved.id] });
-      // O servidor já validou com git ls-remote; aqui clona e lista as branches.
+      // The server already validated with git ls-remote; here it clones and lists the branches.
       try {
         const branches = await api.get<string[]>(`/repos/${saved.id}/branches`);
-        toast('success', t('Repositório ok: {0} branch(es) encontradas', branches.length));
+        toast('success', t('Repository OK: {0} branch(es) found', branches.length));
       } catch (err) {
-        toast('error', t('Salvo, mas o clone falhou: {0}', (err as Error).message));
+        toast('error', t('Saved, but the clone failed: {0}', (err as Error).message));
       }
       onClose();
     } catch (err) {
@@ -171,15 +171,15 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
   };
 
   return (
-    <Modal open wide onClose={onClose} title={r.id ? t('Editar {0}', repo.name) : t('Adicionar repositório')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancelar')}</Button><Button variant="primary" loading={busy} disabled={!r.url?.trim() || !r.name?.trim()} onClick={save}>{t('Salvar e testar')}</Button></>}>
+    <Modal open wide onClose={onClose} title={r.id ? t('Edit {0}', repo.name) : t('Add repository')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="primary" loading={busy} disabled={!r.url?.trim() || !r.name?.trim()} onClick={save}>{t('Save and test')}</Button></>}>
       <div className="space-y-4">
-        <Field label={t('URL do git')} hint={t('SSH ou HTTPS; o servidor clona com as credenciais git dele')}>
-          <input autoFocus className="field-input font-mono text-xs" value={r.url ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder={t('git@github.com:org/projeto.git')} />
+        <Field label={t('Git URL')} hint={t('SSH or HTTPS; the server clones with its own git credentials')}>
+          <input autoFocus className="field-input font-mono text-xs" value={r.url ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder={t('git@github.com:org/project.git')} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
-          <Field label={t('Nome')}><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('Ex.: api')} /></Field>
-          <Field label={t('Descrição')} hint={t('opcional; ajuda a IA a escolher o repositório')}>
-            <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('Ex.: API em Go (pedidos, pagamentos)')} />
+          <Field label={t('Name')}><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('e.g. api')} /></Field>
+          <Field label={t('Description')} hint={t('optional; helps the AI choose the repository')}>
+            <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('E.g. Go API (orders, payments)')} />
           </Field>
         </div>
       </div>

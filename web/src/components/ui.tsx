@@ -6,7 +6,7 @@ import { statusOf } from '../lib/constants';
 import type { Status } from '../lib/types';
 import { t } from '../lib/i18n';
 
-// ---------- botões e campos ----------
+// ---------- buttons and fields ----------
 
 type BtnVariant = 'primary' | 'ghost' | 'outline' | 'danger' | 'success';
 
@@ -62,7 +62,7 @@ export function Empty({ children, className }: { children: ReactNode; className?
   return <div className={clsx('py-10 text-center text-mute', className)}>{children}</div>;
 }
 
-// Estado vazio com ícone, título, explicação e ação.
+// Empty state with icon, title, explanation and action.
 export function EmptyState({ icon: Icon, title, children, action, className }: {
   icon: React.ComponentType<{ className?: string }>; title: string; children?: ReactNode; action?: ReactNode; className?: string;
 }) {
@@ -81,7 +81,7 @@ export function EmptyState({ icon: Icon, title, children, action, className }: {
   );
 }
 
-// Cabeçalho padrão das páginas.
+// The pages' standard header.
 export function PageHeader({ icon: Icon, title, description, actions }: {
   icon?: React.ComponentType<{ className?: string }>; title: string; description?: ReactNode; actions?: ReactNode;
 }) {
@@ -119,7 +119,7 @@ export function Modal({
         {title && (
           <div className="flex items-center justify-between gap-3 px-6 pb-3 pt-5">
             <div className="text-base font-semibold tracking-tight">{title}</div>
-            <button onClick={onClose} aria-label={t('Fechar')} className="-mr-1.5 grid size-8 place-items-center rounded-lg text-mute transition hover:bg-white/[0.06] hover:text-fg"><X className="size-4" /></button>
+            <button onClick={onClose} aria-label={t('Close')} className="-mr-1.5 grid size-8 place-items-center rounded-lg text-mute transition hover:bg-white/[0.06] hover:text-fg"><X className="size-4" /></button>
           </div>
         )}
         <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">{children}</div>
@@ -132,9 +132,9 @@ export function Modal({
 
 // ---------- popover / seletor ----------
 
-// A lista abre num "portal" com posição fixa na tela: nunca fica cortada por
-// um diálogo ou painel com rolagem. Abre para cima quando não cabe embaixo e
-// acompanha a rolagem. No celular vira uma folha presa embaixo da tela.
+// The list opens in a "portal" with a fixed position on screen: it is never cut by a
+// dialog or a scrolling panel. It opens upwards when it doesn't fit below and follows
+// the scroll. On phones it becomes a sheet stuck to the bottom of the screen.
 export function Popover({
   trigger, children, align = 'left', className, block
 }: { trigger: (open: boolean) => ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right'; className?: string; block?: boolean }) {
@@ -171,7 +171,7 @@ export function Popover({
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        e.stopPropagation(); // fecha só a lista, não o diálogo por trás
+        e.stopPropagation(); // closes only the list, not the dialog behind it
         setOpen(false);
       }
     };
@@ -240,7 +240,7 @@ export function Chip({ children, className, ...props }: React.ButtonHTMLAttribut
   );
 }
 
-// ---------- ícones de status e prioridade ----------
+// ---------- status and priority icons ----------
 
 export function StatusIcon({ status, className }: { status: Status; className?: string }) {
   const { color } = statusOf(status);
@@ -279,7 +279,7 @@ export function PriorityIcon({ priority, className }: { priority: number; classN
   if (priority === 0) {
     return <svg width="14" height="14" viewBox="0 0 14 14" className={clsx('shrink-0', className)}><path d="M3 7h1.5M6.25 7h1.5M9.5 7H11" stroke="rgb(var(--mute))" strokeWidth="1.5" /></svg>;
   }
-  const bars = 5 - priority; // alta=3, média=2, baixa=1
+  const bars = 5 - priority; // high=3, medium=2, low=1
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" className={clsx('shrink-0', className)}>
       {[0, 1, 2].map((i) => (
@@ -333,12 +333,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// ---------- confirmação ----------
+// ---------- confirmation ----------
 
-// Diálogo de confirmação do app, no lugar do confirm()/prompt() do navegador:
+// The app's confirmation dialog, in place of the browser's confirm()/prompt():
 //   const ask = useConfirm();
-//   if (!(await ask({ title: 'Remover esta regra?', danger: true }))) return;
-// typeToConfirm pede para digitar um texto (ex.: a chave do workspace) antes.
+//   if (!(await ask({ title: 'Remove this rule?', danger: true }))) return;
+// typeToConfirm asks to type a text (e.g. the workspace key) first.
 export interface ConfirmOptions {
   title: string;
   message?: ReactNode;
@@ -366,15 +366,15 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {state && (
         <Modal open onClose={() => close(false)} title={state.title}
           footer={<>
-            <Button variant="ghost" onClick={() => close(false)}>{state.cancelText ?? t('Cancelar')}</Button>
+            <Button variant="ghost" onClick={() => close(false)}>{state.cancelText ?? t('Cancel')}</Button>
             <Button autoFocus={!state.typeToConfirm} variant={state.danger ? 'danger' : 'primary'} disabled={blocked} onClick={() => close(true)}>
-              {state.confirmText ?? (state.danger ? t('Remover') : t('Confirmar'))}
+              {state.confirmText ?? (state.danger ? t('Remove') : t('Confirm'))}
             </Button>
           </>}>
           <form onSubmit={(e) => { e.preventDefault(); if (!blocked) close(true); }} className="space-y-3">
-            {(state.message || state.danger) && <div className="text-[13px] leading-relaxed text-dim">{state.message ?? t('Não dá para desfazer.')}</div>}
+            {(state.message || state.danger) && <div className="text-[13px] leading-relaxed text-dim">{state.message ?? t('This can\'t be undone.')}</div>}
             {state.typeToConfirm && (
-              <Field label={t('Digite {0} para confirmar', state.typeToConfirm)}>
+              <Field label={t('Type {0} to confirm', state.typeToConfirm)}>
                 <input autoFocus className="field-input font-mono" value={typed} onChange={(e) => setTyped(e.target.value)} />
               </Field>
             )}

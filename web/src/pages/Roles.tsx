@@ -9,8 +9,8 @@ import { usePermissions, useRoles } from '../lib/queries';
 import type { Role } from '../lib/types';
 import { t } from '../lib/i18n';
 
-// Perfis de acesso: só o dono vê esta tela. Cada perfil é um conjunto de
-// permissões; cada usuário recebe um perfil em Usuários.
+// Access roles: only the owner sees this screen. Each role is a set of permissions;
+// each user gets a role under Users.
 export function RolesPage() {
   const { data: roles = [] } = useRoles();
   const [selected, setSelected] = useState<string | 'new' | null>(null);
@@ -20,8 +20,8 @@ export function RolesPage() {
   const current = selected === 'new' ? null : roles.find((r) => r.id === selected) ?? null;
   return (
     <Page>
-      <PageHeader icon={ShieldCheck} title={t('Permissões')} description={t('Só você, dono do Multica, vê esta tela. Monte perfis com o que cada grupo pode fazer e atribua em Usuários. O dono sempre pode tudo.')}
-        actions={<Button variant="primary" onClick={() => setSelected('new')}><Plus className="size-4" /> {t('Novo perfil')}</Button>} />
+      <PageHeader icon={ShieldCheck} title={t('Permissions')} description={t('Only you, the Foreman owner, see this screen. Build roles with what each group can do and assign them under Users. The owner can always do everything.')}
+        actions={<Button variant="primary" onClick={() => setSelected('new')}><Plus className="size-4" /> {t('New role')}</Button>} />
       <div className="flex gap-1.5 overflow-x-auto pb-1">
         {roles.map((r) => (
           <button key={r.id} onClick={() => setSelected(r.id)}
@@ -29,7 +29,7 @@ export function RolesPage() {
             {r.name} <span className="text-mute">· {r.users}</span>
           </button>
         ))}
-        {selected === 'new' && <span className="shrink-0 rounded-full border border-accent/60 bg-accent/15 px-3 py-1 text-xs">{t('Novo perfil')}</span>}
+        {selected === 'new' && <span className="shrink-0 rounded-full border border-accent/60 bg-accent/15 px-3 py-1 text-xs">{t('New role')}</span>}
       </div>
       {selected && <RoleEditor key={selected} role={current} onDone={setSelected} />}
     </Page>
@@ -59,7 +59,7 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
       qc.invalidateQueries({ queryKey: ['roles'] });
       qc.invalidateQueries({ queryKey: ['users'] });
       qc.invalidateQueries({ queryKey: ['me'] });
-      toast('success', t('Perfil salvo; vale na hora para quem usa'));
+      toast('success', t('Role saved; it applies right away to whoever has it'));
       onDone(saved.id);
     } catch (err) {
       toast('error', (err as Error).message);
@@ -68,7 +68,7 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
     }
   };
   const remove = async () => {
-    if (!role || !(await ask({ title: t('Excluir o perfil {0}?', role.name), message: t('Quem usa este perfil precisa receber outro antes.'), confirmText: t('Excluir'), danger: true }))) return;
+    if (!role || !(await ask({ title: t('Delete the role {0}?', role.name), message: t('Anyone using this role needs another one first.'), confirmText: t('Delete'), danger: true }))) return;
     try {
       await api.del(`/roles/${role.id}`);
       qc.invalidateQueries({ queryKey: ['roles'] });
@@ -79,7 +79,7 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
   };
   return (
     <div className="space-y-4">
-      <Field label={t('Nome do perfil')}><input className="field-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Ex.: Dev, Revisor, Gestor')} /></Field>
+      <Field label={t('Role name')}><input className="field-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('E.g. Dev, Reviewer, Manager')} /></Field>
       <div className="grid gap-3 sm:grid-cols-2">
         {groups.map((g) => {
           const items = perms.filter((p) => p.group === g);
@@ -88,7 +88,7 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
             <div key={g} className="surface p-3">
               <div className="mb-2 flex items-center">
                 <span className="font-medium">{g}</span>
-                <button onClick={() => toggleGroup(g)} className="ml-auto text-[11px] text-mute hover:text-fg">{all ? t('nenhuma') : t('todas')}</button>
+                <button onClick={() => toggleGroup(g)} className="ml-auto text-[11px] text-mute hover:text-fg">{all ? t('none') : t('all')}</button>
               </div>
               <div className="space-y-1">
                 {items.map((p) => (
@@ -103,9 +103,9 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
         })}
       </div>
       <div className="flex items-center gap-2">
-        {role && <Button variant="ghost" onClick={remove}><Trash2 className="size-3.5" /> {t('Excluir perfil')}</Button>}
-        <span className="ml-auto text-xs text-mute">{on.length} {t('de')} {perms.length} {t('permissões')}</span>
-        <Button variant="primary" loading={busy} onClick={save}>{t('Salvar')}</Button>
+        {role && <Button variant="ghost" onClick={remove}><Trash2 className="size-3.5" /> {t('Delete role')}</Button>}
+        <span className="ml-auto text-xs text-mute">{on.length} {t('of')} {perms.length} {t('permissions')}</span>
+        <Button variant="primary" loading={busy} onClick={save}>{t('Save')}</Button>
       </div>
     </div>
   );

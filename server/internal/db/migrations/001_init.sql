@@ -1,5 +1,5 @@
--- Esquema inicial. Agentes e skills são globais (valem para todos os
--- workspaces); repositórios, labels e issues pertencem a um workspace.
+-- Initial schema. Agents and skills are global (they apply to every workspace);
+-- repositories, labels and issues belong to a workspace.
 
 create extension if not exists pgcrypto;
 
@@ -33,9 +33,9 @@ create table repos (
   workspace_id       uuid not null references workspaces(id) on delete cascade,
   name               text not null,
   url                text not null,
-  default_branch     text not null default 'main',   -- de onde as issues partem
-  target_branch      text not null default 'main',   -- onde o merge cai por padrão
-  protected_branches text[] not null default '{}',   -- nunca recebem merge do Multica
+  default_branch     text not null default 'main',   -- where issues start from
+  target_branch      text not null default 'main',   -- where the merge lands by default
+  protected_branches text[] not null default '{}',   -- never receive a merge from Foreman
   setup_script       text not null default '',
   env_files          jsonb not null default '[]',    -- [{path, content}] escritos no worktree, nunca commitados
   instructions       text not null default '',
@@ -49,7 +49,7 @@ create table skills (
   name        text not null,
   description text not null default '',
   content     text not null default '',
-  files       jsonb not null default '[]',   -- [{path, content}] scripts ao lado do SKILL.md
+  files       jsonb not null default '[]',   -- [{path, content}] scripts next to SKILL.md
   always      boolean not null default false,
   updated_at  timestamptz not null default now()
 );
@@ -86,7 +86,7 @@ create table issues (
   description       text not null default '',
   status            text not null default 'backlog'
                     check (status in ('backlog', 'todo', 'in_progress', 'in_review', 'blocked', 'done', 'cancelled')),
-  priority          smallint not null default 0,  -- 0 nenhuma, 1 urgente, 2 alta, 3 média, 4 baixa
+  priority          smallint not null default 0,  -- 0 none, 1 urgent, 2 high, 3 medium, 4 low
   position          double precision not null default 0,
   agent_id          uuid references agents(id) on delete set null,
   repo_id           uuid references repos(id) on delete set null,

@@ -1,2 +1,2 @@
--- Regras não têm mais nome: a descrição sai da própria definição ("Mover para X").
+-- Rules have no name anymore: the description comes from the definition itself ("Move to X").
 alter table rules drop column name;

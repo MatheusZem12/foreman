@@ -1,5 +1,5 @@
-// Package config lê a configuração do ambiente. Tudo tem padrão: para subir
-// basta DATABASE_URL.
+// Package config reads the configuration from the environment. Everything has a default: to
+// start, DATABASE_URL is enough.
 package config
 
 import (
@@ -9,10 +9,10 @@ import (
 )
 
 type Config struct {
-	Addr         string // endereço HTTP
+	Addr         string // HTTP address
 	DatabaseURL  string
-	DataDir      string // repositórios, worktrees, skills materializadas
-	MaxParallel  int    // execuções de agente simultâneas
+	DataDir      string // repositories, worktrees, materialized skills
+	MaxParallel  int    // simultaneous agent runs
 	ClaudeBin    string
 	CodexBin     string
 	SecureCookie bool
@@ -26,19 +26,19 @@ func env(key, def string) string {
 }
 
 func Load() Config {
-	parallel, err := strconv.Atoi(env("MULTICA_MAX_PARALLEL", "3"))
+	parallel, err := strconv.Atoi(env("FOREMAN_MAX_PARALLEL", "3"))
 	if err != nil || parallel < 1 {
 		parallel = 3
 	}
-	data, _ := filepath.Abs(env("MULTICA_DATA", "./data"))
+	data, _ := filepath.Abs(env("FOREMAN_DATA", "./data"))
 	return Config{
-		Addr:         env("MULTICA_ADDR", "127.0.0.1:8700"),
-		DatabaseURL:  env("DATABASE_URL", "postgres://multica:multica@localhost:5432/multica?sslmode=disable"),
+		Addr:         env("FOREMAN_ADDR", "127.0.0.1:8700"),
+		DatabaseURL:  env("DATABASE_URL", "postgres://foreman:foreman@localhost:5432/foreman?sslmode=disable"),
 		DataDir:      data,
 		MaxParallel:  parallel,
 		ClaudeBin:    env("CLAUDE_BIN", "claude"),
 		CodexBin:     env("CODEX_BIN", "codex"),
-		SecureCookie: env("MULTICA_SECURE_COOKIE", "false") == "true",
+		SecureCookie: env("FOREMAN_SECURE_COOKIE", "false") == "true",
 	}
 }
 

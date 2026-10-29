@@ -1,9 +1,9 @@
-// Package notify envia os avisos por e-mail. A configuração SMTP fica na
-// tabela settings (o admin edita pela interface); nada vem do .env.
+// Package notify sends the e-mail notices. The SMTP configuration lives in the settings
+// table (the admin edits it through the interface); nothing comes from .env.
 //
-// Todo aviso de um workspace usa o mesmo assunto "[Multica] <workspace>" e
-// referencia a mesma mensagem raiz, então o cliente de e-mail junta tudo
-// numa conversa só por workspace em vez de criar um e-mail solto por issue.
+// Every notice of a workspace uses the same subject "[Foreman] <workspace>" and
+// references the same root message, so the mail client gathers everything into a
+// single conversation per workspace instead of a loose e-mail per issue.
 package notify
 
 import (
@@ -26,12 +26,12 @@ import (
 	"sync"
 	"time"
 
-	"multica/internal/store"
+	"foreman/internal/store"
 )
 
 const settingsKey = "email"
 
-// Destinatários por mensagem: servidores costumam limitar o RCPT (Gmail: 100).
+// Recipients per message: servers usually limit RCPT (Gmail: 100).
 const batchSize = 50
 
 type Settings struct {
@@ -47,24 +47,24 @@ type Settings struct {
 }
 
 func defaults() Settings {
-	return Settings{Port: 587, Security: "starttls", FromName: "Multica"}
+	return Settings{Port: 587, Security: "starttls", FromName: "Foreman"}
 }
 
-// Validate confere o mínimo para conseguir enviar.
+// Validate checks the minimum needed to send.
 func (c Settings) Validate() error {
 	if strings.TrimSpace(c.Host) == "" {
-		return errors.New("informe o servidor SMTP")
+		return errors.New("enter the SMTP server")
 	}
 	if c.Port <= 0 || c.Port > 65535 {
-		return errors.New("porta inválida")
+		return errors.New("invalid port")
 	}
 	if _, err := mail.ParseAddress(c.From); err != nil {
-		return errors.New("e-mail de envio inválido")
+		return errors.New("invalid sender e-mail")
 	}
 	switch c.Security {
 	case "starttls", "tls", "none":
 	default:
-		return errors.New("segurança deve ser starttls, tls ou none")
+		return errors.New("security must be starttls, tls or none")
 	}
 	return nil
 }
@@ -111,9 +111,9 @@ func (n *Notifier) record(err error) {
 	n.status.LastSentAt = &now
 }
 
-// IssueCreated avisa todo mundo do workspace, em segundo plano. Não faz nada
-// se o admin não ligou as notificações. origin é a URL do Multica deduzida da
-// requisição, usada nos links quando o admin não definiu uma.
+// IssueCreated notifies everyone in the workspace, in the background. It does nothing
+// if the admin didn't turn notifications on. origin is the Foreman URL inferred from
+// the request, used in the links when the admin didn't set one.
 func (n *Notifier) IssueCreated(is *store.Issue, author *store.User, origin string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -141,13 +141,13 @@ func (n *Notifier) IssueCreated(is *store.Issue, author *store.User, origin stri
 			base = origin
 		}
 		ref := fmt.Sprintf("%s-%d", ws.Key, is.Number)
-		// No e-mail vai o nome da etapa como está no fluxo do workspace.
+		// The e-mail carries the stage name as it is in the workspace's workflow.
 		shown := *is
 		shown.Status = n.st.StageName(ctx, is.WorkspaceID, is.Status)
 		is := &shown
 		m := message{
 			threadID: "ws-" + ws.ID,
-			subject:  "[Multica] " + ws.Name,
+			subject:  "[Foreman] " + ws.Name,
 			text:     issueText(ws, is, ref, author.Name, agent, base),
 			html:     issueHTML(ws, is, ref, author.Name, agent, base),
 		}
@@ -159,10 +159,10 @@ func (n *Notifier) IssueCreated(is *store.Issue, author *store.User, origin stri
 	}()
 }
 
-var ErrDisabled = errors.New("o envio de e-mail está desligado (Servidor → E-mail)")
+var ErrDisabled = errors.New("e-mail sending is turned off (Server → E-mail)")
 
-// StageEmail avisa as pessoas de uma mudança de etapa (regra "Notificar").
-// Usa o mesmo assunto do workspace, para cair na mesma conversa.
+// StageEmail tells people about a stage change (the "Notify" rule). It uses the
+// workspace's subject, so it lands in the same conversation.
 func (n *Notifier) StageEmail(ctx context.Context, is *store.Issue, to []string, headline, note string) error {
 	c, err := n.Settings(ctx)
 	if err != nil {
@@ -172,7 +172,7 @@ func (n *Notifier) StageEmail(ctx context.Context, is *store.Issue, to []string,
 		return ErrDisabled
 	}
 	if len(to) == 0 {
-		return errors.New("ninguém para avisar")
+		return errors.New("nobody to notify")
 	}
 	ws, err := n.st.Workspace(ctx, is.WorkspaceID)
 	if err != nil {
@@ -189,7 +189,7 @@ func (n *Notifier) StageEmail(ctx context.Context, is *store.Issue, to []string,
 		text += "\n\n" + note
 	}
 	if link != "" {
-		text += "\n\nAbrir: " + link
+		text += "\n\nOpen: " + link
 	}
 	e := html.EscapeString
 	var b strings.Builder
@@ -201,28 +201,28 @@ func (n *Notifier) StageEmail(ctx context.Context, is *store.Issue, to []string,
 		fmt.Fprintf(&b, `<div style="white-space:pre-wrap;border-left:3px solid #ddd;padding-left:10px;color:#333">%s</div>`, e(note))
 	}
 	if link != "" {
-		fmt.Fprintf(&b, `<p style="margin-top:16px"><a href="%s" style="background:#5e6ad2;color:#fff;padding:7px 14px;border-radius:6px;text-decoration:none">Abrir issue</a></p>`, e(link))
+		fmt.Fprintf(&b, `<p style="margin-top:16px"><a href="%s" style="background:#5e6ad2;color:#fff;padding:7px 14px;border-radius:6px;text-decoration:none">Open issue</a></p>`, e(link))
 	}
 	b.WriteString(`</div>`)
-	err = n.send(ctx, c, to, message{threadID: "ws-" + ws.ID, subject: "[Multica] " + ws.Name, text: text, html: b.String()})
+	err = n.send(ctx, c, to, message{threadID: "ws-" + ws.ID, subject: "[Foreman] " + ws.Name, text: text, html: b.String()})
 	n.record(err)
 	return err
 }
 
-// Test envia um e-mail de teste com a configuração informada (ainda não salva).
+// Test sends a test e-mail with the given configuration (not saved yet).
 func (n *Notifier) Test(ctx context.Context, c Settings, to string) error {
 	m := message{
-		threadID: "teste",
-		subject:  "[Multica] Teste de e-mail",
-		text:     "Se você recebeu esta mensagem, o envio de e-mail do Multica está funcionando.",
-		html:     `<p style="font-family:sans-serif">Se você recebeu esta mensagem, o envio de e-mail do Multica está funcionando.</p>`,
+		threadID: "test",
+		subject:  "[Foreman] E-mail test",
+		text:     "If you got this message, Foreman's e-mail sending works.",
+		html:     `<p style="font-family:sans-serif">If you got this message, Foreman's e-mail sending works.</p>`,
 	}
 	err := n.send(ctx, c, []string{to}, m)
 	n.record(err)
 	return err
 }
 
-// ---------- mensagem ----------
+// ---------- message ----------
 
 type message struct {
 	threadID string
@@ -231,7 +231,7 @@ type message struct {
 	html     string
 }
 
-var priorityLabel = []string{"Sem prioridade", "Urgente", "Alta", "Média", "Baixa"}
+var priorityLabel = []string{"No priority", "Urgent", "High", "Medium", "Low"}
 
 func priority(p int16) string {
 	if p >= 0 && int(p) < len(priorityLabel) {
@@ -250,17 +250,17 @@ func excerpt(s string, max int) string {
 
 func issueText(ws *store.Workspace, is *store.Issue, ref, author, agent, base string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Nova issue em %s\n\n%s · %s\n", ws.Name, ref, is.Title)
-	fmt.Fprintf(&b, "Criada por %s · %s · %s", author, is.Status, priority(is.Priority))
+	fmt.Fprintf(&b, "New issue in %s\n\n%s · %s\n", ws.Name, ref, is.Title)
+	fmt.Fprintf(&b, "Created by %s · %s · %s", author, is.Status, priority(is.Priority))
 	if agent != "" {
-		fmt.Fprintf(&b, " · agente %s", agent)
+		fmt.Fprintf(&b, " · agent %s", agent)
 	}
 	if d := excerpt(is.Description, 3000); d != "" {
 		b.WriteString("\n\n" + d)
 	}
 	if base != "" {
-		fmt.Fprintf(&b, "\n\nAbrir: %s/w/%s/issues/%s", base, ws.Key, ref)
-		fmt.Fprintf(&b, "\n\nPara não receber mais, desligue em Minha conta: %s/w/%s/conta", base, ws.Key)
+		fmt.Fprintf(&b, "\n\nOpen: %s/w/%s/issues/%s", base, ws.Key, ref)
+		fmt.Fprintf(&b, "\n\nTo stop receiving these, turn them off in My account: %s/w/%s/config/account", base, ws.Key)
 	}
 	return b.String()
 }
@@ -275,31 +275,31 @@ func issueHTML(ws *store.Workspace, is *store.Issue, ref, author, agent, base st
 	if link != "" {
 		title = fmt.Sprintf(`<a href="%s" style="color:#5e6ad2;text-decoration:none">%s</a>`, e(link), title)
 	}
-	meta := fmt.Sprintf("Criada por %s · %s · %s", e(author), e(is.Status), e(priority(is.Priority)))
+	meta := fmt.Sprintf("Created by %s · %s · %s", e(author), e(is.Status), e(priority(is.Priority)))
 	if agent != "" {
-		meta += " · agente " + e(agent)
+		meta += " · agent " + e(agent)
 	}
 	var b strings.Builder
 	b.WriteString(`<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;color:#222;max-width:640px">`)
-	fmt.Fprintf(&b, `<div style="color:#777;font-size:12px;margin-bottom:6px">Nova issue em %s</div>`, e(ws.Name))
+	fmt.Fprintf(&b, `<div style="color:#777;font-size:12px;margin-bottom:6px">New issue in %s</div>`, e(ws.Name))
 	fmt.Fprintf(&b, `<div style="font-size:16px;font-weight:600;margin-bottom:4px">%s</div>`, title)
 	fmt.Fprintf(&b, `<div style="color:#666;font-size:12px;margin-bottom:12px">%s</div>`, meta)
 	if d := excerpt(is.Description, 3000); d != "" {
 		fmt.Fprintf(&b, `<div style="white-space:pre-wrap;border-left:3px solid #ddd;padding-left:10px;color:#333">%s</div>`, e(d))
 	}
 	if link != "" {
-		fmt.Fprintf(&b, `<p style="margin-top:16px"><a href="%s" style="background:#5e6ad2;color:#fff;padding:7px 14px;border-radius:6px;text-decoration:none">Abrir issue</a></p>`, e(link))
-		fmt.Fprintf(&b, `<p style="color:#999;font-size:11px;margin-top:20px">Você recebe porque participa do workspace %s. Para parar, desligue em <a href="%s/w/%s/conta" style="color:#999">Minha conta</a>.</p>`, e(ws.Name), e(base), e(ws.Key))
+		fmt.Fprintf(&b, `<p style="margin-top:16px"><a href="%s" style="background:#5e6ad2;color:#fff;padding:7px 14px;border-radius:6px;text-decoration:none">Open issue</a></p>`, e(link))
+		fmt.Fprintf(&b, `<p style="color:#999;font-size:11px;margin-top:20px">You get this because you take part in the %s workspace. To stop, turn it off in <a href="%s/w/%s/config/account" style="color:#999">My account</a>.</p>`, e(ws.Name), e(base), e(ws.Key))
 	}
 	b.WriteString(`</div>`)
 	return b.String()
 }
 
-// build monta o MIME. Todas as mensagens de um thread apontam para a mesma
-// raiz (In-Reply-To/References) e repetem o assunto: assim Gmail, Outlook e
-// afins agrupam numa conversa só.
+// build assembles the MIME. Every message of a thread points to the same root
+// (In-Reply-To/References) and repeats the subject: that way Gmail, Outlook and the
+// like group them into a single conversation.
 func build(c Settings, m message) []byte {
-	domain := "multica.local"
+	domain := "foreman.local"
 	if at := strings.LastIndex(c.From, "@"); at >= 0 {
 		domain = c.From[at+1:]
 	}
@@ -312,7 +312,7 @@ func build(c Settings, m message) []byte {
 	var b bytes.Buffer
 	h := func(k, v string) { fmt.Fprintf(&b, "%s: %s\r\n", k, v) }
 	h("From", from)
-	h("To", from) // destinatários vão só no envelope (cópia oculta)
+	h("To", from) // recipients go only in the envelope (blind copy)
 	h("Subject", mime.QEncoding.Encode("utf-8", m.subject))
 	h("Thread-Topic", mime.QEncoding.Encode("utf-8", m.subject))
 	h("Date", time.Now().Format(time.RFC1123Z))
@@ -363,7 +363,7 @@ func deliver(ctx context.Context, c Settings, to []string, msg []byte) error {
 		conn, err = d.DialContext(ctx, "tcp", addr)
 	}
 	if err != nil {
-		return fmt.Errorf("conectar em %s: %w", addr, err)
+		return fmt.Errorf("connect to %s: %w", addr, err)
 	}
 	conn.SetDeadline(time.Now().Add(time.Minute))
 	cl, err := smtp.NewClient(conn, c.Host)
@@ -374,7 +374,7 @@ func deliver(ctx context.Context, c Settings, to []string, msg []byte) error {
 	defer cl.Close()
 	if c.Security == "starttls" {
 		if ok, _ := cl.Extension("STARTTLS"); !ok {
-			return errors.New("o servidor não oferece STARTTLS; use TLS (porta 465) ou sem criptografia")
+			return errors.New("the server doesn't offer STARTTLS; use TLS (port 465) or no encryption")
 		}
 		if err := cl.StartTLS(tlsCfg); err != nil {
 			return fmt.Errorf("STARTTLS: %w", err)
@@ -382,13 +382,13 @@ func deliver(ctx context.Context, c Settings, to []string, msg []byte) error {
 	}
 	if c.Username != "" {
 		if err := cl.Auth(smtp.PlainAuth("", c.Username, c.Password, c.Host)); err != nil {
-			return fmt.Errorf("autenticação: %w", err)
+			return fmt.Errorf("authentication: %w", err)
 		}
 	}
 	if err := cl.Mail(c.From); err != nil {
 		return fmt.Errorf("remetente recusado: %w", err)
 	}
-	// Um endereço recusado não impede o envio para os demais.
+	// One refused address doesn't stop sending to the others.
 	var refused []string
 	for _, rcpt := range to {
 		if err := cl.Rcpt(rcpt); err != nil {
@@ -396,7 +396,7 @@ func deliver(ctx context.Context, c Settings, to []string, msg []byte) error {
 		}
 	}
 	if len(refused) == len(to) {
-		return fmt.Errorf("destinatários recusados: %s", strings.Join(refused, ", "))
+		return fmt.Errorf("recipients refused: %s", strings.Join(refused, ", "))
 	}
 	w, err := cl.Data()
 	if err != nil {

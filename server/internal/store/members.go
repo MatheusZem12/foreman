@@ -2,8 +2,8 @@ package store
 
 import "context"
 
-// ListWorkspacesFor devolve todos os workspaces para quem tem
-// workspace.all e só os vinculados para os demais.
+// ListWorkspacesFor returns every workspace for whoever has
+// workspace.all and only the linked ones for everyone else.
 func (s *Store) ListWorkspacesFor(ctx context.Context, u *User) ([]Workspace, error) {
 	if u.Can("workspace.all") {
 		return s.ListWorkspaces(ctx)
@@ -12,7 +12,7 @@ func (s *Store) ListWorkspacesFor(ctx context.Context, u *User) ([]Workspace, er
 		where m.user_id = $1 order by w.name`, u.ID)
 }
 
-// WorkspaceIDsFor: nil para quem vê tudo (sem filtro), lista para os demais.
+// WorkspaceIDsFor: nil for whoever sees everything (no filter), a list for everyone else.
 func (s *Store) WorkspaceIDsFor(ctx context.Context, u *User) ([]string, error) {
 	if u.Can("workspace.all") {
 		return nil, nil
@@ -40,8 +40,8 @@ func (s *Store) CanAccess(ctx context.Context, u *User, wsID string) bool {
 	return ok
 }
 
-// Membros = vinculados + quem enxerga todos os workspaces.
-// seesAll é a condição SQL equivalente a Can("workspace.all") sobre user_view.
+// Members = linked + whoever sees every workspace.
+// seesAll is the SQL condition equivalent to Can("workspace.all") over user_view.
 const seesAll = `('*' = any(u.permissions) or 'workspace.all' = any(u.permissions))`
 
 type Member struct {
@@ -65,7 +65,7 @@ func (s *Store) RemoveMember(ctx context.Context, wsID, userID string) error {
 	return err
 }
 
-// UserWithWorkspaces é o usuário como aparece na gestão de usuários.
+// UserWithWorkspaces is the user as shown in user management.
 type UserWithWorkspaces struct {
 	User
 	WorkspaceIDs []string `db:"workspace_ids" json:"workspaceIds"`
@@ -94,7 +94,7 @@ func (s *Store) SetUserWorkspaces(ctx context.Context, userID string, wsIDs []st
 	return tx.Commit(ctx)
 }
 
-// Encerra as sessões de um usuário (senha redefinida…).
+// Ends a user's sessions (password reset…).
 func (s *Store) DeleteUserSessions(ctx context.Context, userID string) error {
 	_, err := s.DB.Exec(ctx, `delete from sessions where user_id = $1`, userID)
 	return err

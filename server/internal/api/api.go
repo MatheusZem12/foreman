@@ -1,4 +1,4 @@
-// Package api expõe a API JSON usada pelo front-end.
+// Package api exposes the JSON API used by the front end.
 package api
 
 import (
@@ -19,14 +19,14 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"golang.org/x/crypto/bcrypt"
 
-	"multica/internal/config"
-	"multica/internal/hub"
-	"multica/internal/notify"
-	"multica/internal/runner"
-	"multica/internal/store"
+	"foreman/internal/config"
+	"foreman/internal/hub"
+	"foreman/internal/notify"
+	"foreman/internal/runner"
+	"foreman/internal/store"
 )
 
-const sessionCookie = "mx_session"
+const sessionCookie = "foreman_session"
 const sessionTTL = 30 * 24 * time.Hour
 
 type API struct {
@@ -39,11 +39,11 @@ type API struct {
 
 type ctxKey struct{}
 
-// httpError carrega o status HTTP junto com a mensagem mostrada ao usuário.
+// httpError carries the HTTP status along with the message shown to the user.
 type httpError struct {
 	status int
 	msg    string
-	format string // para traduzir (i18n.go): o formato e os argumentos
+	format string // to translate (i18n.go): the format and the arguments
 	args   []any
 }
 
@@ -64,7 +64,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 		r.Post("/setup", a.h(a.postSetup))
 		r.Post("/login", a.h(a.login))
 		r.Post("/logout", a.h(a.logout))
-		// Entrada de issues por webhook: sem login, o token do endereço é a credencial.
+		// Issue intake through a webhook: no login, the token in the address is the credential.
 
 		r.Group(func(r chi.Router) {
 			r.Use(a.auth)
@@ -72,21 +72,21 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.Patch("/me", a.h(a.patchMe))
 			r.Get("/me/prefs/{key}", a.h(a.getPref))
 			r.Put("/me/prefs/{key}", a.h(a.putPref))
-			// Usuários: todos leem (nomes nos comentários); gerenciar depende do perfil.
+			// Users: everyone reads (names in comments); managing depends on the role.
 			r.Get("/users", a.h(a.listUsers))
 			r.With(a.can("user.view", "user.create", "user.update", "user.delete")).Get("/users/{id}/profile", a.h(a.userProfile))
 			r.With(a.can("user.create")).Post("/users", a.h(a.createUser))
 			r.With(a.can("user.update")).Patch("/users/{id}", a.h(a.patchUser))
 			r.With(a.can("user.delete")).Delete("/users/{id}", a.h(a.deleteUser))
 
-			// Perfis de acesso: só o dono define; quem gerencia usuários lê para atribuir.
+			// Access roles: only the owner defines them; whoever manages users reads them to assign.
 			r.Get("/permissions", a.h(a.listPermissions))
 			r.With(a.can("user.create", "user.update")).Get("/roles", a.h(a.listRoles))
 			r.With(a.owner).Post("/roles", a.h(a.saveRole))
 			r.With(a.owner).Put("/roles/{id}", a.h(a.saveRole))
 			r.With(a.owner).Delete("/roles/{id}", a.h(a.deleteRole))
 
-			// Workspaces: cada um vê os seus.
+			// Workspaces: each person sees theirs.
 			r.Get("/workspaces", a.h(a.listWorkspaces))
 			r.With(a.can("workspace.create")).Post("/workspaces", a.h(a.createWorkspace))
 			r.Route("/workspaces/{ws}", func(r chi.Router) {
@@ -126,7 +126,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.With(a.can("label.delete")).Delete("/labels/{id}", a.h(a.deleteLabel))
 			r.With(a.can("repo.create", "repo.update", "settings.manage")).Get("/git", a.h(a.gitInfo))
 
-			// Agentes e skills são globais: todos usam, o perfil define quem edita.
+			// Agents and skills are global: everyone uses them, the role decides who edits.
 			r.Get("/agents", a.h(a.listAgents))
 			r.With(a.can("agent.create")).Post("/agents", a.h(a.saveAgent))
 			r.With(a.can("agent.update")).Put("/agents/{id}", a.h(a.saveAgent))
@@ -138,7 +138,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.With(a.can("skill.delete")).Delete("/skills/{id}", a.h(a.deleteSkill))
 
 			r.Get("/issues/{id}", a.h(a.getIssue))
-			// Issues: a permissão de cada campo e a política da etapa são conferidas no handler.
+			// Issues: each field's permission and the stage's policy are checked in the handler.
 			r.Patch("/issues/{id}", a.h(a.patchIssue))
 			r.Post("/issues/{id}/approve", a.h(a.approveIssue))
 			r.Put("/issues/{id}/repos", a.h(a.setIssueRepos))
@@ -151,7 +151,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.Post("/issues/{id}/comments", a.h(a.addComment))
 			r.Get("/runs/{id}/events", a.h(a.runEvents))
 
-			// E-mail: quem tem settings.manage configura; os demais só sabem se está ligado.
+			// E-mail: whoever has settings.manage configures it; the others only know whether it is on.
 			r.Get("/settings/email", a.h(a.getEmailSettings))
 			r.With(a.can("settings.manage")).Put("/settings/email", a.h(a.saveEmailSettings))
 			r.With(a.can("settings.manage")).Post("/settings/email/test", a.h(a.testEmailSettings))
@@ -182,11 +182,11 @@ func (a *API) h(fn handler) http.HandlerFunc {
 					msg = tr(r.Context(), he.format, he.args...)
 				}
 			case errors.Is(err, store.ErrNotFound):
-				status, msg = http.StatusNotFound, "não encontrado"
+				status, msg = http.StatusNotFound, "not found"
 			case errors.Is(err, runner.ErrBusy):
 				status = http.StatusConflict
 			case strings.Contains(msg, "duplicate key"):
-				status, msg = http.StatusConflict, "já existe um registro com esse nome/chave"
+				status, msg = http.StatusConflict, "a record with that name/key already exists"
 			default:
 				log.Printf("%s %s: %v", r.Method, r.URL.Path, err)
 			}
@@ -212,7 +212,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func decode(r *http.Request, v any) error {
 	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 8<<20)).Decode(v); err != nil {
-		return bad("JSON inválido: %v", err)
+		return bad("invalid JSON: %v", err)
 	}
 	return nil
 }
@@ -223,19 +223,19 @@ func (a *API) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(sessionCookie)
 		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "faça login"})
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": tr(r.Context(), "please sign in")})
 			return
 		}
 		u, err := a.st.UserBySession(r.Context(), c.Value)
 		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sessão expirada"})
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": tr(r.Context(), "session expired")})
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, u)))
 	})
 }
 
-// can libera a rota para quem tem qualquer uma das permissões.
+// can lets through whoever has any of the permissions.
 func (a *API) can(perms ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -246,28 +246,28 @@ func (a *API) can(perms ...string) func(http.Handler) http.Handler {
 					return
 				}
 			}
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": tr(r.Context(), "seu perfil não tem permissão para isso")})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": tr(r.Context(), "your role isn't allowed to do that")})
 		})
 	}
 }
 
-// owner: só o dono (primeiro cadastro) passa.
+// owner: only the owner (the first sign-up) passes.
 func (a *API) owner(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !userOf(r).IsOwner {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": tr(r.Context(), "só o dono do Multica define perfis")})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": tr(r.Context(), "only the Foreman owner manages roles")})
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// member garante que o usuário pode ver o workspace da rota. Para quem não
-// pode, responde 404 (não revela que o workspace existe).
+// member ensures the user can see the route's workspace. For whoever can't, it answers
+// 404 (it doesn't reveal that the workspace exists).
 func (a *API) member(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !a.st.CanAccess(r.Context(), userOf(r), chi.URLParam(r, "ws")) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "não encontrado"})
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -293,7 +293,7 @@ func (a *API) startSession(w http.ResponseWriter, r *http.Request, u *store.User
 	return nil
 }
 
-// ---------- autenticação ----------
+// ---------- authentication ----------
 
 func (a *API) getSetup(w http.ResponseWriter, r *http.Request) (any, error) {
 	n, err := a.st.CountUsers(r.Context())
@@ -308,22 +308,22 @@ type credentials struct {
 
 func (c credentials) validate() error {
 	if !strings.Contains(c.Email, "@") {
-		return bad("e-mail inválido")
+		return bad("invalid email")
 	}
 	if len(c.Password) < 8 {
-		return bad("a senha precisa de pelo menos 8 caracteres")
+		return bad("the password needs at least 8 characters")
 	}
 	if strings.TrimSpace(c.Name) == "" {
-		return bad("informe o nome")
+		return bad("enter the name")
 	}
 	return nil
 }
 
-// O primeiro acesso cria o dono (pode tudo e define os perfis); depois disso
-// o cadastro é só por quem tem user.create.
+// The first access creates the owner (can do everything and defines the roles); after
+// that, sign-up is only by whoever has user.create.
 func (a *API) postSetup(w http.ResponseWriter, r *http.Request) (any, error) {
 	if n, _ := a.st.CountUsers(r.Context()); n > 0 {
-		return nil, httpError{status: http.StatusForbidden, msg: "o Multica já foi configurado"}
+		return nil, httpError{status: http.StatusForbidden, msg: "Foreman is already set up"}
 	}
 	var c credentials
 	if err := decode(r, &c); err != nil {
@@ -334,7 +334,7 @@ func (a *API) postSetup(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(c.Password), bcrypt.DefaultCost)
 	var roleID *string
-	if role, err := a.st.RoleByName(r.Context(), "Administrador"); err == nil {
+	if role, err := a.st.RoleByName(r.Context(), "Administrator"); err == nil {
 		roleID = &role.ID
 	}
 	u, err := a.st.CreateUser(r.Context(), c.Email, strings.TrimSpace(c.Name), string(hash), true, roleID)
@@ -352,7 +352,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) (any, error) {
 	u, err := a.st.UserByEmail(r.Context(), strings.TrimSpace(c.Email))
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(c.Password)) != nil {
 		time.Sleep(400 * time.Millisecond)
-		return nil, httpError{status: http.StatusUnauthorized, msg: "e-mail ou senha incorretos"}
+		return nil, httpError{status: http.StatusUnauthorized, msg: "wrong email or password"}
 	}
 	return u, a.startSession(w, r, u)
 }
@@ -372,7 +372,7 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) (any, error) {
 		Name     string `json:"name"`
 		About    string `json:"about"`
 		Password string `json:"password"`
-		// Opcional: liga/desliga o e-mail de issue nova para si mesmo.
+		// Optional: turns the new-issue e-mail on/off for oneself.
 		EmailNotifications *bool `json:"emailNotifications"`
 	}
 	if err := decode(r, &in); err != nil {
@@ -386,7 +386,7 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	if in.Password != "" {
 		if len(in.Password) < 8 {
-			return nil, bad("a senha precisa de pelo menos 8 caracteres")
+			return nil, bad("the password needs at least 8 characters")
 		}
 		hash, _ := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 		if err := a.st.SetPassword(r.Context(), u.ID, string(hash)); err != nil {
@@ -399,8 +399,8 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.UpdateUser(r.Context(), u.ID, strings.TrimSpace(in.Name), in.About)
 }
 
-// Preferências de visualização da própria pessoa, guardadas como JSON opaco.
-// A chave é livre (ex.: "board:<workspace>"); o servidor só limita o tamanho.
+// The person's own view preferences, stored as opaque JSON. The key is free (e.g.
+// "board:<workspace>"); the server only limits the size.
 func (a *API) getPref(w http.ResponseWriter, r *http.Request) (any, error) {
 	raw, err := a.st.UserPref(r.Context(), userOf(r).ID, chi.URLParam(r, "key"))
 	if err != nil || raw == nil {
@@ -412,11 +412,11 @@ func (a *API) getPref(w http.ResponseWriter, r *http.Request) (any, error) {
 func (a *API) putPref(w http.ResponseWriter, r *http.Request) (any, error) {
 	key := chi.URLParam(r, "key")
 	if key == "" || len(key) > 100 {
-		return nil, bad("chave inválida")
+		return nil, bad("invalid key")
 	}
 	var v json.RawMessage
 	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 16<<10)).Decode(&v); err != nil || len(v) == 0 || v[0] != '{' {
-		return nil, bad("a preferência precisa ser um objeto JSON de até 16 KB")
+		return nil, bad("the preference must be a JSON object of up to 16 KB")
 	}
 	if err := a.st.SetUserPref(r.Context(), userOf(r).ID, key, v); err != nil {
 		return nil, err
@@ -455,8 +455,8 @@ func (a *API) createUser(w http.ResponseWriter, r *http.Request) (any, error) {
 	return u, a.st.SetUserWorkspaces(r.Context(), u.ID, c.WorkspaceIDs)
 }
 
-// patchUser: edita nome, perfil, senha e os workspaces de alguém. O dono só
-// é editado por ele mesmo, e o perfil dele não muda (ele sempre pode tudo).
+// patchUser: edits someone's name, role, password and workspaces. The owner is only
+// edited by themselves, and their role doesn't change (they can always do everything).
 func (a *API) patchUser(w http.ResponseWriter, r *http.Request) (any, error) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -466,7 +466,7 @@ func (a *API) patchUser(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if target.IsOwner && !me.IsOwner {
-		return nil, httpError{status: http.StatusForbidden, msg: "só o próprio dono altera a conta dele"}
+		return nil, httpError{status: http.StatusForbidden, msg: "only the owner can change their own account"}
 	}
 	var in struct {
 		Name         *string   `json:"name"`
@@ -493,14 +493,14 @@ func (a *API) patchUser(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	if in.Password != "" {
 		if len(in.Password) < 8 {
-			return nil, bad("a senha precisa de pelo menos 8 caracteres")
+			return nil, bad("the password needs at least 8 characters")
 		}
 		hash, _ := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 		if err := a.st.SetPassword(ctx, id, string(hash)); err != nil {
 			return nil, err
 		}
 		if id != me.ID {
-			a.st.DeleteUserSessions(ctx, id) // senha redefinida: derruba as sessões abertas
+			a.st.DeleteUserSessions(ctx, id) // password reset: drops the open sessions
 		}
 	}
 	if in.WorkspaceIDs != nil {
@@ -511,10 +511,10 @@ func (a *API) patchUser(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.UserByID(ctx, id)
 }
 
-// roleOrDefault valida o perfil escolhido; vazio = "Membro".
+// roleOrDefault validates the chosen role; empty = "Member".
 func (a *API) roleOrDefault(ctx context.Context, id string) (*string, error) {
 	if id == "" {
-		role, err := a.st.RoleByName(ctx, "Membro")
+		role, err := a.st.RoleByName(ctx, "Member")
 		if err != nil {
 			return nil, nil
 		}
@@ -522,7 +522,7 @@ func (a *API) roleOrDefault(ctx context.Context, id string) (*string, error) {
 	}
 	role, err := a.st.Role(ctx, id)
 	if err != nil {
-		return nil, bad("perfil inválido")
+		return nil, bad("invalid role")
 	}
 	return &role.ID, nil
 }
@@ -530,10 +530,10 @@ func (a *API) roleOrDefault(ctx context.Context, id string) (*string, error) {
 func (a *API) deleteUser(w http.ResponseWriter, r *http.Request) (any, error) {
 	id := chi.URLParam(r, "id")
 	if id == userOf(r).ID {
-		return nil, bad("você não pode remover a si mesmo")
+		return nil, bad("you can't remove yourself")
 	}
 	if t, err := a.st.UserByID(r.Context(), id); err == nil && t.IsOwner {
-		return nil, bad("o dono do Multica não pode ser removido")
+		return nil, bad("the Foreman owner can't be removed")
 	}
 	return nil, a.st.DeleteUser(r.Context(), id)
 }
@@ -560,19 +560,19 @@ func (a *API) saveRole(w http.ResponseWriter, r *http.Request) (any, error) {
 	in.ID = chi.URLParam(r, "id")
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
-		return nil, bad("dê um nome ao perfil")
+		return nil, bad("give the role a name")
 	}
 	perms := []string{}
 	for _, p := range in.Permissions {
 		if !store.ValidPermission(p) {
-			return nil, bad("permissão desconhecida: %s", p)
+			return nil, bad("unknown permission: %s", p)
 		}
 		perms = append(perms, p)
 	}
 	in.Permissions = perms
 	role, err := a.st.SaveRole(r.Context(), in)
 	if err != nil && strings.Contains(err.Error(), "duplicate") {
-		return nil, bad("já existe um perfil com esse nome")
+		return nil, bad("a role with that name already exists")
 	}
 	return role, err
 }
@@ -583,12 +583,12 @@ func (a *API) deleteRole(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if role.Users > 0 {
-		return nil, bad("%d usuário(s) usam este perfil; troque o perfil deles antes", role.Users)
+		return nil, bad("%d user(s) have this role; change their role first", role.Users)
 	}
 	return nil, a.st.DeleteRole(r.Context(), role.ID)
 }
 
-// ---------- workspaces, repositórios, labels ----------
+// ---------- workspaces, repositories, labels ----------
 
 var keyRe = regexp.MustCompile(`^[A-Z][A-Z0-9]{1,9}$`)
 
@@ -618,7 +618,7 @@ func (a *API) createWorkspace(w http.ResponseWriter, r *http.Request) (any, erro
 	}
 	in.Key = strings.ToUpper(strings.TrimSpace(in.Key))
 	if strings.TrimSpace(in.Name) == "" || !keyRe.MatchString(in.Key) {
-		return nil, bad("informe o nome e uma chave de 2 a 10 letras/números (ex.: LING)")
+		return nil, bad("enter the name and a key of 2 to 10 letters/numbers (e.g. LING)")
 	}
 	return a.st.CreateWorkspace(r.Context(), strings.TrimSpace(in.Name), in.Key)
 }
@@ -650,10 +650,10 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	in.URL = strings.TrimSpace(in.URL)
 	if in.URL == "" {
-		return nil, bad("informe a URL do repositório")
+		return nil, bad("enter the repository URL")
 	}
 	if strings.TrimSpace(in.Name) == "" {
-		return nil, bad("informe o nome do repositório")
+		return nil, bad("enter the repository name")
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.ID != "" {
@@ -666,16 +666,16 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 		}
 		in.WorkspaceID = cur.WorkspaceID
 	}
-	// Nome único no workspace: vira a pasta do repositório no diretório da issue.
+	// A unique name in the workspace: it becomes the repository's folder in the issue's directory.
 	repos, _ := a.st.ListRepos(r.Context(), in.WorkspaceID)
 	for _, o := range repos {
 		if o.ID != in.ID && store.Slugify(o.Name, 40) == store.Slugify(in.Name, 40) {
-			return nil, bad("já existe um repositório chamado %q neste workspace", o.Name)
+			return nil, bad("a repository named %q already exists in this workspace", o.Name)
 		}
 	}
-	// Só aceita repositório git acessível com as credenciais do servidor.
+	// Only accepts a git repository reachable with the server's credentials.
 	if err := a.run.CheckRemote(r.Context(), in.URL); err != nil {
-		return nil, bad("não é um repositório git acessível pelo servidor: %v", err)
+		return nil, bad("not a git repository the server can reach: %v", err)
 	}
 	isNew := in.ID == ""
 	repo, err := a.st.SaveRepo(r.Context(), in)
@@ -703,7 +703,7 @@ func (a *API) repoBranches(w http.ResponseWriter, r *http.Request) (any, error) 
 	}
 	branches, err := a.run.Branches(r.Context(), repo)
 	if err != nil {
-		return nil, bad("não consegui acessar o repositório: %v", err)
+		return nil, bad("couldn't reach the repository: %v", err)
 	}
 	return branches, nil
 }
@@ -725,7 +725,7 @@ func (a *API) updateLabel(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(in.Name) == "" {
-		return nil, bad("informe o nome da label")
+		return nil, bad("enter the label name")
 	}
 	return a.st.UpdateLabel(r.Context(), l.ID, strings.TrimSpace(in.Name), firstNonEmptyStr(in.Color, l.Color))
 }
@@ -736,7 +736,7 @@ func (a *API) createLabel(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(in.Name) == "" {
-		return nil, bad("informe o nome da label")
+		return nil, bad("enter the label name")
 	}
 	if in.Color == "" {
 		in.Color = "#6366f1"
@@ -769,7 +769,7 @@ func (a *API) saveAgent(w http.ResponseWriter, r *http.Request) (any, error) {
 	in.ID = chi.URLParam(r, "id")
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
-		return nil, bad("dê um nome ao agente")
+		return nil, bad("give the agent a name")
 	}
 	if in.Runtime != "codex" {
 		in.Runtime = "claude"
@@ -796,7 +796,7 @@ func (a *API) saveSkill(w http.ResponseWriter, r *http.Request) (any, error) {
 	in.ID = chi.URLParam(r, "id")
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
-		return nil, bad("dê um nome à skill")
+		return nil, bad("give the skill a name")
 	}
 	in.Slug = store.Slugify(in.Name, 48)
 	return a.st.SaveSkill(r.Context(), in)
@@ -808,7 +808,7 @@ func (a *API) deleteSkill(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- issues ----------
 
-// issueQuery lê os filtros comuns do quadro, da lista e da busca.
+// issueQuery reads the filters shared by the board, the list and the search.
 func issueQuery(r *http.Request) store.IssueQuery {
 	q := r.URL.Query()
 	num := func(k string) int { n, _ := strconv.Atoi(q.Get(k)); return n }
@@ -818,14 +818,14 @@ func issueQuery(r *http.Request) store.IssueQuery {
 	}
 }
 
-// listIssues: uma página (de uma etapa ou da busca em todas).
+// listIssues: one page (of a stage or of the search across all).
 func (a *API) listIssues(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.st.PageIssues(r.Context(), chi.URLParam(r, "ws"), issueQuery(r))
 }
 
-// board: as primeiras N de cada etapa (cada uma na ordem escolhida para ela),
-// o total de cada etapa com os mesmos filtros e quantas o agente está tocando.
-// O resto vem por listIssues, etapa a etapa, quando a pessoa rola a coluna.
+// board: the first N of each stage (each one in the order chosen for it), each stage's
+// total with the same filters and how many the agent is working on. The rest comes
+// through listIssues, stage by stage, when the person scrolls the column.
 func (a *API) board(w http.ResponseWriter, r *http.Request) (any, error) {
 	ctx := r.Context()
 	wsID := chi.URLParam(r, "ws")
@@ -878,14 +878,14 @@ func (a *API) createIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" {
-		return nil, bad("dê um título à issue")
+		return nil, bad("give the issue a title")
 	}
 	wsID := chi.URLParam(r, "ws")
 	if in.Status == "" {
 		in.Status = a.st.FirstStage(r.Context(), wsID)
 	}
 	if !a.st.ValidStage(r.Context(), wsID, in.Status) {
-		return nil, bad("etapa inválida")
+		return nil, bad("invalid stage")
 	}
 	if in.AgentID != nil && *in.AgentID == "" {
 		in.AgentID = nil
@@ -900,7 +900,7 @@ func (a *API) createIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	for _, id := range in.RepoIDs {
 		if !valid[id] {
-			return nil, bad("repositório não pertence a este workspace")
+			return nil, bad("repository doesn't belong to this workspace")
 		}
 	}
 	u := userOf(r)
@@ -913,7 +913,7 @@ func (a *API) createIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	a.publishIssue(is)
 	a.ntf.IssueCreated(is, u, origin(r))
-	// O que acontece ao entrar na etapa (ex.: rodar o agente) são as regras dela.
+	// What happens on entering the stage (e.g. running the agent) are its rules.
 	return map[string]any{"issue": is}, nil
 }
 
@@ -928,7 +928,7 @@ func (a *API) getIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	ctx := r.Context()
 	var is *store.Issue
 	var err error
-	// Aceita o id ou a referência legível "LING-12".
+	// Accepts the id or the readable reference "LING-12".
 	if ref := chi.URLParam(r, "id"); strings.Contains(ref, "-") && len(ref) < 20 {
 		parts := strings.SplitN(ref, "-", 2)
 		ws, werr := a.st.WorkspaceByKey(ctx, parts[0])
@@ -954,7 +954,7 @@ func (a *API) getIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	return issueDetail{is, runs, comments, a.capsOf(ctx, userOf(r), is)}, err
 }
 
-// loadActable carrega a issue e confere a permissão do perfil e a política da etapa.
+// loadActable loads the issue and checks the role's permission and the stage's policy.
 func (a *API) loadActable(r *http.Request, perm, what string) (*store.Issue, error) {
 	is, err := a.loadIssue(r)
 	if err != nil {
@@ -985,12 +985,12 @@ func (a *API) patchIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if s, ok := patch["status"].(string); ok && !a.st.ValidStage(r.Context(), before.WorkspaceID, s) {
-		return nil, bad("etapa inválida")
+		return nil, bad("invalid stage")
 	}
 	if t, ok := patch["title"].(string); ok && strings.TrimSpace(t) == "" {
-		return nil, bad("o título não pode ficar vazio")
+		return nil, bad("the title can't be empty")
 	}
-	// Permissão de cada campo + política da etapa atual (e da de destino, se mudar).
+	// Each field's permission + the current stage's policy (and the target's, if it changes).
 	ctx, u := r.Context(), userOf(r)
 	if err := a.canAct(ctx, u, before); err != nil {
 		return nil, err
@@ -1033,12 +1033,12 @@ func (a *API) patchIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	a.publishIssue(is)
-	// Mudou de etapa: as regras dela (rodar agente, parar…) rodam pelo motor.
+	// Changed stage: its rules (run the agent, stop…) run through the engine.
 	return map[string]any{"issue": is}, nil
 }
 
 func (a *API) deleteIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadActable(r, "issue.delete", "excluir issues")
+	is, err := a.loadActable(r, "issue.delete", "delete issues")
 	if err != nil {
 		return nil, err
 	}
@@ -1051,7 +1051,7 @@ func (a *API) deleteIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (a *API) runIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadActable(r, "issue.run", "executar agentes")
+	is, err := a.loadActable(r, "issue.run", "run agents")
 	if err != nil {
 		return nil, err
 	}
@@ -1077,18 +1077,18 @@ func (a *API) runIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (a *API) cancelIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadActable(r, "issue.run", "cancelar execuções")
+	is, err := a.loadActable(r, "issue.run", "cancel runs")
 	if err != nil {
 		return nil, err
 	}
 	if is.ActiveRun == nil {
-		return nil, bad("nada rodando")
+		return nil, bad("nothing running")
 	}
 	return nil, a.run.Cancel(r.Context(), *is.ActiveRun)
 }
 
 func (a *API) mergeIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadActable(r, "issue.merge", "fazer merge")
+	is, err := a.loadActable(r, "issue.merge", "merge")
 	if err != nil {
 		return nil, err
 	}
@@ -1106,10 +1106,10 @@ func (a *API) mergeIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	return res, nil
 }
 
-// setIssueRepos troca os repositórios da issue (todos, ou só os escolhidos) e
-// as branches de cada um.
+// setIssueRepos replaces the issue's repositories (all, or only the chosen ones) and
+// each one's branches.
 func (a *API) setIssueRepos(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadActable(r, "issue.repos", "escolher repositórios")
+	is, err := a.loadActable(r, "issue.repos", "choose repositories")
 	if err != nil {
 		return nil, err
 	}
@@ -1124,7 +1124,7 @@ func (a *API) setIssueRepos(w http.ResponseWriter, r *http.Request) (any, error)
 		return nil, err
 	}
 	if !in.All && len(in.Repos) == 0 {
-		return nil, bad("escolha pelo menos um repositório")
+		return nil, bad("choose at least one repository")
 	}
 	if err := a.st.SetIssueRepos(r.Context(), is.ID, in.All, in.Repos); err != nil {
 		return nil, err
@@ -1137,7 +1137,7 @@ func (a *API) setIssueRepos(w http.ResponseWriter, r *http.Request) (any, error)
 }
 
 func (a *API) discardIssue(w http.ResponseWriter, r *http.Request) (any, error) {
-	is, err := a.loadActable(r, "issue.merge", "descartar branches")
+	is, err := a.loadActable(r, "issue.merge", "discard branches")
 	if err != nil {
 		return nil, err
 	}
@@ -1168,18 +1168,18 @@ func (a *API) addComment(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(in.Body) == "" {
-		return nil, bad("comentário vazio")
+		return nil, bad("empty comment")
 	}
 	u := userOf(r)
-	if err := need(u, "issue.comment", "comentar"); err != nil {
+	if err := need(u, "issue.comment", "comment"); err != nil {
 		return nil, err
 	}
 	if err := a.canAct(r.Context(), u, is); err != nil {
 		return nil, err
 	}
-	// Verifica antes de gravar, para não deixar um pedido "órfão" se o agente estiver ocupado.
+	// Checks before saving, so as not to leave an "orphan" request if the agent is busy.
 	if in.SendToAgent && !u.Can("issue.run") {
-		return nil, httpError{status: http.StatusForbidden, msg: "seu perfil não pode executar agentes"}
+		return nil, httpError{status: http.StatusForbidden, msg: "your role can't run agents"}
 	}
 	if in.SendToAgent && in.AgentID != "" && (is.AgentID == nil || *is.AgentID != in.AgentID) {
 		if err := a.canField(r.Context(), u, is, "agentId"); err != nil {
@@ -1229,13 +1229,13 @@ func (a *API) runEvents(w http.ResponseWriter, r *http.Request) (any, error) {
 
 // ---------- analytics e runtimes ----------
 
-// Analytics tem dois níveis, cada um com duas permissões independentes:
-//   - do workspace (analytics.view): só os números da própria pessoa;
-//     com analytics.team, os de todo mundo ou os de uma pessoa escolhida;
-//   - geral, de todos os workspaces que a pessoa enxerga (analytics.global):
-//     só os próprios; com analytics.global_team, de todo mundo ou de alguém.
+// Analytics has two levels, each with two independent permissions:
+//   - the workspace's (analytics.view): only the person's own numbers;
+//     with analytics.team, everyone's or a chosen person's;
+//   - overall, across every workspace the person sees (analytics.global):
+//     only their own; with analytics.global_team, everyone's or someone's.
 //
-// ?person=me | all | <id>. Sem a permissão de equipe, vale sempre "me".
+// ?person=me | all | <id>. Without the team permission, it is always "me".
 func (a *API) workspaceAnalytics(w http.ResponseWriter, r *http.Request) (any, error) {
 	person, err := analyticsPerson(r, "analytics.team")
 	if err != nil {
@@ -1264,7 +1264,7 @@ func analyticsDays(r *http.Request) int {
 	return days
 }
 
-// analyticsPerson: de quem são os números ("" = todo mundo).
+// analyticsPerson: whose numbers they are ("" = everyone).
 func analyticsPerson(r *http.Request, team string) (string, error) {
 	u := userOf(r)
 	p := r.URL.Query().Get("person")
@@ -1280,10 +1280,10 @@ func analyticsPerson(r *http.Request, team string) (string, error) {
 		}
 		return p, nil
 	}
-	return "", forbidden("seu perfil só vê os próprios números no Analytics")
+	return "", forbidden("your role only sees its own numbers in Analytics")
 }
 
-// Catálogo de modelos por runtime; ?refresh=1 consulta os CLIs de novo (quem configura agentes).
+// Model catalog per runtime; ?refresh=1 queries the CLIs again (whoever configures agents).
 func (a *API) runtimeModels(w http.ResponseWriter, r *http.Request) (any, error) {
 	u := userOf(r)
 	force := r.URL.Query().Get("refresh") == "1" && (u.Can("agent.create") || u.Can("agent.update"))
@@ -1299,12 +1299,12 @@ func (a *API) runtimes(w http.ResponseWriter, r *http.Request) (any, error) {
 func (a *API) events(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming não suportado", http.StatusInternalServerError)
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("X-Accel-Buffering", "no") // nginx: não segurar o stream
+	w.Header().Set("X-Accel-Buffering", "no") // nginx: don't hold the stream
 	ch := a.hub.Subscribe(chi.URLParam(r, "ws"))
 	defer a.hub.Unsubscribe(ch)
 	fmt.Fprint(w, ": ok\n\n")
@@ -1327,9 +1327,9 @@ func (a *API) events(w http.ResponseWriter, r *http.Request) {
 
 // ---------- e-mail ----------
 
-// origin deduz a URL pública do Multica a partir da requisição (atrás de
-// proxy, usa X-Forwarded-Proto). Vale para os links quando o admin não
-// definiu a URL nos parâmetros de e-mail.
+// origin infers Foreman's public URL from the request (behind a proxy, it uses
+// X-Forwarded-Proto). It applies to the links when the admin didn't set the URL in the
+// e-mail settings.
 func origin(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
@@ -1345,7 +1345,7 @@ type emailSettingsView struct {
 	notify.Settings
 	HasPassword bool          `json:"hasPassword"`
 	Status      notify.Status `json:"status"`
-	// Regras de e-mail ativas: com o envio desligado, nenhuma delas manda nada.
+	// Active e-mail rules: with sending turned off, none of them sends anything.
 	NotifyRules int `json:"notifyRules"`
 }
 
@@ -1359,11 +1359,11 @@ func (a *API) getEmailSettings(w http.ResponseWriter, r *http.Request) (any, err
 		return map[string]any{"enabled": c.Enabled, "notifyRules": rules}, nil
 	}
 	has := c.Password != ""
-	c.Password = "" // a senha nunca volta para o navegador
+	c.Password = "" // the password never goes back to the browser
 	return emailSettingsView{Settings: c, HasPassword: has, Status: a.ntf.Status(), NotifyRules: rules}, nil
 }
 
-// emailForm lê o formulário; senha vazia mantém a que já está salva.
+// emailForm reads the form; an empty password keeps the saved one.
 func (a *API) emailForm(r *http.Request) (notify.Settings, error) {
 	var in notify.Settings
 	if err := decode(r, &in); err != nil {
@@ -1407,7 +1407,7 @@ func (a *API) testEmailSettings(w http.ResponseWriter, r *http.Request) (any, er
 	}
 	to := userOf(r).Email
 	if err := a.ntf.Test(r.Context(), in, to); err != nil {
-		return nil, bad("falhou: %s", err.Error())
+		return nil, bad("failed: %s", err.Error())
 	}
 	return map[string]string{"sentTo": to}, nil
 }

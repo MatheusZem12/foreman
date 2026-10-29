@@ -10,11 +10,10 @@ import (
 
 // ---------- etapas ----------
 
-// Stage é uma coluna do quadro. Todo workspace tem as do sistema (com
-// comportamento próprio: A fazer inicia o agente, Concluída finaliza…) e as
-// suas; todas podem ser reordenadas e renomeadas. Quem pode, travas e
-// aprovação são regras de acesso da etapa (trigger "access"); Policy é o
-// resumo delas, montado na leitura.
+// Stage is a board column. Every workspace has the system ones (with their own
+// behaviour: To do starts the agent, Done finishes…) and its own; all of them can be
+// reordered and renamed. Who may, locks and approval are the stage's access rules
+// (trigger "access"); Policy is their summary, built on read.
 type Stage struct {
 	ID          string      `db:"id" json:"id"`
 	WorkspaceID string      `db:"workspace_id" json:"workspaceId,omitempty"`
@@ -22,11 +21,11 @@ type Stage struct {
 	Color       string      `db:"color" json:"color"`
 	Position    float64     `db:"position" json:"position"`
 	CreatedAt   time.Time   `db:"created_at" json:"-"`
-	Policy      StagePolicy `db:"-" json:"policy"`          // derivada das regras de acesso
-	Parallel    bool        `db:"parallel" json:"parallel"` // ao lado da etapa anterior (mesma coluna no quadro)
+	Policy      StagePolicy `db:"-" json:"policy"`          // derived from the access rules
+	Parallel    bool        `db:"parallel" json:"parallel"` // next to the previous stage (same board column)
 }
 
-// Who é um grupo de pessoas: perfis e/ou usuários. Vazio = sem restrição.
+// Who is a group of people: roles and/or users. Empty = no restriction.
 type Who struct {
 	Roles []string `json:"roles,omitempty"`
 	Users []string `json:"users,omitempty"`
@@ -34,12 +33,12 @@ type Who struct {
 
 func (w Who) Empty() bool { return len(w.Roles) == 0 && len(w.Users) == 0 }
 
-// Has: a pessoa está listada no grupo (por usuário ou perfil), sem atalhos.
+// Has: the person is listed in the group (by user or role), without shortcuts.
 func (w Who) Has(u *User) bool {
 	return u != nil && (slices.Contains(w.Users, u.ID) || (u.RoleID != nil && slices.Contains(w.Roles, *u.RoleID)))
 }
 
-// Includes: o dono sempre está incluído; grupo vazio inclui todo mundo.
+// Includes: the owner is always included; an empty group includes everybody.
 func (w Who) Includes(u *User) bool {
 	if u == nil {
 		return false
@@ -50,19 +49,19 @@ func (w Who) Includes(u *User) bool {
 	return slices.Contains(w.Users, u.ID) || (u.RoleID != nil && slices.Contains(w.Roles, *u.RoleID))
 }
 
-// StagePolicy é o que vale para as issues numa etapa: a soma das regras de
-// acesso ativas dela.
+// StagePolicy is what applies to the issues in a stage: the sum of its active access
+// rules.
 type StagePolicy struct {
-	Enter       Who      `json:"enter"`               // quem pode trazer issues para cá
-	Act         Who      `json:"act"`                 // quem pode mexer nas issues daqui (editar, comentar, rodar, tirar)
-	Locked      []string `json:"locked,omitempty"`    // campos que ninguém altera aqui: title, description, priority, labels, agent, repos, assignee
-	Requires    []string `json:"requires,omitempty"`  // para entrar: agent, assignee, description, changes
-	WIP         int      `json:"wip,omitempty"`       // máximo de issues ao mesmo tempo (0 = sem limite)
-	Approvals   int      `json:"approvals,omitempty"` // aprovações necessárias (0 = etapa sem aprovação)
-	ApproveTo   string   `json:"approveTo,omitempty"` // para onde vai quando aprovada
-	Approvers   Who      `json:"approvers"`           // quem pode aprovar (vazio = quem tem issue.approve)
-	Responsible Who      `json:"responsible"`         // responsáveis da etapa (notificações, "minhas")
-	ReadOnly    bool     `json:"readOnly,omitempty"`  // entrou aqui, ninguém mexe mais (só o dono)
+	Enter       Who      `json:"enter"`               // who can bring issues here
+	Act         Who      `json:"act"`                 // who can work on the issues here (edit, comment, run, take out)
+	Locked      []string `json:"locked,omitempty"`    // fields nobody changes here: title, description, priority, labels, agent, repos, assignee
+	Requires    []string `json:"requires,omitempty"`  // to enter: agent, assignee, description, changes
+	WIP         int      `json:"wip,omitempty"`       // maximum issues at the same time (0 = no limit)
+	Approvals   int      `json:"approvals,omitempty"` // approvals needed (0 = a stage without approval)
+	ApproveTo   string   `json:"approveTo,omitempty"` // where it goes once approved
+	Approvers   Who      `json:"approvers"`           // who can approve (empty = whoever has issue.approve)
+	Responsible Who      `json:"responsible"`         // the stage's owners (notifications, "mine")
+	ReadOnly    bool     `json:"readOnly,omitempty"`  // once in here, nobody changes it (only the owner)
 	Close       string   `json:"close,omitempty"`     // encerra a issue: done (resolvida) ou cancelled
 }
 
@@ -72,7 +71,7 @@ func (s *Store) logStage(ctx context.Context, issueID, stage string) {
 	s.DB.Exec(ctx, `insert into issue_stage_log(issue_id, workspace_id, stage) select id, workspace_id, $2 from issues where id = $1`, issueID, stage)
 }
 
-// EnabledNotifyRules: regras de e-mail ativas (todas), para avisar quando o envio está desligado.
+// EnabledNotifyRules: active e-mail rules (all of them), to warn when sending is turned off.
 func (s *Store) EnabledNotifyRules(ctx context.Context) int {
 	var n int
 	s.DB.QueryRow(ctx, `select count(*) from rules where action = 'notify' and enabled`).Scan(&n)
@@ -108,13 +107,13 @@ func (s *Store) StageOf(ctx context.Context, wsID, id string) (*Stage, error) {
 	return st, nil
 }
 
-// AccessActions: o que uma regra de acesso pode dizer sobre a etapa.
+// AccessActions: what an access rule can say about the stage.
 var AccessActions = map[string]bool{
 	"allow_act": true, "allow_enter": true, "read_only": true, "lock_fields": true,
 	"require": true, "wip": true, "approval": true, "responsible": true, "close": true,
 }
 
-// AccessConfig: a config das regras de acesso.
+// AccessConfig: the config of the access rules.
 type AccessConfig struct {
 	Roles     []string `json:"roles,omitempty"`
 	Users     []string `json:"users,omitempty"`
@@ -122,7 +121,7 @@ type AccessConfig struct {
 	Requires  []string `json:"requires,omitempty"`  // require
 	WIP       int      `json:"wip,omitempty"`       // wip
 	Approvals int      `json:"approvals,omitempty"` // approval: quantas pessoas diferentes
-	To        string   `json:"to,omitempty"`        // approval: para onde vai
+	To        string   `json:"to,omitempty"`        // approval: where it goes
 	Kind      string   `json:"kind,omitempty"`      // close: done | cancelled
 }
 
@@ -135,9 +134,9 @@ func union(a, b []string) []string {
 	return a
 }
 
-// policies soma as regras de acesso ativas por etapa (stage vazio = todas).
-// Várias regras do mesmo tipo se somam: listas se juntam, o limite menor vale
-// e a aprovação mais exigente vale.
+// policies adds up the active access rules per stage (empty stage = all). Several rules
+// of the same type add up: lists are joined, the smallest limit applies and the most
+// demanding approval applies.
 func (s *Store) policies(ctx context.Context, wsID, stage string) (map[string]StagePolicy, error) {
 	rules, err := many[Rule](ctx, s, `select * from rules where workspace_id = $1 and trigger = 'access' and enabled
 		and ($2 = '' or stage = $2) order by position, created_at`, wsID, stage)
@@ -204,7 +203,7 @@ func (s *Store) SaveStage(ctx context.Context, st Stage) (*Stage, error) {
 		st.WorkspaceID, st.ID, st.Name, st.Color, st.Position, st.Parallel)
 }
 
-// SetStageOrder grava a ordem das etapas (lista completa de ids).
+// SetStageOrder saves the stage order (the full list of ids).
 func (s *Store) SetStageOrder(ctx context.Context, wsID string, ids []string) error {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -219,14 +218,14 @@ func (s *Store) SetStageOrder(ctx context.Context, wsID string, ids []string) er
 	return tx.Commit(ctx)
 }
 
-// FirstStage: a primeira etapa do fluxo (para onde vai o que fica sem etapa).
+// FirstStage: the workflow's first stage (where whatever has no stage goes).
 func (s *Store) FirstStage(ctx context.Context, wsID string) string {
 	var id string
 	s.DB.QueryRow(ctx, `select id from stages where workspace_id = $1 order by position, created_at limit 1`, wsID).Scan(&id)
 	return id
 }
 
-// DeleteStage manda as issues da etapa para a primeira das que sobram e apaga as regras dela.
+// DeleteStage sends the stage's issues to the first of the remaining ones and deletes its rules.
 func (s *Store) DeleteStage(ctx context.Context, st *Stage) error {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -246,7 +245,7 @@ func (s *Store) DeleteStage(ctx context.Context, st *Stage) error {
 	return tx.Commit(ctx)
 }
 
-// OpenLoad: issues abertas por responsável (para distribuir trabalho).
+// OpenLoad: open issues per assignee (to distribute work).
 func (s *Store) OpenLoad(ctx context.Context, wsID string) map[string]int {
 	out := map[string]int{}
 	rows, err := s.DB.Query(ctx, `select assignee_id::text, count(*) from issues
@@ -264,7 +263,7 @@ func (s *Store) OpenLoad(ctx context.Context, wsID string) map[string]int {
 	return out
 }
 
-// CountInStage: issues numa etapa (para o limite de WIP).
+// CountInStage: issues in a stage (for the WIP limit).
 func (s *Store) CountInStage(ctx context.Context, wsID, stage string) int {
 	var n int
 	s.DB.QueryRow(ctx, `select count(*) from issues where workspace_id = $1 and status = $2`, wsID, stage).Scan(&n)
@@ -273,11 +272,11 @@ func (s *Store) CountInStage(ctx context.Context, wsID, stage string) int {
 
 // ---------- regras ----------
 
-// Rule: quando o gatilho acontece (e as condições batem), faz a ação.
+// Rule: when the trigger happens (and the conditions match), it performs the action.
 type Rule struct {
 	ID          string          `db:"id" json:"id"`
 	WorkspaceID string          `db:"workspace_id" json:"workspaceId"`
-	Stage       string          `db:"stage" json:"stage"` // etapa do gatilho (enter/leave/stale); vazio nos demais
+	Stage       string          `db:"stage" json:"stage"` // the trigger's stage (enter/leave/stale); empty for the others
 	Action      string          `db:"action" json:"action"`
 	Config      json.RawMessage `db:"config" json:"config"`
 	Enabled     bool            `db:"enabled" json:"enabled"`
@@ -303,29 +302,29 @@ var RuleActions = map[string]bool{
 	"set_agent": true, "set_priority": true, "add_label": true, "assign": true, "comment": true, "stop_agent": true,
 }
 
-// Conditions: filtros que a issue precisa atender para a regra disparar.
+// Conditions: filters the issue has to meet for the rule to fire.
 type Conditions struct {
-	Priorities []int    `json:"priorities,omitempty"` // 1 urgente … 4 baixa, 0 sem
+	Priorities []int    `json:"priorities,omitempty"` // 1 urgent … 4 low, 0 none
 	Labels     []string `json:"labels,omitempty"`     // tem alguma destas
-	Agents     []string `json:"agents,omitempty"`     // agente da issue é um destes
+	Agents     []string `json:"agents,omitempty"`     // the issue's agent is one of these
 	Outcomes   []string `json:"outcomes,omitempty"`   // run_finished: done, waiting, incomplete, failed, cancelled
-	Stages     []string `json:"stages,omitempty"`     // a issue está numa destas etapas (gatilhos sem etapa)
+	Stages     []string `json:"stages,omitempty"`     // the issue is in one of these stages (triggers without a stage)
 	Hours      float64  `json:"hours,omitempty"`      // stale: horas paradas na etapa
 	Cost       float64  `json:"cost,omitempty"`       // cost_over: US$
-	ActorRoles []string `json:"actorRoles,omitempty"` // quem causou o evento tem um destes perfis
+	ActorRoles []string `json:"actorRoles,omitempty"` // whoever caused the event has one of these roles
 }
 
 func (s *Store) ListRules(ctx context.Context, wsID string) ([]Rule, error) {
 	return many[Rule](ctx, s, `select * from rules where workspace_id = $1 order by trigger, stage, position, created_at`, wsID)
 }
 
-// RulesFor: regras ativas de um gatilho (e etapa, quando o gatilho tem etapa).
+// RulesFor: a trigger's active rules (and stage, when the trigger has one).
 func (s *Store) RulesFor(ctx context.Context, wsID, trigger, stage string) ([]Rule, error) {
 	return many[Rule](ctx, s, `select * from rules where workspace_id = $1 and trigger = $2 and stage = $3 and enabled
 		order by position, created_at`, wsID, trigger, stage)
 }
 
-// RulesByTrigger: regras ativas de um gatilho em todos os workspaces (varredura por tempo).
+// RulesByTrigger: a trigger's active rules across all workspaces (the time sweep).
 func (s *Store) RulesByTrigger(ctx context.Context, trigger string) ([]Rule, error) {
 	return many[Rule](ctx, s, `select * from rules where trigger = $1 and enabled`, trigger)
 }
@@ -350,7 +349,7 @@ func (s *Store) SaveRule(ctx context.Context, r Rule) (*Rule, error) {
 		r.ID, r.Stage, r.Action, r.Config, r.Enabled, r.Trigger, r.Conditions)
 }
 
-// SetRuleOrder grava a ordem em que as regras rodam (ids do mesmo workspace).
+// SetRuleOrder saves the order the rules run in (ids of the same workspace).
 func (s *Store) SetRuleOrder(ctx context.Context, wsID string, ids []string) error {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -370,13 +369,13 @@ func (s *Store) DeleteRule(ctx context.Context, id string) error {
 	return err
 }
 
-// MarkFired registra o disparo único de uma regra numa issue; false se já disparou.
+// MarkFired records a rule's single firing on an issue; false if it already fired.
 func (s *Store) MarkFired(ctx context.Context, ruleID, issueID string) bool {
 	tag, err := s.DB.Exec(ctx, `insert into rule_fires(rule_id, issue_id) values($1, $2) on conflict do nothing`, ruleID, issueID)
 	return err == nil && tag.RowsAffected() > 0
 }
 
-// StaleIssues: issues paradas na etapa há mais de `hours` horas.
+// StaleIssues: issues sitting in the stage for more than `hours` hours.
 func (s *Store) StaleIssues(ctx context.Context, wsID, stage string, hours float64) ([]Issue, error) {
 	return many[Issue](ctx, s, issueSelect+` where i.workspace_id = $1 and i.status = $2
 		and i.stage_entered_at < now() - make_interval(secs => $3)`, wsID, stage, hours*3600)
@@ -388,16 +387,16 @@ func (s *Store) CostlyIssues(ctx context.Context, wsID string, usd float64) ([]I
 		and (select coalesce(sum(cost_usd), 0) from runs where issue_id = i.id) > $2`, wsID, usd)
 }
 
-// seedWorkflow: o fluxo padrão (etapas e regras) com que todo workspace
-// nasce. Fica no banco (função seed_workflow, migração 016) e é todo editável.
+// seedWorkflow: the default workflow (stages and rules) every workspace is born with.
+// It lives in the database (the seed_workflow function, migration 016) and is fully editable.
 func (s *Store) seedWorkflow(ctx context.Context, wsID string) {
 	if _, err := s.DB.Exec(ctx, `select seed_workflow($1)`, wsID); err != nil {
-		log.Printf("fluxo padrão de %s: %v", wsID, err)
+		log.Printf("default workflow of %s: %v", wsID, err)
 	}
 }
 
-// ReplaceWorkflow troca etapas e regras do workspace pelas informadas (duplicação).
-// Issues em etapas que deixam de existir vão para a primeira etapa.
+// ReplaceWorkflow replaces the workspace's stages and rules with the given ones (duplication).
+// Issues in stages that stop existing go to the first stage.
 func (s *Store) ReplaceWorkflow(ctx context.Context, wsID string, stages []Stage, rules []Rule) error {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -430,9 +429,9 @@ func (s *Store) ReplaceWorkflow(ctx context.Context, wsID string, stages []Stage
 	return tx.Commit(ctx)
 }
 
-// ---------- aprovações ----------
+// ---------- approvals ----------
 
-// Approve registra a aprovação da pessoa na etapa atual; devolve o total.
+// Approve records the person's approval in the current stage; returns the total.
 func (s *Store) Approve(ctx context.Context, issueID, stage, userID string) (int, error) {
 	if _, err := s.DB.Exec(ctx, `insert into issue_approvals(issue_id, stage, user_id) values($1,$2,$3) on conflict do nothing`, issueID, stage, userID); err != nil {
 		return 0, err
@@ -444,9 +443,9 @@ func (s *Store) Approve(ctx context.Context, issueID, stage, userID string) (int
 
 // ---------- entrada por webhook ----------
 
-// ---------- membros com acesso ----------
+// ---------- members with access ----------
 
-// WorkspaceUserIDs: quem tem acesso ao workspace (vínculo ou "ver todos").
+// WorkspaceUserIDs: who has access to the workspace (link or "see all").
 func (s *Store) WorkspaceUserIDs(ctx context.Context, wsID string) (map[string]bool, error) {
 	ms, err := s.ListMembers(ctx, wsID)
 	if err != nil {
@@ -459,25 +458,25 @@ func (s *Store) WorkspaceUserIDs(ctx context.Context, wsID string) (map[string]b
 	return out, nil
 }
 
-// ---------- mudanças de etapa e eventos ----------
+// ---------- stage changes and events ----------
 
-// Event é avisado ao motor de automações: mudança de etapa, issue criada,
-// comentário, execução terminada, responsável ou prioridade trocados.
+// Event is reported to the automation engine: stage change, issue created, comment,
+// run finished, assignee or priority changed.
 type Event struct {
 	Kind    string // stage | created | commented | run_started | run_finished | merged | merge_conflict | assigned | priority_changed
 	IssueID string
 	From    string // stage: etapa de onde saiu
-	To      string // stage: etapa para onde foi
+	To      string // stage: the stage it went to
 	ActorID *string
 	Outcome string // run_finished: done | waiting | incomplete | failed | cancelled
 }
 
-// StatusChange é o evento de mudança de etapa (mantido para o runner/motor).
+// StatusChange is the stage change event (kept for the runner/engine).
 type StatusChange = Event
 
 type actorKey struct{}
 
-// WithActor marca no contexto quem está fazendo a mudança.
+// WithActor marks in the context who is making the change.
 func WithActor(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, actorKey{}, userID)
 }
@@ -503,14 +502,14 @@ func (s *Store) statusChanged(ctx context.Context, id, from, to string) {
 		s.syncClosed(ctx, id, to)
 		s.DB.Exec(ctx, `update issues set stage_entered_at = now() where id = $1`, id)
 		s.logStage(ctx, id, to)
-		// "parada há X horas" volta a valer a cada etapa nova.
+		// "sitting for X hours" applies again on every new stage.
 		s.DB.Exec(ctx, `delete from rule_fires f using rules r where f.rule_id = r.id and r.trigger = 'stale' and f.issue_id = $1`, id)
 		s.Emit(ctx, Event{Kind: "stage", IssueID: id, From: from, To: to})
 	}
 }
 
-// syncClosed: encerrada (resolvida ou cancelada) é o que a regra "Encerrar"
-// da etapa diz; done_at marca quando foi resolvida (base do analytics).
+// syncClosed: closed (resolved or cancelled) is what the stage's "Close" rule says;
+// done_at marks when it was resolved (the basis of analytics).
 func (s *Store) syncClosed(ctx context.Context, id, stage string) {
 	var wsID string
 	s.DB.QueryRow(ctx, `select workspace_id::text from issues where id = $1`, id).Scan(&wsID)
@@ -522,13 +521,13 @@ func (s *Store) syncClosed(ctx context.Context, id, stage string) {
 		done_at = case when $2 = 'done' then coalesce(done_at, now()) else null end where id = $1`, id, closed)
 }
 
-// SetRunOutcome guarda o que a IA declarou ao terminar.
+// SetRunOutcome stores what the AI declared when it finished.
 func (s *Store) SetRunOutcome(ctx context.Context, runID, outcome, note string) error {
 	_, err := s.DB.Exec(ctx, `update runs set outcome = $2, outcome_note = $3 where id = $1`, runID, outcome, note)
 	return err
 }
 
-// PersonCounts: issues abertas com a pessoa de responsável, criadas por ela e resolvidas por ela.
+// PersonCounts: open issues with the person as assignee, created by them and resolved by them.
 func (s *Store) PersonCounts(ctx context.Context, wsID, userID string) (open, created, resolved int) {
 	s.DB.QueryRow(ctx, `select
 		count(*) filter (where assignee_id = $2 and closed = ''),

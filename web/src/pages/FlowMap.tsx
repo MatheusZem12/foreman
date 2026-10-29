@@ -6,11 +6,11 @@ import { PRIORITIES, stageGroups } from '../lib/constants';
 import type { Rule, Stage } from '../lib/types';
 import { t } from '../lib/i18n';
 
-// Mapa do fluxo em grade, de cima para baixo. As etapas ficam numa coluna
-// central na ordem do quadro (paralelas lado a lado na mesma linha). Seta entre
-// linhas vizinhas desce reta pelo meio; qualquer outra (pular etapa, voltar)
-// sai pela lateral e corre num corredor próprio: à direita quem desce, à
-// esquerda quem sobe. Só linhas retas e cantos arredondados.
+// The workflow map on a grid, top to bottom. The stages sit in a central column in the
+// board's order (parallel ones side by side on the same row). An arrow between
+// neighbouring rows goes straight down the middle; any other (skipping a stage, going
+// back) leaves from the side and runs in its own lane: on the right the ones going down,
+// on the left the ones going up. Only straight lines and rounded corners.
 
 type Kind = 'seq' | 'rule' | 'approve' | 'system';
 interface Edge { from: string; to: string; kind: Kind; label: string }
@@ -24,36 +24,36 @@ const COL_GAP = 28, ROW_GAP = 64, LANE_PAD = 36, LANE_GAP = 26, PILL_H = 20, MAR
 const COLORS: Record<Kind, string> = { seq: 'rgb(var(--ink) / 0.22)', rule: '#9d8cff', approve: '#34d399', system: '#e0a43a' };
 const START = '__start';
 
-// Gatilhos de rotina (agente e merge): desenhados em laranja, como "automático".
+// Routine triggers (agent and merge): drawn in orange, as "automatic".
 const ROUTINE = ['run_started', 'run_finished', 'merged', 'merge_conflict', 'rule_failed'];
 const OUTCOME_LABEL: Record<string, () => string> = {
-  done: () => t('IA concluiu'), waiting: () => t('IA precisa de você'), incomplete: () => t('IA não terminou'),
-  failed: () => t('falhou'), cancelled: () => t('parada')
+  done: () => t('AI finished'), waiting: () => t('AI needs you'), incomplete: () => t('AI didn\'t finish'),
+  failed: () => t('failed'), cancelled: () => t('stopped')
 };
 function routineLabel(r: Rule) {
-  if (r.trigger === 'run_started') return t('agente começa');
-  if (r.trigger === 'merged') return t('merge feito');
-  if (r.trigger === 'merge_conflict') return t('conflito no merge');
-  if (r.trigger === 'rule_failed') return t('uma regra falhou');
+  if (r.trigger === 'run_started') return t('agent starts');
+  if (r.trigger === 'merged') return t('merged');
+  if (r.trigger === 'merge_conflict') return t('merge conflict');
+  if (r.trigger === 'rule_failed') return t('a rule failed');
   const o = r.conditions?.outcomes ?? [];
-  return o.length ? [...new Set(o.map((x) => OUTCOME_LABEL[x]?.() ?? x))].join(' / ') : t('agente terminou');
+  return o.length ? [...new Set(o.map((x) => OUTCOME_LABEL[x]?.() ?? x))].join(' / ') : t('agent finished');
 }
 
 function condLabel(r: Rule) {
   const c = r.conditions ?? {};
   const parts: string[] = [];
-  if (r.trigger === 'leave') parts.push(t('ao sair'));
-  if (r.trigger === 'stale') parts.push(t('parada {0}h', c.hours ?? '?'));
+  if (r.trigger === 'leave') parts.push(t('on leave'));
+  if (r.trigger === 'stale') parts.push(t('idle {0}h', c.hours ?? '?'));
   if (c.priorities?.length) parts.push(c.priorities.map((p) => PRIORITIES.find((x) => x.id === p)?.label).join('/'));
   if (c.labels?.length) parts.push(t('{0} label(s)', c.labels.length));
-  if (c.agents?.length) parts.push(t('por agente'));
-  if (c.actorRoles?.length) parts.push(t('por perfil'));
-  return parts.join(' · ') || t('sempre');
+  if (c.agents?.length) parts.push(t('by agent'));
+  if (c.actorRoles?.length) parts.push(t('by role'));
+  return parts.join(' · ') || t('always');
 }
 
 const pillW = (text: string) => text.length * 6.1 + 18;
 
-// Linha ortogonal com cantos arredondados.
+// An orthogonal line with rounded corners.
 function rounded(raw: Pt[], r = 8) {
   const p = raw.filter((q, i) => i === 0 || q.x !== raw[i - 1].x || q.y !== raw[i - 1].y);
   let d = `M${p[0].x},${p[0].y}`;
@@ -76,7 +76,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
     const ids = new Set(stages.map((s) => s.id));
     const edges: Edge[] = [];
     const loose: Rule[] = [];
-    // Onde o agente começa sem esperar (regra "rodar agente" ao entrar): origem de "agente começa".
+    // Where the agent starts without waiting (the "run agent" rule on enter): the origin of "agent starts".
     const starts = rules.filter((r) => r.enabled && r.action === 'run_agent' && r.trigger === 'enter' && !r.config?.wait).map((r) => r.stage);
     for (const r of rules) {
       if (!r.enabled || r.action !== 'move' || !r.config?.to || !ids.has(r.config.to)) continue;
@@ -87,20 +87,20 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
         if (from.length) from.filter((f) => ids.has(f)).forEach((f) => edges.push({ from: f, to: r.config.to!, kind: 'system', label }));
         else loose.push(r);
       } else if (['enter', 'leave', 'stale'].includes(r.trigger) && ids.has(r.stage)) edges.push({ from: r.stage, to: r.config.to, kind: 'rule', label: condLabel(r) });
-      else if (r.trigger === 'created') edges.push({ from: START, to: r.config.to, kind: 'rule', label: condLabel(r) === t('sempre') ? t('issue criada') : condLabel(r) });
+      else if (r.trigger === 'created') edges.push({ from: START, to: r.config.to, kind: 'rule', label: condLabel(r) === t('always') ? t('issue created') : condLabel(r) });
       else loose.push(r);
     }
     for (const s of stages) {
       const p = s.policy;
       if (p?.approvals && p.approveTo && ids.has(p.approveTo)) {
-        edges.push({ from: s.id, to: p.approveTo, kind: 'approve', label: p.approvals > 1 ? t('✓ {0} aprovações', p.approvals) : t('✓ {0} aprovação', p.approvals) });
+        edges.push({ from: s.id, to: p.approveTo, kind: 'approve', label: p.approvals > 1 ? t('✓ {0} approvals', p.approvals) : t('✓ {0} approval', p.approvals) });
       }
     }
-    // Etapas que encerram como cancelada só aparecem se alguma seta chega nelas.
+    // Stages that close as cancelled only show if some arrow reaches them.
     const visible = stages.filter((s) => s.policy?.close !== 'cancelled' || edges.some((e) => e.to === s.id || e.from === s.id));
     const groups = stageGroups(visible);
 
-    // Grade: uma linha por degrau do quadro, centralizada em x = 0.
+    // Grid: one row per board step, centred at x = 0.
     const rows = [[START], ...groups.map((g) => g.map((s) => s.id))];
     const box = new Map<string, Box>();
     let top = 0;
@@ -117,14 +117,14 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
     const half = Math.max(...[...box.values()].map((b) => Math.max(-b.x, b.x + b.w)));
     const cx = (b: Box) => b.x + b.w / 2;
 
-    // Ordem do quadro: liga cada degrau ao próximo, quando nada mais liga.
+    // The board's order: links each step to the next, when nothing else does.
     const has = (a: string, b: string) => edges.some((e) => e.from === a && e.to === b);
     const seq: Edge[] = [];
     for (let i = 0; i + 1 < rows.length; i++)
       for (const a of rows[i]) for (const b of rows[i + 1]) if (!has(a, b)) seq.push({ from: a, to: b, kind: 'seq', label: '' });
 
     const all = [...seq, ...edges].filter((e) => box.has(e.from) && box.has(e.to) && e.from !== e.to);
-    // seg: trecho vertical onde o rótulo pode ficar.
+    // seg: the vertical stretch where the label can sit.
     type Seg = { x: number; y1: number; y2: number };
     const out: { e: Edge; pts: Pt[]; pill?: Pill; segs: Seg[] }[] = [];
     const lanes: { e: Edge; a: Box; b: Box; side: 'L' | 'R'; lo: number; hi: number; k: number }[] = [];
@@ -134,7 +134,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       const a = box.get(e.from)!, b = box.get(e.to)!;
       const key = `${e.from}>${e.to}`;
       if (b.row === a.row + 1 && !used.has(key)) {
-        // Vizinhos: desce reto (ou em "garfo" quando há paralelas).
+        // Neighbours: straight down (or a "fork" when there are parallel ones).
         used.add(key);
         const s = { x: cx(a), y: a.y + a.h }, tt = { x: cx(b), y: b.y }, mid = s.y + ROW_GAP / 2;
         const pts = s.x === tt.x ? [s, tt] : [s, { x: s.x, y: mid }, { x: tt.x, y: mid }, tt];
@@ -146,8 +146,8 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       }
     }
 
-    // Corredores: trechos curtos ficam mais perto das etapas; dois trechos que
-    // se sobrepõem na vertical nunca dividem o mesmo corredor.
+    // Lanes: short stretches stay closer to the stages; two stretches that overlap
+    // vertically never share the same lane.
     for (const side of ['L', 'R'] as const) {
       const taken: { lo: number; hi: number; k: number }[] = [];
       for (const l of lanes.filter((x) => x.side === side).sort((p, q) => p.hi - p.lo - (q.hi - q.lo) || p.lo - q.lo)) {
@@ -158,8 +158,8 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       }
     }
 
-    // Pontos de encaixe: lateral para a etapa da ponta da linha; quem está no
-    // meio de uma linha de paralelas sai por baixo/cima para não cruzar a vizinha.
+    // Attachment points: the side for the stage at the end of the row; whoever is in the
+    // middle of a row of parallel stages leaves from below/above so as not to cross its neighbour.
     const faceOf = (n: Box, side: 'L' | 'R', down: boolean, leaving: boolean): Face => {
       const edge = side === 'R' ? n.col === n.n - 1 : n.col === 0;
       if (edge) return side;
@@ -175,7 +175,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       count.set(`${l.b.id}:${fb}`, (count.get(`${l.b.id}:${fb}`) ?? 0) + 1);
       return { l, fa, fb };
     });
-    // Saídas na ordem do corredor (o mais perto em cima) para não se cruzarem.
+    // Exits in lane order (the closest on top) so they don't cross.
     plan.sort((p, q) => p.l.k - q.l.k);
     const port = (n: Box, f: Face, side: 'L' | 'R') => {
       const i = take(n.id, f), total = count.get(`${n.id}:${f}`) ?? 1;
@@ -198,9 +198,9 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       out.push({ e: l.e, pts: [...head, ...tail], segs: [{ x: laneX, y1: Math.min(y1, y2), y2: Math.max(y1, y2) }] });
     }
 
-    // Rótulos: no meio do trecho; se bater em etapa, outro rótulo ou linha de
-    // outra seta, desliza pelo próprio trecho até achar espaço. Encostar numa
-    // linha vertical vizinha ou na ordem do quadro é o último recurso.
+    // Labels: in the middle of the stretch; if it hits a stage, another label or another
+    // arrow's line, it slides along its own stretch until it finds room. Touching a
+    // neighbouring vertical line or the board's order is the last resort.
     type R = { x: number; y: number; w: number; h: number };
     const overlap = (r: R, o: R) => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h;
     const boxes: R[] = [...box.values()].map((b) => ({ x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 }));
@@ -227,7 +227,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       placed.push(rect(o.pill));
     });
 
-    // Moldura: tudo que foi desenhado, com margem.
+    // Frame: everything that was drawn, with a margin.
     const xs = [...[...box.values()].flatMap((b) => [b.x, b.x + b.w]), ...out.flatMap((o) => o.pts.map((p) => p.x)), ...out.flatMap((o) => (o.pill ? [o.pill.x - o.pill.w / 2, o.pill.x + o.pill.w / 2] : []))];
     const ys = [...[...box.values()].flatMap((b) => [b.y, b.y + b.h]), ...out.flatMap((o) => o.pts.map((p) => p.y))];
     const minX = Math.min(...xs), minY = Math.min(...ys);
@@ -246,14 +246,14 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-mute">
-        {([['seq', t('ordem do quadro')], ['rule', t('regra de mover')], ['approve', t('aprovação')], ['system', t('agente e merge')]] as [Kind, string][]).map(([k, label]) => (
+        {([['seq', t('board order')], ['rule', t('move rule')], ['approve', t('approval')], ['system', t('agent & merge')]] as [Kind, string][]).map(([k, label]) => (
           <span key={k} className="inline-flex items-center gap-1.5">
             <svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" style={{ stroke: k === 'seq' ? 'rgb(var(--ink) / 0.4)' : COLORS[k] }} strokeWidth="2" strokeDasharray={k === 'seq' ? '2 3' : k === 'system' ? '5 3' : undefined} /></svg>{label}
           </span>
         ))}
         <span className="ml-auto flex flex-wrap items-center gap-4">
-          <Toggle checked={showSeq} onChange={setShowSeq} label={t('Ordem do quadro')} />
-          <Toggle checked={system} onChange={setSystem} label={t('Agente e merge')} />
+          <Toggle checked={showSeq} onChange={setShowSeq} label={t('Board order')} />
+          <Toggle checked={system} onChange={setSystem} label={t('Agent & merge')} />
         </span>
       </div>
       <div className="surface overflow-auto">
@@ -285,24 +285,24 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
           {layout.boxes.map((n) => {
             const style = { left: n.x + ox, top: n.y + oy, width: n.w, height: n.h };
             if (n.id === START) {
-              return <div key={n.id} className="absolute flex items-center justify-center rounded-full border border-dashed border-white/25 bg-panel text-[12px] text-dim" style={style}>{t('Nova issue')}</div>;
+              return <div key={n.id} className="absolute flex items-center justify-center rounded-full border border-dashed border-white/25 bg-panel text-[12px] text-dim" style={style}>{t('New issue')}</div>;
             }
             const s = byId.get(n.id)!;
             const rs = stageRules(s.id);
             const ai = rs.some((r) => r.action === 'run_agent');
             const locked = !!(s.policy?.act?.roles?.length || s.policy?.act?.users?.length || s.policy?.readOnly);
             return (
-              <div key={n.id} title={rs.length ? t('{0} regra(s) nesta etapa', rs.length) : undefined}
+              <div key={n.id} title={rs.length ? t('{0} rule(s) in this stage', rs.length) : undefined}
                 className={clsx('absolute flex flex-col justify-center rounded-xl border bg-card px-3 shadow-[0_8px_24px_-14px_rgb(0_0_0/0.9)]', s.parallel ? 'border-white/15' : 'border-white/[0.09]')}
                 style={{ ...style, boxShadow: `inset 3px 0 0 0 ${s.color}` }}>
                 <div className="flex items-center gap-1.5 text-[13px] font-medium"><StatusIcon status={s.id} /><span className="truncate">{s.name}</span></div>
                 <div className="mt-0.5 flex h-3.5 items-center gap-2 text-[10px] text-mute">
                   {rs.length > 0 && <span className="inline-flex items-center gap-0.5"><Zap className="size-2.5" />{rs.length}</span>}
-                  {ai && <span className="inline-flex items-center gap-0.5 text-accent"><Sparkles className="size-2.5" />{t('IA')}</span>}
+                  {ai && <span className="inline-flex items-center gap-0.5 text-accent"><Sparkles className="size-2.5" />{t('AI')}</span>}
                   {!!s.policy?.approvals && <span className="inline-flex items-center gap-0.5 text-emerald-400"><UserCheck className="size-2.5" />{s.policy.approvals}</span>}
                   {locked && <Lock className="size-2.5" />}
-                  {s.parallel && <span>{t('paralela')}</span>}
-                  {s.policy?.close && <span className="ml-auto">{s.policy.close === 'done' ? t('encerra') : t('cancela')}</span>}
+                  {s.parallel && <span>{t('parallel')}</span>}
+                  {s.policy?.close && <span className="ml-auto">{s.policy.close === 'done' ? t('closes') : t('cancels')}</span>}
                 </div>
               </div>
             );
@@ -311,7 +311,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
       </div>
       {layout.loose.length > 0 && (
         <p className="text-xs text-mute">
-          {t('Também movem issues, de qualquer etapa:')} {layout.loose.map((r) => `${ROUTINE.includes(r.trigger) ? routineLabel(r) : t('regra')} → ${stages.find((s) => s.id === r.config.to)?.name}`).join(' · ')}
+          {t('Also move issues, from any stage:')} {layout.loose.map((r) => `${ROUTINE.includes(r.trigger) ? routineLabel(r) : t('rule')} → ${stages.find((s) => s.id === r.config.to)?.name}`).join(' · ')}
         </p>
       )}
     </div>

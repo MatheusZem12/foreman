@@ -12,7 +12,7 @@ import { t } from '../lib/i18n';
 
 type Variant = 'chip' | 'row';
 
-// Gatilho comum: chip compacto (criação/cartões) ou linha da barra de propriedades.
+// A shared trigger: a compact chip (creation/cards) or a row of the properties bar.
 function Trigger({ variant, children }: { variant: Variant; children: React.ReactNode }) {
   if (variant === 'row') {
     return <button type="button" className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left hover:bg-hover">{children}</button>;
@@ -50,7 +50,7 @@ export function PriorityPicker({ value, onChange, variant = 'chip' }: { value: n
   );
 }
 
-// Responsável humano: só quem tem acesso ao workspace.
+// Human assignee: only whoever has access to the workspace.
 export function AssigneePicker({ ws, value, onChange, variant = 'chip' }: { ws: string; value: string | null; onChange: (id: string | null) => void; variant?: Variant }) {
   const { data: members = [] } = useMembers(ws);
   const current = members.find((m) => m.id === value);
@@ -59,17 +59,17 @@ export function AssigneePicker({ ws, value, onChange, variant = 'chip' }: { ws: 
       trigger={() => (
         <Trigger variant={variant}>
           {current ? <Avatar name={current.name} /> : <UserRound className="size-3.5 text-mute" />}
-          <span className="truncate">{current ? current.name : t('Sem responsável')}</span>
+          <span className="truncate">{current ? current.name : t('No assignee')}</span>
         </Trigger>
       )}
     >
       {(close) => (
         <>
-          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><UserRound className="size-3.5 text-mute" /> {t('Sem responsável')}</MenuItem>
+          <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><UserRound className="size-3.5 text-mute" /> {t('No assignee')}</MenuItem>
           {members.map((m) => (
             <MenuItem key={m.id} selected={m.id === value} onClick={() => { onChange(m.id); close(); }}>
               <Avatar name={m.name} /> <span className="truncate">{m.name}</span>
-              <span className="ml-auto pl-2 text-xs text-mute">{m.isOwner ? t('dono') : m.roleName}</span>
+              <span className="ml-auto pl-2 text-xs text-mute">{m.isOwner ? t('owner') : m.roleName}</span>
             </MenuItem>
           ))}
         </>
@@ -86,27 +86,27 @@ export function AgentPicker({ value, onChange, variant = 'chip', allowNone = tru
       trigger={() => (
         <Trigger variant={variant}>
           {current ? <AgentIcon avatar={current.avatar} /> : <Bot className="size-3.5 text-mute" />}
-          <span className="truncate">{current ? current.name : t('Sem agente')}</span>
+          <span className="truncate">{current ? current.name : t('No agent')}</span>
         </Trigger>
       )}
     >
       {(close) => (
         <>
-          {allowNone && <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><Bot className="size-3.5 text-mute" /> {t('Sem agente')}</MenuItem>}
+          {allowNone && <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}><Bot className="size-3.5 text-mute" /> {t('No agent')}</MenuItem>}
           {agents.map((a) => (
             <MenuItem key={a.id} selected={a.id === value} onClick={() => { onChange(a.id); close(); }}>
               <AgentIcon avatar={a.avatar} /> <span className="truncate">{a.name}</span>
               <span className="ml-auto pl-2 text-xs text-mute">{a.model || a.runtime}</span>
             </MenuItem>
           ))}
-          {!agents.length && <div className="px-2 py-1.5 text-mute">{t('Crie agentes em Ajustes.')}</div>}
+          {!agents.length && <div className="px-2 py-1.5 text-mute">{t('Create agents in Settings.')}</div>}
         </>
       )}
     </Popover>
   );
 }
 
-// Escopo de repositórios: vazio = todos (a IA escolhe em quais mexer).
+// Repository scope: empty = all (the AI picks which to touch).
 export function RepoScopePicker({ ws, value, onChange, variant = 'chip' }: { ws: string; value: string[]; onChange: (ids: string[]) => void; variant?: Variant }) {
   const { data: repos = [] } = useRepos(ws);
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
@@ -116,14 +116,14 @@ export function RepoScopePicker({ ws, value, onChange, variant = 'chip' }: { ws:
       trigger={() => (
         <Trigger variant={variant}>
           <FolderGit2 className="size-3.5 text-mute" />
-          <span className="truncate">{names.length ? names.join(', ') : repos.length > 1 ? t('Todos os repositórios') : repos[0]?.name ?? t('Repositório')}</span>
+          <span className="truncate">{names.length ? names.join(', ') : repos.length > 1 ? t('All repositories') : repos[0]?.name ?? t('Repository')}</span>
         </Trigger>
       )}
     >
       {() => (
         <>
           <MenuItem selected={!value.length} onClick={() => onChange([])}>
-            <FolderGit2 className="size-3.5 text-mute" /> <span>{t('Todos')} <span className="text-xs text-mute">{t('· a IA escolhe')}</span></span>
+            <FolderGit2 className="size-3.5 text-mute" /> <span>{t('All')} <span className="text-xs text-mute">{t('· the AI picks')}</span></span>
           </MenuItem>
           {repos.length > 0 && <div className="my-1 border-t border-line" />}
           {repos.map((r) => (
@@ -132,7 +132,7 @@ export function RepoScopePicker({ ws, value, onChange, variant = 'chip' }: { ws:
               <span className="min-w-0"><span className="block truncate">{r.name}</span>{r.description && <span className="block truncate text-xs text-mute">{r.description}</span>}</span>
             </MenuItem>
           ))}
-          {!repos.length && <div className="px-2 py-1.5 text-mute">{t('Cadastre repositórios em Workspace.')}</div>}
+          {!repos.length && <div className="px-2 py-1.5 text-mute">{t('Add repositories under Workspace.')}</div>}
         </>
       )}
     </Popover>
@@ -156,8 +156,8 @@ export function BranchPicker({
     >
       {(close) => (
         <>
-          <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('Filtrar…')} className="field-input mb-1 h-7" />
-          {isLoading && <div className="px-2 py-1.5 text-mute">{t('Carregando branches…')}</div>}
+          <input autoFocus value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('Filter…')} className="field-input mb-1 h-7" />
+          {isLoading && <div className="px-2 py-1.5 text-mute">{t('Loading branches…')}</div>}
           {error && <div className="px-2 py-1.5 text-red-400">{(error as Error).message}</div>}
           {list.slice(0, 60).map((b) => (
             <MenuItem key={b} selected={b === value} onClick={() => { onChange(b); close(); }}>
@@ -211,7 +211,7 @@ export function LabelPicker({ ws, value, onChange, variant = 'chip' }: { ws: str
       {() => (
         <>
           {canCreate && <form onSubmit={(e) => { e.preventDefault(); create(); }} className="mb-1 flex gap-1">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Nova label…')} className="field-input h-7" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('New label…')} className="field-input h-7" />
             <button type="submit" className="rounded-md px-1.5 text-mute hover:bg-hover hover:text-fg"><Plus className="size-4" /></button>
           </form>}
           {labels.map((l) => (

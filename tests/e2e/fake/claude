@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
-# Imita `claude -p --output-format stream-json` com vários repositórios.
+# Mimics `claude -p --output-format stream-json` with several repositories.
 if [[ "$1" == "--version" ]]; then echo "9.9.9 (fake)"; exit 0; fi
 prompt=$(cat)
-grep -q DEVAGAR <<<"$prompt" && sleep 3   # para os testes verem o agente trabalhando
-p() { if [[ -d "$1" ]]; then echo "$1/"; else echo ""; fi; }   # multi: subpasta; single: cwd
+grep -q SLOWLY <<<"$prompt" && sleep 3   # so the tests can see the agent working
+p() { if [[ -d "$1" ]]; then echo "$1/"; else echo ""; fi; }   # multi: subfolder; single: cwd
 echo '{"type":"system","subtype":"init","session_id":"fake","model":"fake"}'
-if grep -q "Resolver conflitos" <<<"$prompt"; then
-  printf 'resolvido\n' > "$(p api)conf.txt"
-elif grep -q "Pedido de ajuste" <<<"$prompt"; then
-  echo "ajuste web" >> "$(p web)main.txt"
-elif grep -q CONFLITO_P <<<"$prompt"; then
-  echo "versao P" > "$(p api)conf.txt"
-elif grep -q CONFLITO_Q <<<"$prompt"; then
-  echo "versao Q" > "$(p api)conf.txt"; echo "arquivo do Q" > "$(p web)q.txt"
-elif grep -q SO_WEB <<<"$prompt"; then
-  echo "so web" >> "$(p web)main.txt"
+if grep -q "Resolve conflicts" <<<"$prompt"; then
+  printf 'resolved\n' > "$(p api)conf.txt"
+elif grep -q "Adjustment request" <<<"$prompt"; then
+  echo "web adjustment" >> "$(p web)main.txt"
+elif grep -q CONFLICT_P <<<"$prompt"; then
+  echo "version P" > "$(p api)conf.txt"
+elif grep -q CONFLICT_Q <<<"$prompt"; then
+  echo "version Q" > "$(p api)conf.txt"; echo "file from Q" > "$(p web)q.txt"
+elif grep -q WEB_ONLY <<<"$prompt"; then
+  echo "web only" >> "$(p web)main.txt"
 else
-  echo "mudanca api" >> "$(p api)main.txt"
+  echo "api change" >> "$(p api)main.txt"
 fi
-echo "$prompt" > "${MULTICA_SUMMARY%/*}/ultimo-prompt.txt"
-printf '# Resumo\n- ok\n' > "$MULTICA_SUMMARY"
-if grep -q PRECISA_DECISAO <<<"$prompt" && ! grep -q "Pedido de ajuste" <<<"$prompt"; then
-  echo "aguardando: azul ou verde?" > "$MULTICA_STATUS"
+echo "$prompt" > "${FOREMAN_SUMMARY%/*}/last-prompt.txt"
+printf '# Summary\n- ok\n' > "$FOREMAN_SUMMARY"
+if grep -q NEEDS_DECISION <<<"$prompt" && ! grep -q "Adjustment request" <<<"$prompt"; then
+  echo "waiting: blue or green?" > "$FOREMAN_STATUS"
 else
-  echo "concluido" > "$MULTICA_STATUS"
+  echo "done" > "$FOREMAN_STATUS"
 fi
-echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Feito."}]}}'
-echo '{"type":"result","subtype":"success","is_error":false,"result":"Feito.","total_cost_usd":0.01,"usage":{"input_tokens":10,"cache_read_input_tokens":5,"output_tokens":2}}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]}}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"Done.","total_cost_usd":0.01,"usage":{"input_tokens":10,"cache_read_input_tokens":5,"output_tokens":2}}'

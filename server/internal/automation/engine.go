@@ -1,10 +1,9 @@
-// Package automation roda as regras do fluxo. Gatilhos: entrar ou sair de uma
-// etapa, ficar parada nela, issue criada, comentário, agente começou ou
-// terminou, merge feito ou com conflito, responsável ou prioridade trocados e
-// custo acima de um valor. Cada regra pode ter condições (etapa atual,
-// prioridade, labels, agente, resultado, perfil de quem causou) e faz uma
-// ação. Nenhuma etapa tem comportamento embutido: até "pedido ao agente vai
-// para Em andamento" é uma regra do fluxo padrão (migração 016).
+// Package automation runs the workflow rules. Triggers: entering or leaving a stage,
+// sitting still in it, issue created, comment, agent started or finished, merge done or
+// in conflict, assignee or priority changed, and cost above a value. Each rule may have
+// conditions (current stage, priority, labels, agent, outcome, role of whoever caused
+// it) and performs one action. No stage has built-in behaviour: even "a request to the
+// agent goes to In progress" is a rule of the default workflow (migration 016).
 package automation
 
 import (
@@ -20,9 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"multica/internal/notify"
-	"multica/internal/runner"
-	"multica/internal/store"
+	"foreman/internal/notify"
+	"foreman/internal/runner"
+	"foreman/internal/store"
 )
 
 type Engine struct {
@@ -31,7 +30,7 @@ type Engine struct {
 	ntf *notify.Notifier
 
 	mu    sync.Mutex
-	moves map[string][]time.Time // issue → mudanças recentes feitas por regras (anti-loop)
+	moves map[string][]time.Time // issue → recent changes made by rules (anti-loop)
 }
 
 func New(st *store.Store, run *runner.Runner, ntf *notify.Notifier) *Engine {
@@ -40,7 +39,7 @@ func New(st *store.Store, run *runner.Runner, ntf *notify.Notifier) *Engine {
 	return e
 }
 
-// Start liga a varredura dos gatilhos por tempo (parada na etapa, custo).
+// Start turns on the sweep of time-based triggers (sitting in the stage, cost).
 func (e *Engine) Start(ctx context.Context) {
 	go func() {
 		t := time.NewTicker(time.Minute)
@@ -56,11 +55,11 @@ func (e *Engine) Start(ctx context.Context) {
 	}()
 }
 
-// Config de cada ação (o JSON salvo em rules.config).
+// Config of each action (the JSON saved in rules.config).
 type Config struct {
 	To       string   `json:"to,omitempty"`        // notify: creator|requester|assignee|responsible|team|admins|roles|users; move: etapa
 	Roles    []string `json:"roles,omitempty"`     // notify/assign: perfis
-	Users    []string `json:"users,omitempty"`     // notify/assign: usuários
+	Users    []string `json:"users,omitempty"`     // notify/assign: users
 	Message  string   `json:"message,omitempty"`   // notify/webhook/comment
 	URL      string   `json:"url,omitempty"`       // webhook
 	AgentID  string   `json:"agentId,omitempty"`   // run_agent/set_agent
@@ -68,9 +67,9 @@ type Config struct {
 	Base     string   `json:"base,omitempty"`      // open_pr/merge
 	Draft    bool     `json:"draft,omitempty"`     // open_pr
 	Script   string   `json:"script,omitempty"`    // script
-	OnFail   string   `json:"onFail,omitempty"`    // etapa para onde mandar se falhar
-	Wait     bool     `json:"wait,omitempty"`      // run_agent: esperar terminar nesta etapa antes das próximas regras
-	OnWait   string   `json:"onWaiting,omitempty"` // run_agent com wait: se a IA precisar de alguém, mover para
+	OnFail   string   `json:"onFail,omitempty"`    // stage to send it to if it fails
+	Wait     bool     `json:"wait,omitempty"`      // run_agent: wait for it to finish in this stage before the next rules
+	OnWait   string   `json:"onWaiting,omitempty"` // run_agent with wait: if the AI needs someone, move to
 	Priority *int     `json:"priority,omitempty"`  // set_priority
 	LabelID  string   `json:"labelId,omitempty"`   // add_label
 	Mode     string   `json:"mode,omitempty"`      // assign: user|creator|requester|balance
@@ -84,7 +83,7 @@ func (e *Engine) handle(ev store.Event) {
 		defer cancel()
 		defer func() {
 			if p := recover(); p != nil {
-				log.Printf("automação: pânico em %s: %v", ev.IssueID, p)
+				log.Printf("automation: panic in %s: %v", ev.IssueID, p)
 			}
 		}()
 		is, err := e.st.Issue(ctx, ev.IssueID)
@@ -93,7 +92,7 @@ func (e *Engine) handle(ev store.Event) {
 		}
 		switch ev.Kind {
 		case "created":
-			// Criar numa etapa também é entrar nela.
+			// Creating in a stage is also entering it.
 			e.fire(ctx, is, ev, "created", "")
 			if cur, err := e.st.Issue(ctx, is.ID); err == nil && cur.Status == is.Status {
 				e.fire(ctx, cur, store.Event{Kind: "stage", IssueID: is.ID, To: is.Status, ActorID: ev.ActorID}, "enter", is.Status)
@@ -111,7 +110,7 @@ func (e *Engine) handle(ev store.Event) {
 	}()
 }
 
-// sweep: gatilhos por tempo e por limite, uma vez por regra e issue.
+// sweep: time- and limit-based triggers, once per rule and issue.
 func (e *Engine) sweep(ctx context.Context) {
 	if rules, err := e.st.RulesByTrigger(ctx, "stale"); err == nil {
 		for _, r := range rules {
@@ -157,7 +156,7 @@ func (e *Engine) fire(ctx context.Context, is *store.Issue, ev store.Event, trig
 		if err != nil {
 			return
 		}
-		// Ao entrar: uma regra anterior pode ter tirado a issue da etapa.
+		// On enter: a previous rule may have taken the issue out of the stage.
 		if trigger == "enter" && cur.Status != stage {
 			return
 		}
@@ -170,7 +169,7 @@ func (e *Engine) fire(ctx context.Context, is *store.Issue, ev store.Event, trig
 	}
 }
 
-// matches confere as condições da regra.
+// matches checks the rule's conditions.
 func (e *Engine) matches(ctx context.Context, is *store.Issue, c store.Conditions, ev store.Event) bool {
 	if len(c.Stages) > 0 && !slices.Contains(c.Stages, is.Status) {
 		return false
@@ -211,9 +210,9 @@ func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r
 	case errors.Is(err, errStop):
 		return true
 	case err != nil:
-		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Regra **%s** (%s) falhou: %s", label, e.triggerText(ctx, is, r), err))
-		// "Se falhar, mover para" da própria regra vale primeiro; sem ele, as
-		// regras de "Uma regra falhou" decidem (o padrão leva para Bloqueada).
+		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Rule **%s** (%s) failed: %s", label, e.triggerText(ctx, is, r), err))
+		// The rule's own "If it fails, move to" applies first; without it, the "A rule
+		// failed" rules decide (the default takes it to Blocked).
 		if cfg.OnFail != "" && e.st.ValidStage(ctx, is.WorkspaceID, cfg.OnFail) {
 			if cfg.OnFail != is.Status {
 				e.move(ctx, is, cfg.OnFail)
@@ -223,9 +222,9 @@ func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r
 		}
 		return true
 	case msg != "" && !(r.Action == "move" && routine[r.Trigger]):
-		// Encaminhar pelo resultado do agente ou do merge acontece em toda
-		// execução: não vira comentário (a etapa nova já mostra).
-		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Regra **%s**: %s", label, msg))
+		// Routing by the agent's or the merge's outcome happens on every run: it doesn't
+		// become a comment (the new stage already shows it).
+		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Rule **%s**: %s", label, msg))
 	}
 	return false
 }
@@ -233,28 +232,28 @@ func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r
 func (e *Engine) triggerText(ctx context.Context, is *store.Issue, r store.Rule) string {
 	st := e.st.StageName(ctx, is.WorkspaceID, r.Stage)
 	return map[string]string{
-		"enter": "ao entrar em " + st, "leave": "ao sair de " + st, "stale": "parada em " + st,
-		"created": "issue criada", "commented": "comentário", "run_started": "agente começou", "run_finished": "execução terminou",
-		"merged": "merge feito", "merge_conflict": "conflito no merge", "rule_failed": "uma regra falhou",
-		"cost_over": "custo passou do limite", "assigned": "responsável definido", "priority_changed": "prioridade trocada",
+		"enter": "on entering " + st, "leave": "on leaving " + st, "stale": "sitting in " + st,
+		"created": "issue created", "commented": "comment", "run_started": "agent started", "run_finished": "run finished",
+		"merged": "merge done", "merge_conflict": "merge conflict", "rule_failed": "a rule failed",
+		"cost_over": "cost over the limit", "assigned": "assignee set", "priority_changed": "priority changed",
 	}[r.Trigger]
 }
 
-var errSkip = errors.New("nada a fazer")
+var errSkip = errors.New("nothing to do")
 
-// Gatilhos de rotina (toda execução passa por eles).
+// Routine triggers (every run goes through them).
 var routine = map[string]bool{"run_started": true, "run_finished": true, "merged": true, "merge_conflict": true}
 
 func actionLabel(a string) string {
 	return map[string]string{
-		"notify": "Notificar", "webhook": "Webhook", "move": "Mover", "run_agent": "Rodar agente",
-		"open_pr": "Abrir PR", "merge": "Merge", "script": "Script", "set_agent": "Definir agente",
-		"set_priority": "Definir prioridade", "add_label": "Adicionar label", "assign": "Definir responsável", "comment": "Comentar",
-		"stop_agent": "Parar o agente",
+		"notify": "Notify", "webhook": "Webhook", "move": "Move", "run_agent": "Run agent",
+		"open_pr": "Open PR", "merge": "Merge", "script": "Script", "set_agent": "Set agent",
+		"set_priority": "Set priority", "add_label": "Add label", "assign": "Set assignee", "comment": "Comment",
+		"stop_agent": "Stop the agent",
 	}[a]
 }
 
-var priorityName = []string{"Sem prioridade", "Urgente", "Alta", "Média", "Baixa"}
+var priorityName = []string{"No priority", "Urgent", "High", "Medium", "Low"}
 
 func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, action string, cfg Config) (string, error) {
 	ws, err := e.st.Workspace(ctx, is.WorkspaceID)
@@ -280,7 +279,7 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 			}
 			return "", err
 		}
-		return fmt.Sprintf("e-mail enviado para %s.", who), nil
+		return fmt.Sprintf("e-mail sent to %s.", who), nil
 
 	case "webhook":
 		text := fmt.Sprintf("%s · %s → %s", ref, is.Title, stage)
@@ -295,30 +294,30 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 			return "", errSkip
 		}
 		if !e.move(ctx, is, cfg.To) {
-			return "", errors.New("muitas mudanças automáticas seguidas; parei para não entrar em loop")
+			return "", errors.New("too many automatic changes in a row; stopped to avoid a loop")
 		}
-		return "movida para " + e.st.StageName(ctx, is.WorkspaceID, cfg.To) + ".", nil
+		return "moved to " + e.st.StageName(ctx, is.WorkspaceID, cfg.To) + ".", nil
 
 	case "run_agent":
 		if cfg.AgentID == "" && is.AgentID == nil {
-			return "", errSkip // sem agente: fica como tarefa manual
+			return "", errSkip // no agent: it stays a manual task
 		}
 		if is.ActiveRun != nil {
-			return "", errSkip // já está trabalhando nela
+			return "", errSkip // it is already working on it
 		}
 		kind, request := "followup", strings.TrimSpace(cfg.Request)
 		if request == "" {
 			kind = "initial"
 		}
-		// Esperar só faz sentido numa etapa: a issue fica nela até o agente terminar.
+		// Waiting only makes sense in a stage: the issue stays there until the agent finishes.
 		if cfg.Wait && (ev.Kind == "stage" || ev.Kind == "stale") {
 			return e.agentStep(ctx, is, cfg, kind, request)
 		}
-		// Pedido normal: as regras de "agente começou/terminou" decidem a etapa.
+		// A normal request: the "agent started/finished" rules decide the stage.
 		if _, err := e.run.Enqueue(ctx, is, cfg.AgentID, kind, request, ev.ActorID); err != nil {
 			return "", err
 		}
-		return "pedido enviado ao agente.", nil
+		return "request sent to the agent.", nil
 
 	case "stop_agent":
 		run, err := e.st.ActiveRun(ctx, is.ID)
@@ -326,7 +325,7 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 			return "", errSkip
 		}
 		e.run.Cancel(ctx, run.ID)
-		return "execução parada.", nil
+		return "run stopped.", nil
 
 	case "set_agent":
 		if cfg.AgentID == "" || (is.AgentID != nil && *is.AgentID == cfg.AgentID) {
@@ -334,10 +333,10 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 		}
 		a, err := e.st.Agent(ctx, cfg.AgentID)
 		if err != nil {
-			return "", errors.New("agente não encontrado")
+			return "", errors.New("agent not found")
 		}
 		e.patch(ctx, is, map[string]any{"agentId": a.ID})
-		return "agente definido: " + a.Name + ".", nil
+		return "agent set: " + a.Name + ".", nil
 
 	case "set_priority":
 		if cfg.Priority == nil || int(is.Priority) == *cfg.Priority || *cfg.Priority < 0 || *cfg.Priority > 4 {
@@ -352,14 +351,14 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 		}
 		l, err := e.st.Label(ctx, cfg.LabelID)
 		if err != nil || l.WorkspaceID != is.WorkspaceID {
-			return "", errors.New("label não existe neste workspace")
+			return "", errors.New("label doesn't exist in this workspace")
 		}
 		labels := []any{}
 		for _, id := range append(slices.Clone(is.LabelIDs), l.ID) {
 			labels = append(labels, id)
 		}
 		e.patch(ctx, is, map[string]any{"labelIds": labels})
-		return "label " + l.Name + " adicionada.", nil
+		return "label " + l.Name + " added.", nil
 
 	case "assign":
 		u, err := e.pickAssignee(ctx, is, cfg)
@@ -370,7 +369,7 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 			return "", errSkip
 		}
 		e.patch(ctx, is, map[string]any{"assigneeId": u.ID})
-		return "responsável: " + u.Name + ".", nil
+		return "assignee: " + u.Name + ".", nil
 
 	case "comment":
 		if strings.TrimSpace(cfg.Message) == "" {
@@ -380,12 +379,12 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 
 	case "open_pr":
 		urls, err := e.run.OpenPRs(ctx, is, ref, cfg.Base, cfg.Draft)
-		if len(urls) == 0 && err != nil && err.Error() == "nenhum repositório alterado" {
+		if len(urls) == 0 && err != nil && err.Error() == "no repository changed" {
 			return "", errSkip
 		}
 		msg := ""
 		if len(urls) > 0 {
-			msg = "PR aberto — " + strings.Join(urls, "; ")
+			msg = "PR opened — " + strings.Join(urls, "; ")
 		}
 		return msg, err
 
@@ -405,30 +404,30 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 			}
 		}
 		if pending == 0 {
-			return "", errSkip // nada alterado ou já mesclado (ex.: merge feito pelo botão)
+			return "", errSkip // nothing changed or already merged (e.g. a merge done with the button)
 		}
-		res, err := e.run.Merge(ctx, is, targets, &store.User{Name: "Multica"})
+		res, err := e.run.Merge(ctx, is, targets, &store.User{Name: "Foreman"})
 		if err != nil {
 			return "", err
 		}
 		if res.Conflict {
-			return "", errors.New("conflito; nada foi publicado: use \"Resolver conflito com IA\"")
+			return "", errors.New("conflict; nothing was published: use \"Resolve conflict with AI\"")
 		}
 		var parts []string
 		for _, m := range res.Repos {
 			parts = append(parts, fmt.Sprintf("%s → %s (%s)", m.Name, m.Target, m.SHA))
 		}
-		return "merge feito: " + strings.Join(parts, ", ") + ".", nil
+		return "merge done: " + strings.Join(parts, ", ") + ".", nil
 
 	case "script":
 		if strings.TrimSpace(cfg.Script) == "" {
 			return "", errSkip
 		}
 		out, err := e.run.RunScript(ctx, is.ID, cfg.Script, []string{
-			"MULTICA_ISSUE=" + ref, "MULTICA_TITLE=" + is.Title, "MULTICA_BRANCH=" + is.Branch,
-			"MULTICA_STAGE=" + is.Status, "MULTICA_FROM=" + ev.From, "MULTICA_EVENT=" + ev.Kind,
-			"MULTICA_README=" + e.run.ReadmePath(is.ID), "MULTICA_WORKSPACE=" + ws.Key,
-			fmt.Sprintf("MULTICA_PRIORITY=%d", is.Priority),
+			"FOREMAN_ISSUE=" + ref, "FOREMAN_TITLE=" + is.Title, "FOREMAN_BRANCH=" + is.Branch,
+			"FOREMAN_STAGE=" + is.Status, "FOREMAN_FROM=" + ev.From, "FOREMAN_EVENT=" + ev.Kind,
+			"FOREMAN_README=" + e.run.ReadmePath(is.ID), "FOREMAN_WORKSPACE=" + ws.Key,
+			fmt.Sprintf("FOREMAN_PRIORITY=%d", is.Priority),
 		})
 		block := ""
 		if out != "" {
@@ -439,57 +438,57 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 		}
 		return "script rodou." + block, nil
 	}
-	return "", fmt.Errorf("ação desconhecida %q", action)
+	return "", fmt.Errorf("unknown action %q", action)
 }
 
 func (e *Engine) headline(ref, stage string, is *store.Issue, ev store.Event) string {
 	switch ev.Kind {
 	case "created":
-		return fmt.Sprintf("Nova issue %s (%s)", ref, priorityName[min(max(int(is.Priority), 0), 4)])
+		return fmt.Sprintf("New issue %s (%s)", ref, priorityName[min(max(int(is.Priority), 0), 4)])
 	case "commented":
-		return fmt.Sprintf("Novo comentário em %s", ref)
+		return fmt.Sprintf("New comment on %s", ref)
 	case "run_finished":
-		return fmt.Sprintf("O agente terminou %s: %s", ref, map[string]string{
-			"done": "concluído", "waiting": "aguardando você", "incomplete": "incompleto", "failed": "falhou", "cancelled": "cancelado"}[ev.Outcome])
+		return fmt.Sprintf("The agent finished %s: %s", ref, map[string]string{
+			"done": "done", "waiting": "waiting for you", "incomplete": "incomplete", "failed": "failed", "cancelled": "cancelled"}[ev.Outcome])
 	case "run_started":
-		return fmt.Sprintf("O agente começou %s", ref)
+		return fmt.Sprintf("The agent started %s", ref)
 	case "merged":
-		return fmt.Sprintf("Merge feito em %s", ref)
+		return fmt.Sprintf("Merge done on %s", ref)
 	case "merge_conflict":
-		return fmt.Sprintf("Conflito no merge de %s", ref)
+		return fmt.Sprintf("Merge conflict on %s", ref)
 	case "stale":
-		return fmt.Sprintf("%s está parada em %s", ref, stage)
+		return fmt.Sprintf("%s is sitting in %s", ref, stage)
 	case "cost_over":
-		return fmt.Sprintf("%s passou do limite de custo", ref)
+		return fmt.Sprintf("%s went over the cost limit", ref)
 	case "assigned":
-		return fmt.Sprintf("Você é responsável por %s", ref)
+		return fmt.Sprintf("You are the assignee of %s", ref)
 	case "priority_changed":
-		return fmt.Sprintf("%s agora é %s", ref, priorityName[min(max(int(is.Priority), 0), 4)])
+		return fmt.Sprintf("%s is now %s", ref, priorityName[min(max(int(is.Priority), 0), 4)])
 	}
 	if ev.Kind == "stage" && ev.From == is.Status {
-		return fmt.Sprintf("%s saiu de %s", ref, stage)
+		return fmt.Sprintf("%s left %s", ref, stage)
 	}
-	return fmt.Sprintf("%s entrou em %s", ref, stage)
+	return fmt.Sprintf("%s entered %s", ref, stage)
 }
 
-// errStop encerra a sequência da etapa sem tratar como falha da regra.
-var errStop = errors.New("sequência encerrada")
+// errStop ends the stage's sequence without treating it as the rule's failure.
+var errStop = errors.New("sequence ended")
 
-// agentStep: passo de etapa que roda o agente e ESPERA terminar. A issue fica
-// na etapa enquanto isso. Concluído → segue para a próxima regra; aguardando
-// ou incompleto → para a sequência (e vai para "se precisar de alguém", se
-// escolhida); falha → erro da regra (vai para "se falhar", se escolhida).
+// agentStep: a stage step that runs the agent and WAITS for it to finish. The issue stays
+// in the stage meanwhile. Done → on to the next rule; waiting or incomplete → stops the
+// sequence (and goes to "if it needs someone", if chosen); failure → the rule's error
+// (goes to "if it fails", if chosen).
 func (e *Engine) agentStep(ctx context.Context, is *store.Issue, cfg Config, kind, request string) (string, error) {
 	run, err := e.run.EnqueueInStage(ctx, is, cfg.AgentID, kind, request)
 	if err != nil {
 		return "", err
 	}
-	e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Passo da etapa: %s está trabalhando; as próximas regras rodam quando terminar.", run.AgentName))
+	e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Stage step: %s is working; the next rules run when it finishes.", run.AgentName))
 	deadline := time.Now().Add(3 * time.Hour)
 	for {
 		select {
 		case <-ctx.Done():
-			return "", errors.New("o agente passou do tempo limite do passo")
+			return "", errors.New("the agent went over the step's time limit")
 		case <-time.After(2 * time.Second):
 		}
 		cur, err := e.st.Run(ctx, run.ID)
@@ -499,13 +498,13 @@ func (e *Engine) agentStep(ctx context.Context, is *store.Issue, cfg Config, kin
 		switch cur.Status {
 		case "queued", "running":
 			if time.Now().After(deadline) {
-				return "", errors.New("o agente passou de 3 horas")
+				return "", errors.New("the agent went over 3 hours")
 			}
 			continue
 		case "cancelled":
 			return "", errStop
 		case "failed":
-			return "", fmt.Errorf("o agente falhou: %s", firstNonEmpty(cur.Error, "sem detalhes"))
+			return "", fmt.Errorf("the agent failed: %s", firstNonEmpty(cur.Error, "no details"))
 		}
 		if cur.Outcome == "waiting" || cur.Outcome == "incomplete" {
 			if cfg.OnWait != "" && e.st.ValidStage(ctx, is.WorkspaceID, cfg.OnWait) {
@@ -521,7 +520,7 @@ func (e *Engine) agentStep(ctx context.Context, is *store.Issue, cfg Config, kin
 	}
 }
 
-// patch altera campos da issue como o Multica (dispara os eventos de cada campo).
+// patch changes the issue's fields the way Foreman does (it fires each field's events).
 func (e *Engine) patch(ctx context.Context, is *store.Issue, fields map[string]any) {
 	if updated, err := e.st.PatchIssue(ctx, is.ID, fields); err == nil {
 		*is = *updated
@@ -529,7 +528,7 @@ func (e *Engine) patch(ctx context.Context, is *store.Issue, fields map[string]a
 	}
 }
 
-// move muda a etapa por regra, com limite contra loops (A→B→A…).
+// move changes the stage by rule, with a limit against loops (A→B→A…).
 func (e *Engine) move(ctx context.Context, is *store.Issue, to string) bool {
 	e.mu.Lock()
 	now := time.Now()
@@ -553,7 +552,7 @@ func (e *Engine) move(ctx context.Context, is *store.Issue, to string) bool {
 
 // ---------- pessoas ----------
 
-// members: quem tem acesso ao workspace (só elas recebem e-mail ou viram responsáveis).
+// members: who has access to the workspace (only they get e-mail or become assignees).
 func (e *Engine) members(ctx context.Context, wsID string) []store.Member {
 	ms, _ := e.st.ListMembers(ctx, wsID)
 	return ms
@@ -574,7 +573,7 @@ func (e *Engine) requester(ctx context.Context, is *store.Issue) *string {
 	return is.CreatedBy
 }
 
-// recipients resolve o grupo de destino em e-mails de quem tem acesso ao workspace.
+// recipients resolves the target group into e-mails of whoever has access to the workspace.
 func (e *Engine) recipients(ctx context.Context, is *store.Issue, cfg Config) ([]string, string) {
 	ms := e.members(ctx, is.WorkspaceID)
 	pick := func(keep func(store.Member) bool, broadcast bool) []string {
@@ -591,34 +590,34 @@ func (e *Engine) recipients(ctx context.Context, is *store.Issue, cfg Config) ([
 	}
 	switch cfg.To {
 	case "creator":
-		return pick(byID(is.CreatedBy), false), "quem criou a issue"
+		return pick(byID(is.CreatedBy), false), "whoever created the issue"
 	case "assignee":
-		return pick(byID(is.AssigneeID), false), "o responsável"
+		return pick(byID(is.AssigneeID), false), "the assignee"
 	case "responsible":
 		st, err := e.st.StageOf(ctx, is.WorkspaceID, is.Status)
 		if err != nil || st.Policy.Responsible.Empty() {
-			return nil, "os responsáveis da etapa"
+			return nil, "the stage's owners"
 		}
-		return pick(func(m store.Member) bool { u := m.User; return st.Policy.Responsible.Has(&u) }, false), "os responsáveis da etapa"
+		return pick(func(m store.Member) bool { u := m.User; return st.Policy.Responsible.Has(&u) }, false), "the stage's owners"
 	case "team":
 		out := pick(func(store.Member) bool { return true }, true)
-		return out, fmt.Sprintf("o time (%d pessoas)", len(out))
+		return out, fmt.Sprintf("the team (%d people)", len(out))
 	case "admins":
 		out := pick(func(m store.Member) bool { return isAdmin(m.User) }, true)
-		return out, fmt.Sprintf("os administradores (%d)", len(out))
+		return out, fmt.Sprintf("the admins (%d)", len(out))
 	case "roles":
 		out := pick(func(m store.Member) bool { return m.RoleID != nil && slices.Contains(cfg.Roles, *m.RoleID) }, true)
-		return out, fmt.Sprintf("os perfis escolhidos (%d pessoas)", len(out))
+		return out, fmt.Sprintf("the chosen roles (%d people)", len(out))
 	case "users":
 		out := pick(func(m store.Member) bool { return slices.Contains(cfg.Users, m.ID) }, false)
-		return out, fmt.Sprintf("%d pessoa(s) escolhida(s)", len(out))
+		return out, fmt.Sprintf("%d chosen person(s)", len(out))
 	default: // requester
-		return pick(byID(e.requester(ctx, is)), false), "quem pediu"
+		return pick(byID(e.requester(ctx, is)), false), "whoever asked"
 	}
 }
 
-// pickAssignee escolhe o responsável: alguém fixo, quem criou, quem pediu, ou
-// "equilibrar" — dentre os perfis/usuários escolhidos, quem tem menos issues abertas.
+// pickAssignee picks the assignee: someone fixed, whoever created, whoever asked, or
+// "balance" — among the chosen roles/users, whoever has the fewest open issues.
 func (e *Engine) pickAssignee(ctx context.Context, is *store.Issue, cfg Config) (*store.User, error) {
 	ms := e.members(ctx, is.WorkspaceID)
 	find := func(id *string) (*store.User, error) {
@@ -628,7 +627,7 @@ func (e *Engine) pickAssignee(ctx context.Context, is *store.Issue, cfg Config) 
 				return &u, nil
 			}
 		}
-		return nil, errors.New("a pessoa não tem acesso a este workspace")
+		return nil, errors.New("that person doesn't have access to this workspace")
 	}
 	switch cfg.Mode {
 	case "creator":
@@ -648,12 +647,12 @@ func (e *Engine) pickAssignee(ctx context.Context, is *store.Issue, cfg Config) 
 			}
 		}
 		if best == nil {
-			return nil, errors.New("ninguém dos perfis/usuários escolhidos tem acesso a este workspace")
+			return nil, errors.New("none of the chosen roles/users has access to this workspace")
 		}
 		return best, nil
 	default:
 		if len(cfg.Users) == 0 {
-			return nil, errors.New("escolha a pessoa")
+			return nil, errors.New("choose the person")
 		}
 		return find(&cfg.Users[0])
 	}
@@ -670,14 +669,14 @@ func (e *Engine) lastOutcomeNote(ctx context.Context, issueID string) string {
 
 func (e *Engine) webhook(ctx context.Context, cfg Config, payload map[string]any) (string, error) {
 	if !strings.HasPrefix(cfg.URL, "http://") && !strings.HasPrefix(cfg.URL, "https://") {
-		return "", errors.New("URL do webhook inválida")
+		return "", errors.New("invalid webhook URL")
 	}
 	body, _ := json.Marshal(payload)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "POST", cfg.URL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Multica")
+	req.Header.Set("User-Agent", "Foreman")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", err

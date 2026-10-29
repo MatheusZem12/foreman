@@ -10,15 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"multica/internal/api"
-	"multica/internal/automation"
-	"multica/internal/config"
-	"multica/internal/db"
-	"multica/internal/hub"
-	"multica/internal/notify"
-	"multica/internal/runner"
-	"multica/internal/store"
-	"multica/internal/webui"
+	"foreman/internal/api"
+	"foreman/internal/automation"
+	"foreman/internal/config"
+	"foreman/internal/db"
+	"foreman/internal/hub"
+	"foreman/internal/notify"
+	"foreman/internal/runner"
+	"foreman/internal/store"
+	"foreman/internal/webui"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 	defer stop()
 
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-		log.Fatalf("pasta de dados: %v", err)
+		log.Fatalf("data folder: %v", err)
 	}
 	pool, err := db.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -35,14 +35,14 @@ func main() {
 	}
 	defer pool.Close()
 	if err := db.Migrate(ctx, pool); err != nil {
-		log.Fatalf("migrações: %v", err)
+		log.Fatalf("migrations: %v", err)
 	}
 
 	st := store.New(pool)
 	h := hub.New()
 	rn := runner.New(cfg, st, h)
 	ntf := notify.New(st)
-	automation.New(st, rn, ntf).Start(ctx) // regras do fluxo: eventos das issues + varredura por tempo
+	automation.New(st, rn, ntf).Start(ctx) // workflow rules: issue events + a sweep over time
 	rn.Start(ctx)
 
 	srv := &http.Server{
@@ -56,7 +56,7 @@ func main() {
 		defer cancel()
 		srv.Shutdown(shutdown)
 	}()
-	log.Printf("Multica em %s (dados em %s, %d execuções em paralelo)", cfg.Addr, cfg.DataDir, cfg.MaxParallel)
+	log.Printf("Foreman on %s (data in %s, %d parallel runs)", cfg.Addr, cfg.DataDir, cfg.MaxParallel)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}

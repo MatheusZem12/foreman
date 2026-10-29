@@ -1,6 +1,6 @@
--- A política da etapa (quem pode, travas, requisitos, limite, aprovação,
--- responsáveis) vira regra de "acesso" (trigger 'access'), como as demais
--- regras da etapa. A etapa fica só com nome, posição, cor e paralela.
+-- The stage's policy (who may, locks, requirements, limit, approval, owners) becomes an
+-- "access" rule (trigger 'access'), like the stage's other rules. The stage keeps only
+-- name, position, color and parallel.
 create function pg_temp.who(p jsonb) returns jsonb language sql as $$
   select jsonb_build_object('roles', coalesce(p->'roles', '[]'), 'users', coalesce(p->'users', '[]'))
 $$;

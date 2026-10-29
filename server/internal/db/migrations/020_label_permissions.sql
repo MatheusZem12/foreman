@@ -1,5 +1,5 @@
--- Labels ganham tela própria e permissões separadas (ver, criar, editar,
--- apagar) no lugar de label.manage. Quem já podia, continua podendo.
+-- Labels get their own screen and separate permissions (view, create, edit, delete) in
+-- place of label.manage. Whoever could already, still can.
 update roles set permissions = array(select distinct unnest(permissions || array['label.create', 'label.update', 'label.delete']))
   where 'label.manage' = any(permissions);
 update roles set permissions = array(select distinct unnest(permissions || array['label.create']))

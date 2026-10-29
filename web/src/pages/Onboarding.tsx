@@ -12,7 +12,7 @@ export function suggestKey(name: string) {
   return (words.length > 1 ? words.map((w) => w[0]).join('') : words[0].slice(0, 4)).slice(0, 6);
 }
 
-// Workspace novo: só nome e chave. Repositórios se adicionam depois em Workspace.
+// A new workspace: just name and key. Repositories are added later under Workspace.
 export function CreateWorkspaceForm({ onDone }: { onDone: (ws: Workspace) => void }) {
   const [name, setName] = useState('');
   const [key, setKey] = useState('');
@@ -35,12 +35,12 @@ export function CreateWorkspaceForm({ onDone }: { onDone: (ws: Workspace) => voi
   };
   return (
     <form onSubmit={submit} className="space-y-4">
-      <Field label={t('Nome')}><input autoFocus required className="field-input" value={name} onChange={(e) => { setName(e.target.value); if (!touched) setKey(suggestKey(e.target.value)); }} placeholder={t('Linguas')} /></Field>
-      <Field label={t('Chave')} hint={t('prefixo das issues, ex.: LING-12')}>
+      <Field label={t('Name')}><input autoFocus required className="field-input" value={name} onChange={(e) => { setName(e.target.value); if (!touched) setKey(suggestKey(e.target.value)); }} placeholder={t('Linguas')} /></Field>
+      <Field label={t('Key')} hint={t('issue prefix, e.g. LING-12')}>
         <input required className="field-input font-mono uppercase" value={key} maxLength={10} onChange={(e) => { setTouched(true); setKey(e.target.value.toUpperCase()); }} />
       </Field>
       {error && <p className="text-red-400">{error}</p>}
-      <Button variant="primary" type="submit" loading={busy} className="w-full">{t('Criar workspace')}</Button>
+      <Button variant="primary" type="submit" loading={busy} className="w-full">{t('Create workspace')}</Button>
     </form>
   );
 }
@@ -50,8 +50,8 @@ export function Onboarding() {
   return (
     <div className="grid min-h-full place-items-center p-4">
       <div className="w-full max-w-sm rounded-xl border border-line bg-panel p-6">
-        <h1 className="text-lg font-semibold">{t('Novo workspace')}</h1>
-        <p className="mb-4 mt-1 text-dim">{t('Um workspace agrupa as issues de um produto e os repositórios dele.')}</p>
+        <h1 className="text-lg font-semibold">{t('New workspace')}</h1>
+        <p className="mb-4 mt-1 text-dim">{t('A workspace groups a product\'s issues and its repositories.')}</p>
         <CreateWorkspaceForm onDone={(ws) => nav(`/w/${ws.key}/workspace`)} />
       </div>
     </div>

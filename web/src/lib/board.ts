@@ -2,11 +2,11 @@ import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import type { Issue } from './types';
 
-// O quadro nunca carrega todas as issues. O servidor devolve as primeiras
-// PAGE_FIRST de cada etapa (cada uma na ordem escolhida para ela) e o total de
-// cada etapa; rolar uma coluna busca mais PAGE_MORE só daquela etapa. Busca e
-// filtros também vão para o servidor. O cache fica em ['issues', ws, …] e o
-// tempo real (realtime.ts) atualiza todas as variações dele.
+// The board never loads every issue. The server returns the first PAGE_FIRST of each
+// stage (each in the order chosen for it) and each stage's total; scrolling a column
+// fetches PAGE_MORE more of that stage only. Search and filters go to the server too.
+// The cache lives in ['issues', ws, …] and real time (realtime.ts) updates every
+// variation of it.
 
 export const PAGE_FIRST = 30;
 export const PAGE_MORE = 40;
@@ -30,11 +30,11 @@ export function useBoard(ws: string, f: BoardFilters, sorts: Record<string, Boar
   return useQuery({
     queryKey: boardKey(ws, f),
     queryFn: () => api.get<BoardData>(`/workspaces/${ws}/board?${params(f, { limit: PAGE_FIRST, sorts: JSON.stringify(sorts) })}`),
-    placeholderData: (prev) => prev // trocar o filtro não pisca o quadro vazio
+    placeholderData: (prev) => prev // changing the filter doesn't flash an empty board
   });
 }
 
-// Uma página de uma etapa. replace = recarrega a etapa do zero (troca de ordem).
+// One page of a stage. replace = reloads the stage from scratch (order change).
 export async function loadStage(qc: QueryClient, ws: string, f: BoardFilters, stage: string, sort: BoardSort, offset: number, limit: number, replace = false) {
   const page = await api.get<Issue[]>(`/workspaces/${ws}/issues?${params(f, { stage, sort, offset, limit })}`);
   qc.setQueryData<BoardData>(boardKey(ws, f), (d) => {
@@ -46,7 +46,7 @@ export async function loadStage(qc: QueryClient, ws: string, f: BoardFilters, st
   return page.length;
 }
 
-// Atualiza a issue em todos os quadros em cache (todas as combinações de filtro).
+// Updates the issue on every cached board (every filter combination).
 export function upsertIssue(qc: QueryClient, ws: string, issue: Issue) {
   qc.setQueriesData<BoardData>({ queryKey: ['issues', ws] }, (d) => {
     if (!d?.issues) return d;
@@ -70,7 +70,7 @@ export function removeIssue(qc: QueryClient, ws: string, id: string) {
   });
 }
 
-// A mesma ordem do servidor, para o que chega pelo tempo real cair no lugar certo.
+// The same order as the server, so what arrives in real time lands in the right place.
 export function sortIssues(list: Issue[], sort: BoardSort) {
   const copy = list.slice();
   const num = (a: Issue, b: Issue) => b.number - a.number;
@@ -83,7 +83,7 @@ export function sortIssues(list: Issue[], sort: BoardSort) {
   }
 }
 
-// Busca rápida (Ctrl+K): no servidor, as mais recentes que batem.
+// Quick search (Ctrl+K): on the server, the most recent matches.
 export const searchIssues = (ws: string, q: string) =>
   api.get<Issue[]>(`/workspaces/${ws}/issues?${params({ q, who: '', label: '' }, { sort: 'updated', limit: 20 })}`);
 

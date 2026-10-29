@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-// Entry é uma linha do log de execução já normalizada, igual para Claude e Codex.
+// Entry is a normalized run-log line, the same for Claude and Codex.
 type Entry struct {
 	Kind string // text | tool | out | error | info | result
 	Body string
-	// Só em Kind == "result":
+	// Only when Kind == "result":
 	Final   string
 	Cost    float64
 	In      int64
@@ -89,7 +89,7 @@ func normalizeClaude(line []byte) []Entry {
 	var out []Entry
 	switch {
 	case ev.Type == "system" && ev.Subtype == "init":
-		out = append(out, Entry{Kind: "info", Body: fmt.Sprintf("sessão %s · modelo %s", ev.SessionID, ev.Model)})
+		out = append(out, Entry{Kind: "info", Body: fmt.Sprintf("session %s · model %s", ev.SessionID, ev.Model)})
 	case ev.Type == "assistant":
 		for _, c := range ev.Message.Content {
 			if c.Type == "text" && strings.TrimSpace(c.Text) != "" {
@@ -112,7 +112,7 @@ func normalizeClaude(line []byte) []Entry {
 			}
 		}
 	case ev.Type == "result" || ev.TotalCostUSD != nil:
-		e := Entry{Kind: "result", Body: "Concluído", Final: ev.Result, IsError: ev.IsError,
+		e := Entry{Kind: "result", Body: "Done", Final: ev.Result, IsError: ev.IsError,
 			In: ev.Usage.InputTokens + ev.Usage.CacheCreationTokens, Cached: ev.Usage.CacheReadTokens, Out: ev.Usage.OutputTokens}
 		if ev.TotalCostUSD != nil {
 			e.Cost = *ev.TotalCostUSD
@@ -196,7 +196,7 @@ func normalizeCodex(line []byte) []Entry {
 			return []Entry{{Kind: "error", Body: it.Message}}
 		}
 	case "turn.completed":
-		return []Entry{{Kind: "result", Body: "Concluído",
+		return []Entry{{Kind: "result", Body: "Done",
 			In: ev.Usage.InputTokens - ev.Usage.CachedInputTokens, Cached: ev.Usage.CachedInputTokens, Out: ev.Usage.OutputTokens}}
 	case "turn.failed", "error":
 		msg := ev.Message

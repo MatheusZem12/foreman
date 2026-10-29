@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Em dev o Vite faz proxy da API para o servidor Go (porta 8700).
+// In dev, Vite proxies the API to the Go server (port 8700).
 export default defineConfig({
   plugins: [react()],
   server: {

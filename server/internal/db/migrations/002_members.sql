@@ -1,4 +1,4 @@
--- Vínculo de usuários a workspaces. Admin vê todos; usuário comum só os seus.
+-- Links users to workspaces. An admin sees all of them; a regular user only theirs.
 create table workspace_members (
   workspace_id uuid not null references workspaces(id) on delete cascade,
   user_id      uuid not null references users(id) on delete cascade,

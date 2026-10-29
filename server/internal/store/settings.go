@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// GetSetting lê o parâmetro key em dst. Se não existir, dst fica como está
-// (os valores padrão de quem chamou).
+// GetSetting reads the key parameter into dst. If it doesn't exist, dst stays as it is
+// (the caller's defaults).
 func (s *Store) GetSetting(ctx context.Context, key string, dst any) error {
 	var raw []byte
 	err := s.DB.QueryRow(ctx, `select value from settings where key = $1`, key).Scan(&raw)
@@ -37,14 +37,14 @@ func (s *Store) SetEmailNotifications(ctx context.Context, userID string, on boo
 	return err
 }
 
-// Recipient é quem recebe o aviso de um workspace.
+// Recipient is who receives a workspace's notice.
 type Recipient struct {
 	Email string `db:"email"`
 	Name  string `db:"name"`
 }
 
-// NotificationRecipients: todos que enxergam o workspace (vinculados + quem vê tudo)
-// e não desligaram o e-mail no perfil, menos quem disparou o aviso.
+// NotificationRecipients: everyone who sees the workspace (linked + whoever sees everything)
+// and didn't turn e-mail off in their profile, minus whoever triggered the notice.
 func (s *Store) NotificationRecipients(ctx context.Context, wsID, exceptUserID string) ([]Recipient, error) {
 	return many[Recipient](ctx, s, `select u.email, u.name from user_view u
 		left join workspace_members m on m.user_id = u.id and m.workspace_id = $1
@@ -52,7 +52,7 @@ func (s *Store) NotificationRecipients(ctx context.Context, wsID, exceptUserID s
 		order by u.name`, wsID, exceptUserID)
 }
 
-// UserPref devolve a preferência crua da pessoa, ou nil se ela nunca salvou.
+// UserPref returns the person's raw preference, or nil if they never saved it.
 func (s *Store) UserPref(ctx context.Context, userID, key string) (json.RawMessage, error) {
 	var raw []byte
 	err := s.DB.QueryRow(ctx, `select value from user_prefs where user_id = $1 and key = $2`, userID, key).Scan(&raw)

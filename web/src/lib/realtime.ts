@@ -42,7 +42,7 @@ function apply(qc: QueryClient, ws: string, ev: Event) {
   }
 }
 
-// Mantém o cache em dia com o que acontece no servidor (agentes rodando, outros usuários).
+// Keeps the cache up to date with what happens on the server (agents running, other users).
 export function useRealtime(ws?: string) {
   const qc = useQueryClient();
   useEffect(() => {
@@ -61,7 +61,7 @@ export function useRealtime(ws?: string) {
       es.onerror = () => {
         es?.close();
         retry = setTimeout(() => {
-          // Ao reconectar, recarrega o que pode ter mudado enquanto estava fora.
+          // On reconnecting, reloads what may have changed while it was away.
           qc.invalidateQueries({ queryKey: ['issues', ws] });
           qc.invalidateQueries({ queryKey: ['issue'] });
           connect();

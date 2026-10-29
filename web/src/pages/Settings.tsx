@@ -9,8 +9,8 @@ import { AccountPage, ServerPage, UsersPage } from './Account';
 import { RolesPage } from './Roles';
 import { t } from '../lib/i18n';
 
-// Configurações gerais: pessoas, acesso, servidor e a sua conta. O que é do
-// workspace (fluxo, repositórios) e da IA (agentes, skills) fica no menu lateral.
+// General settings: people, access, server and your account. What belongs to the
+// workspace (workflow, repositories) and to the AI (agents, skills) is in the side menu.
 export interface SettingsTab {
   id: string;
   label: string;
@@ -21,10 +21,10 @@ export interface SettingsTab {
 }
 
 export const SETTINGS_TABS: SettingsTab[] = [
-  { id: 'usuarios', label: t('Usuários'), group: t('Pessoas e acesso'), icon: Users, allowed: (u) => canSee(u, 'usuarios'), page: () => <UsersPage /> },
-  { id: 'permissoes', label: t('Permissões'), group: t('Pessoas e acesso'), icon: ShieldCheck, allowed: (u) => !!u?.isOwner, page: () => <RolesPage /> },
-  { id: 'servidor', label: t('Servidor'), group: t('Sistema'), icon: Server, allowed: (u) => can(u, 'settings.manage', 'repo.create'), page: () => <ServerPage /> },
-  { id: 'conta', label: t('Minha conta'), group: t('Você'), icon: UserRound, allowed: () => true, page: () => <AccountPage /> }
+  { id: 'users', label: t('Users'), group: t('People & access'), icon: Users, allowed: (u) => canSee(u, 'users'), page: () => <UsersPage /> },
+  { id: 'permissions', label: t('Permissions'), group: t('People & access'), icon: ShieldCheck, allowed: (u) => !!u?.isOwner, page: () => <RolesPage /> },
+  { id: 'server', label: t('Server'), group: t('System'), icon: Server, allowed: (u) => can(u, 'settings.manage', 'repo.create'), page: () => <ServerPage /> },
+  { id: 'account', label: t('My account'), group: t('You'), icon: UserRound, allowed: () => true, page: () => <AccountPage /> }
 ];
 
 export function SettingsPage() {
@@ -44,8 +44,8 @@ export function SettingsPage() {
   return (
     <div className="flex h-full flex-col md:flex-row">
       <nav className="shrink-0 border-b border-line/70 bg-panel/30 md:w-56 md:border-b-0 md:border-r">
-        <div className="hidden items-center gap-2 px-4 pb-2 pt-5 text-[13px] font-semibold md:flex"><SettingsIcon className="size-4 text-accent" /> {t('Configurações gerais')}</div>
-        {/* Celular: abas roláveis na horizontal; desktop: lista agrupada. */}
+        <div className="hidden items-center gap-2 px-4 pb-2 pt-5 text-[13px] font-semibold md:flex"><SettingsIcon className="size-4 text-accent" /> {t('General settings')}</div>
+        {/* Phone: tabs scrolling horizontally; desktop: a grouped list. */}
         <div ref={bar} className="flex gap-1 overflow-x-auto px-2 py-2 md:block md:space-y-3 md:overflow-visible md:py-2">
           {groups.map((g) => (
             <div key={g} className="contents md:block">

@@ -16,7 +16,7 @@ import type { Agent, Analytics, StageKind, Totals } from '../lib/types';
 import { AgentIcon } from '../components/AgentIcon';
 import { lang, locale, t } from '../lib/i18n';
 
-// Paleta categórica validada (daltonismo + contraste) para a superfície escura.
+// A validated categorical palette (color blindness + contrast) for the dark surface.
 const C1 = 'var(--chart-1)';
 const C3 = 'var(--chart-3)';
 const AXIS = { fontSize: 11, fill: 'rgb(var(--mute))' };
@@ -26,15 +26,15 @@ const dayLabel = (d: string) => (lang === 'en' ? `${d.slice(5, 7)}/${d.slice(8, 
 
 type Metric = 'cost' | 'tokens' | 'runs' | 'time';
 const METRICS: { id: Metric; label: string }[] = [
-  { id: 'cost', label: t('Custo') },
+  { id: 'cost', label: t('Cost') },
   { id: 'tokens', label: t('Tokens') },
-  { id: 'runs', label: t('Execuções') },
-  { id: 'time', label: t('Tempo') }
+  { id: 'runs', label: t('Runs') },
+  { id: 'time', label: t('Time') }
 ];
 const metricOf = (tt: Totals | undefined, m: Metric) =>
   !tt ? 0 : m === 'cost' ? tt.costUsd : m === 'tokens' ? tt.inputTokens + tt.cachedTokens + tt.outputTokens : m === 'runs' ? tt.runs : tt.seconds;
 const fmtMetric = (v: number, m: Metric) => (m === 'cost' ? money(v) : m === 'time' ? duration(v) : compact(v));
-const hours = (h: number) => (!h ? '—' : h < 1 ? t('{0} min', Math.round(h * 60)) : h < 48 ? `${h.toFixed(1)} h` : t('{0} dias', (h / 24).toFixed(1)));
+const hours = (h: number) => (!h ? '—' : h < 1 ? t('{0} min', Math.round(h * 60)) : h < 48 ? `${h.toFixed(1)} h` : t('{0} days', (h / 24).toFixed(1)));
 
 function Segmented<T extends string>({ items, value, onChange }: { items: { id: T; label: string }[]; value: T; onChange: (v: T) => void }) {
   return (
@@ -64,7 +64,7 @@ function Card({ title, subtitle, actions, children, className }: { title: string
   );
 }
 
-// Tooltip escuro comum a todos os gráficos.
+// A dark tooltip shared by every chart.
 function Tip({ active, payload, label, format, labelFormat }: {
   active?: boolean; payload?: { name: string; value: number; color?: string; payload?: { color?: string } }[]; label?: string;
   format?: (v: number) => string; labelFormat?: (l: string) => string;
@@ -112,7 +112,7 @@ function Kpi({ icon: Icon, label, value, sub, spark, color = C1, className }: {
   );
 }
 
-// Linha de ranking com barra (agentes, modelos, pessoas).
+// A ranking row with a bar (agents, models, people).
 function RankRow({ left, value, share, sub }: { left: React.ReactNode; value: string; share: number; sub?: string }) {
   return (
     <div className="py-2">
@@ -132,10 +132,10 @@ function RankRow({ left, value, share, sub }: { left: React.ReactNode; value: st
 
 type Day = { day: string; value: number; cost: number; runs: number; t?: Totals };
 
-// Dois níveis: o Analytics do workspace em que a pessoa está (analytics.view)
-// e o geral, de todos os workspaces que ela enxerga (analytics.global). Em
-// cada um, ver os números de todo mundo ou de outra pessoa é uma permissão à
-// parte (analytics.team / analytics.global_team); sem ela, só os próprios.
+// Two levels: the Analytics of the workspace the person is in (analytics.view) and the
+// overall one, across every workspace they see (analytics.global). In each, seeing
+// everyone's numbers or another person's is a separate permission (analytics.team /
+// analytics.global_team); without it, only their own.
 export function AnalyticsPage({ global }: { global?: boolean }) {
   const { ws } = useWs();
   const { data: me } = useMe();
@@ -146,17 +146,17 @@ export function AnalyticsPage({ global }: { global?: boolean }) {
   const [table, setTable] = useState(false);
   const [tab, setTab] = useState<Tab>(() => {
     try {
-      return (localStorage.getItem('mx.analyticsTab') as Tab) || 'geral';
+      return (localStorage.getItem('foreman.analyticsTab') as Tab) || 'overview';
     } catch {
-      return 'geral';
+      return 'overview';
     }
   });
   const pick = (tt: Tab) => {
     setTab(tt);
     try {
-      localStorage.setItem('mx.analyticsTab', tt);
+      localStorage.setItem('foreman.analyticsTab', tt);
     } catch {
-      /* sem storage */
+      /* no storage */
     }
   };
   const { data: agents = [] } = useAgents();
@@ -165,7 +165,7 @@ export function AnalyticsPage({ global }: { global?: boolean }) {
     queryFn: () => api.get<Analytics>(`${global ? '' : `/workspaces/${ws.id}`}/analytics?days=${days}&person=${person}`)
   });
 
-  // Dias sem execução entram com zero: o eixo do tempo fica contínuo.
+  // Days without runs come in as zero: the time axis stays continuous.
   const daily = useMemo<Day[]>(() => {
     if (!data) return [];
     const by = new Map(data.daily.map((d) => [d.day, d]));
@@ -183,12 +183,12 @@ export function AnalyticsPage({ global }: { global?: boolean }) {
       <div className="page">
         <PageHeader
           icon={global ? Globe2 : BarChart3}
-          title={global ? t('Analytics geral') : t('Analytics')}
-          description={global ? t('Todos os workspaces a que você tem acesso, somados.') : t('Custo, volume e ritmo das issues e dos agentes de {0}.', ws.name)}
+          title={global ? t('Overall Analytics') : t('Analytics')}
+          description={global ? t('Every workspace you can access, combined.') : t('Cost, volume and pace of {0}\'s issues and agents.', ws.name)}
           actions={
             <div className="flex flex-wrap gap-2">
               <PersonPicker global={global} team={team} value={person} onChange={setPerson} meId={me?.id} />
-              <Segmented items={[{ id: '7', label: '7d' }, { id: '30', label: '30d' }, { id: '90', label: '90d' }, { id: '365', label: t('1 ano') }]} value={days} onChange={setDays} />
+              <Segmented items={[{ id: '7', label: '7d' }, { id: '30', label: '30d' }, { id: '90', label: '90d' }, { id: '365', label: t('1 year') }]} value={days} onChange={setDays} />
             </div>
           }
         />
@@ -225,24 +225,24 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
 
   if (!tt.runs && !data.issues.created && !data.issues.open) {
     return (
-      <EmptyState icon={Sparkles} title={t('Ainda não há dados')} action={<Link to={`/w/${wsKey}`} className="text-sm text-accent hover:underline">{t('Ir para o quadro')}</Link>}>
-        {t('Crie issues e rode os agentes: custo, issues resolvidas por mês e o ranking de agentes e modelos aparecem aqui.')}
+      <EmptyState icon={Sparkles} title={t('No data yet')} action={<Link to={`/w/${wsKey}`} className="text-sm text-accent hover:underline">{t('Go to the board')}</Link>}>
+        {t('Create issues and run the agents: cost, issues resolved per month and the agent and model rankings show up here.')}
       </EmptyState>
     );
   }
 
   return (
     <div className="space-y-4">
-      {tab === 'geral' && <>
+      {tab === 'overview' && <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Kpi icon={Coins} label={t('Custo · {0}d', days)} value={money(tt.costUsd)} sub={t('{0} por execução', money(tt.runs ? tt.costUsd / tt.runs : 0))} spark={daily.map((d) => d.cost)} />
-        <Kpi icon={CheckCircle2} label={t('Issues resolvidas')} value={String(data.issues.resolved)} sub={t('{0} criadas · {1} abertas', data.issues.created, data.issues.open)} />
-        <Kpi icon={Activity} label={t('Execuções')} value={compact(tt.runs)} sub={<><span className={success >= 80 ? 'text-emerald-400' : 'text-amber-400'}>{success}%</span> {t('com sucesso')}</>} spark={daily.map((d) => d.runs)} color={C3} />
-        <Kpi icon={Clock} label={t('Tempo até resolver')} value={hours(data.issues.avgResolveHours)} sub={t('mediana {0} · agentes {1}', hours(data.issues.medResolveHours), duration(tt.seconds))} />
-        <Kpi icon={Zap} label={t('Tokens')} value={compact(tokens)} sub={t('{0}% vieram do cache', cacheShare)} className="col-span-2 lg:col-span-1" />
+        <Kpi icon={Coins} label={t('Cost · {0}d', days)} value={money(tt.costUsd)} sub={t('{0} per run', money(tt.runs ? tt.costUsd / tt.runs : 0))} spark={daily.map((d) => d.cost)} />
+        <Kpi icon={CheckCircle2} label={t('Issues resolved')} value={String(data.issues.resolved)} sub={t('{0} created · {1} open', data.issues.created, data.issues.open)} />
+        <Kpi icon={Activity} label={t('Runs')} value={compact(tt.runs)} sub={<><span className={success >= 80 ? 'text-emerald-400' : 'text-amber-400'}>{success}%</span> {t('successful')}</>} spark={daily.map((d) => d.runs)} color={C3} />
+        <Kpi icon={Clock} label={t('Time to resolve')} value={hours(data.issues.avgResolveHours)} sub={t('median {0} · agents {1}', hours(data.issues.medResolveHours), duration(tt.seconds))} />
+        <Kpi icon={Zap} label={t('Tokens')} value={compact(tokens)} sub={t('{0}% came from cache', cacheShare)} className="col-span-2 lg:col-span-1" />
       </div>
         <div className="grid gap-4 lg:grid-cols-3">
-        <Card title={t('Issues por mês')} subtitle={t('Criadas × resolvidas, últimos 12 meses')} className="lg:col-span-2">
+        <Card title={t('Issues per month')} subtitle={t('Created × resolved, last 12 months')} className="lg:col-span-2">
           <div className="h-64">
             <ResponsiveContainer>
               <BarChart data={monthly} barGap={2} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
@@ -257,7 +257,7 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
             </ResponsiveContainer>
           </div>
         </Card>
-        <Card title={t('Status')} subtitle={t('Abertas agora + encerradas no período')}>
+        <Card title={t('Status')} subtitle={t('Open now + closed in the period')}>
           {statusTotal ? (
             <div className="flex h-64 flex-col">
               <div className="relative min-h-0 flex-1">
@@ -279,25 +279,25 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
                 ))}
               </div>
             </div>
-          ) : <p className="py-16 text-center text-mute">{t('Sem issues.')}</p>}
+          ) : <p className="py-16 text-center text-mute">{t('No issues.')}</p>}
         </Card>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
         <Card
-          title={t('Atividade diária')}
-          subtitle={t('Últimos {0} dias', days)}
+          title={t('Daily activity')}
+          subtitle={t('Last {0} days', days)}
           className="lg:col-span-3"
           actions={
             <div className="flex gap-2">
               <Segmented items={METRICS} value={metric} onChange={setMetric} />
-              <button onClick={() => setTable(!table)} title={t('Ver como tabela')} className={clsx('rounded-lg border border-line p-1.5', table ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}><Table2 className="size-3.5" /></button>
+              <button onClick={() => setTable(!table)} title={t('View as table')} className={clsx('rounded-lg border border-line p-1.5', table ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}><Table2 className="size-3.5" /></button>
             </div>
           }
         >
           {table ? (
             <div className="max-h-56 overflow-y-auto text-xs">
               <table className="w-full">
-                <thead className="sticky top-0 bg-panel text-left text-mute"><tr><th className="py-1.5 font-medium">{t('Dia')}</th><th className="font-medium">{t('Execuções')}</th><th className="font-medium">{t('Custo')}</th><th className="font-medium">{t('Tokens')}</th><th className="font-medium">{t('Tempo')}</th></tr></thead>
+                <thead className="sticky top-0 bg-panel text-left text-mute"><tr><th className="py-1.5 font-medium">{t('Day')}</th><th className="font-medium">{t('Runs')}</th><th className="font-medium">{t('Cost')}</th><th className="font-medium">{t('Tokens')}</th><th className="font-medium">{t('Time')}</th></tr></thead>
                 <tbody>
                   {[...daily].reverse().filter((d) => d.t).map((d) => (
                     <tr key={d.day} className="border-t border-line/60 tabular-nums">
@@ -306,7 +306,7 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
                   ))}
                 </tbody>
               </table>
-              {!daily.some((d) => d.t) && <p className="py-8 text-center text-mute">{t('Nenhuma execução no período.')}</p>}
+              {!daily.some((d) => d.t) && <p className="py-8 text-center text-mute">{t('No runs in this period.')}</p>}
             </div>
           ) : (
             <div className="h-56">
@@ -331,17 +331,17 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
         </div>
       </>}
 
-      {tab === 'tempo' && <TimeTab data={data} />}
+      {tab === 'time' && <TimeTab data={data} />}
 
-      {tab === 'custos' && <>
+      {tab === 'costs' && <>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Kpi icon={Coins} label={t('Custo · {0}d', days)} value={money(tt.costUsd)} sub={t('{0} por execução', money(tt.runs ? tt.costUsd / tt.runs : 0))} spark={daily.map((d) => d.cost)} />
-          <Kpi icon={CheckCircle2} label={t('Custo por issue resolvida')} value={money(data.issues.resolved ? tt.costUsd / data.issues.resolved : 0)} sub={t('{0} resolvidas', data.issues.resolved)} />
-          <Kpi icon={Zap} label={t('Tokens')} value={compact(tokens)} sub={t('{0}% vieram do cache', cacheShare)} />
-          <Kpi icon={Cpu} label={t('Modelos usados')} value={String(data.models.length)} sub={t('{0} agente(s)', data.agents.length)} />
+          <Kpi icon={Coins} label={t('Cost · {0}d', days)} value={money(tt.costUsd)} sub={t('{0} per run', money(tt.runs ? tt.costUsd / tt.runs : 0))} spark={daily.map((d) => d.cost)} />
+          <Kpi icon={CheckCircle2} label={t('Cost per resolved issue')} value={money(data.issues.resolved ? tt.costUsd / data.issues.resolved : 0)} sub={t('{0} resolved', data.issues.resolved)} />
+          <Kpi icon={Zap} label={t('Tokens')} value={compact(tokens)} sub={t('{0}% came from cache', cacheShare)} />
+          <Kpi icon={Cpu} label={t('Models used')} value={String(data.models.length)} sub={t('{0} agent(s)', data.agents.length)} />
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
-        <Card title={t('Custo por mês')} subtitle={t('Últimos 12 meses')} className="lg:col-span-2">
+        <Card title={t('Cost per month')} subtitle={t('Last 12 months')} className="lg:col-span-2">
           <div className="h-56">
             <ResponsiveContainer>
               <BarChart data={monthly} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
@@ -358,19 +358,19 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
           <CostByCreator data={data} />
-        <Card title={t('Modelos')} subtitle={t('Custo e tokens por modelo')}>
+        <Card title={t('Models')} subtitle={t('Cost and tokens by model')}>
           {data.models.length ? data.models.map((m) => (
             <RankRow key={m.runtime + m.model} share={m.costUsd / maxModel} value={money(m.costUsd)}
               sub={t('{0} tokens', compact(m.inputTokens + m.cachedTokens + m.outputTokens))}
-              left={<><Cpu className="size-4 shrink-0 text-mute" /><span className="truncate">{m.model || t('padrão')}</span><span className="rounded bg-white/5 px-1.5 text-[10px] text-mute">{m.runtime === 'codex' ? t('Codex') : t('Claude')}</span></>} />
-          )) : <p className="py-10 text-center text-mute">{t('Nenhuma execução.')}</p>}
+              left={<><Cpu className="size-4 shrink-0 text-mute" /><span className="truncate">{m.model || t('default')}</span><span className="rounded bg-white/5 px-1.5 text-[10px] text-mute">{m.runtime === 'codex' ? t('Codex') : t('Claude')}</span></>} />
+          )) : <p className="py-10 text-center text-mute">{t('No runs.')}</p>}
         </Card>
         </div>
-        <Card title={t('Issues mais caras')} subtitle={t('No período')}>
+        <Card title={t('Most expensive issues')} subtitle={t('In the period')}>
           {data.top.length ? (
             <div className="-mx-4 overflow-x-auto">
               <table className="w-full text-left text-[13px]">
-                <thead className="text-xs text-mute"><tr><th className="px-4 py-2 font-medium">{t('Issue')}</th><th className="px-4 font-medium">{t('Status')}</th><th className="px-4 text-right font-medium">{t('Execuções')}</th><th className="px-4 text-right font-medium">{t('Custo')}</th></tr></thead>
+                <thead className="text-xs text-mute"><tr><th className="px-4 py-2 font-medium">{t('Issue')}</th><th className="px-4 font-medium">{t('Status')}</th><th className="px-4 text-right font-medium">{t('Runs')}</th><th className="px-4 text-right font-medium">{t('Cost')}</th></tr></thead>
                 <tbody>
                   {data.top.map((i) => (
                     <tr key={i.id} className="border-t border-line/60 transition-colors hover:bg-white/[0.03]">
@@ -383,45 +383,45 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
                 </tbody>
               </table>
             </div>
-          ) : <p className="py-8 text-center text-mute">{t('Nenhuma execução no período.')}</p>}
+          ) : <p className="py-8 text-center text-mute">{t('No runs in this period.')}</p>}
         </Card>
       </>}
 
-      {tab === 'pessoas' && <>
+      {tab === 'people' && <>
         <PeopleTab data={data} />
         <div className="grid gap-4 lg:grid-cols-2">
-        <Card title={t('Quem mais pede')} subtitle={t('Execuções disparadas por pessoa')}>
+        <Card title={t('Top requesters')} subtitle={t('Runs triggered by each person')}>
           {data.users.length ? data.users.map((u) => (
             <RankRow key={u.userId ?? 'sys'} share={u.runs / maxUser} value={String(u.runs)} sub={money(u.costUsd)}
               left={<><Avatar name={u.name} size={20} /><span className="truncate">{u.name}</span></>} />
-          )) : <p className="py-10 text-center text-mute"><Users className="mx-auto mb-2 size-5" />{t('Ninguém ainda.')}</p>}
+          )) : <p className="py-10 text-center text-mute"><Users className="mx-auto mb-2 size-5" />{t('Nobody yet.')}</p>}
         </Card>
           <CostByCreator data={data} />
         </div>
       </>}
 
-      {tab === 'agentes' && <>
+      {tab === 'agents' && <>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Kpi icon={Activity} label={t('Execuções')} value={compact(tt.runs)} sub={<><span className={success >= 80 ? 'text-emerald-400' : 'text-amber-400'}>{success}%</span> {t('com sucesso')}</>} spark={daily.map((d) => d.runs)} color={C3} />
-          <Kpi icon={Clock} label={t('Tempo médio por execução')} value={duration(tt.runs ? tt.seconds / tt.runs : 0)} sub={t('{0} no total', duration(tt.seconds))} />
-          <Kpi icon={Coins} label={t('Custo por execução')} value={money(tt.runs ? tt.costUsd / tt.runs : 0)} sub={t('{0} falha(s)', tt.failed)} />
-          <Kpi icon={Zap} label={t('Tokens por execução')} value={compact(tt.runs ? tokens / tt.runs : 0)} sub={t('{0}% do cache', cacheShare)} />
+          <Kpi icon={Activity} label={t('Runs')} value={compact(tt.runs)} sub={<><span className={success >= 80 ? 'text-emerald-400' : 'text-amber-400'}>{success}%</span> {t('successful')}</>} spark={daily.map((d) => d.runs)} color={C3} />
+          <Kpi icon={Clock} label={t('Average time per run')} value={duration(tt.runs ? tt.seconds / tt.runs : 0)} sub={t('{0} total', duration(tt.seconds))} />
+          <Kpi icon={Coins} label={t('Cost per run')} value={money(tt.runs ? tt.costUsd / tt.runs : 0)} sub={t('{0} failure(s)', tt.failed)} />
+          <Kpi icon={Zap} label={t('Tokens per run')} value={compact(tt.runs ? tokens / tt.runs : 0)} sub={t('{0}% from cache', cacheShare)} />
         </div>
         <AgentTable data={data} agents={agents} />
         <div className="grid gap-4 lg:grid-cols-2">
-        <Card title={t('Agentes')} subtitle={t('Custo no período')}>
+        <Card title={t('Agents')} subtitle={t('Cost in the period')}>
           {data.agents.length ? data.agents.map((a) => (
             <RankRow key={a.agentId ?? a.agentName} share={a.costUsd / maxAgent} value={money(a.costUsd)}
-              sub={t('{0} exec. · {1}% ok', a.runs, a.runs ? Math.round(((a.runs - a.failed) / a.runs) * 100) : 0)}
-              left={<><AgentIcon avatar={agents.find((x) => x.id === a.agentId)?.avatar} size={20} /><span className="truncate">{a.agentName || t('Removido')}</span></>} />
-          )) : <p className="py-10 text-center text-mute">{t('Nenhuma execução.')}</p>}
+              sub={t('{0} runs · {1}% ok', a.runs, a.runs ? Math.round(((a.runs - a.failed) / a.runs) * 100) : 0)}
+              left={<><AgentIcon avatar={agents.find((x) => x.id === a.agentId)?.avatar} size={20} /><span className="truncate">{a.agentName || t('Removed')}</span></>} />
+          )) : <p className="py-10 text-center text-mute">{t('No runs.')}</p>}
         </Card>
-        <Card title={t('Modelos')} subtitle={t('Custo e tokens por modelo')}>
+        <Card title={t('Models')} subtitle={t('Cost and tokens by model')}>
           {data.models.length ? data.models.map((m) => (
             <RankRow key={m.runtime + m.model} share={m.costUsd / maxModel} value={money(m.costUsd)}
               sub={t('{0} tokens', compact(m.inputTokens + m.cachedTokens + m.outputTokens))}
-              left={<><Cpu className="size-4 shrink-0 text-mute" /><span className="truncate">{m.model || t('padrão')}</span><span className="rounded bg-white/5 px-1.5 text-[10px] text-mute">{m.runtime === 'codex' ? t('Codex') : t('Claude')}</span></>} />
-          )) : <p className="py-10 text-center text-mute">{t('Nenhuma execução.')}</p>}
+              left={<><Cpu className="size-4 shrink-0 text-mute" /><span className="truncate">{m.model || t('default')}</span><span className="rounded bg-white/5 px-1.5 text-[10px] text-mute">{m.runtime === 'codex' ? t('Codex') : t('Claude')}</span></>} />
+          )) : <p className="py-10 text-center text-mute">{t('No runs.')}</p>}
         </Card>
         </div>
       </>}
@@ -431,29 +431,29 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
 
 // ---------- abas focadas ----------
 
-type Tab = 'geral' | 'tempo' | 'custos' | 'pessoas' | 'agentes';
+type Tab = 'overview' | 'time' | 'costs' | 'people' | 'agents';
 const TABS: { id: Tab; label: string; icon: typeof Clock; hint: string }[] = [
-  { id: 'geral', label: t('Visão geral'), icon: BarChart3, hint: t('Volume, status e atividade') },
-  { id: 'tempo', label: t('Tempo'), icon: Clock, hint: t('Ciclo, etapas e gargalos') },
-  { id: 'custos', label: t('Custos'), icon: Coins, hint: t('Onde o dinheiro vai') },
-  { id: 'pessoas', label: t('Pessoas'), icon: Users, hint: t('Desempenho de cada um') },
-  { id: 'agentes', label: t('Agentes'), icon: Bot, hint: t('Eficiência dos agentes e modelos') }
+  { id: 'overview', label: t('Overview'), icon: BarChart3, hint: t('Volume, status and activity') },
+  { id: 'time', label: t('Time'), icon: Clock, hint: t('Cycle, stages and bottlenecks') },
+  { id: 'costs', label: t('Costs'), icon: Coins, hint: t('Where the money goes') },
+  { id: 'people', label: t('People'), icon: Users, hint: t('How each person performs') },
+  { id: 'agents', label: t('Agents'), icon: Bot, hint: t('Agent and model efficiency') }
 ];
 
-// Tipo de cada etapa, tirado das regras do fluxo (o servidor classifica).
+// Each stage's type, taken from the workflow rules (the server classifies).
 const KINDS: Record<StageKind, { label: () => string; hint: () => string; color: string }> = {
-  ai: { label: () => t('IA trabalhando'), hint: () => t('etapas em que o agente trabalha'), color: 'rgb(var(--accent))' },
-  people: { label: () => t('Esperando pessoas'), hint: () => t('a IA pediu algo e alguém precisa responder'), color: '#fb923c' },
-  approval: { label: () => t('Aprovação'), hint: () => t('etapas com regra de aprovação'), color: '#34d399' },
-  queue: { label: () => t('Fila e trabalho manual'), hint: () => t('o resto: backlog, fila, etapas manuais'), color: 'rgb(var(--mute))' },
-  closed: { label: () => t('Encerrada'), hint: () => '', color: 'rgb(var(--line))' }
+  ai: { label: () => t('AI working'), hint: () => t('stages where the agent works'), color: 'rgb(var(--accent))' },
+  people: { label: () => t('Waiting on people'), hint: () => t('the AI asked for something and someone needs to answer'), color: '#fb923c' },
+  approval: { label: () => t('Approval'), hint: () => t('stages with an approval rule'), color: '#34d399' },
+  queue: { label: () => t('Queue and manual work'), hint: () => t('the rest: backlog, queues, manual stages'), color: 'rgb(var(--mute))' },
+  closed: { label: () => t('Closed'), hint: () => '', color: 'rgb(var(--line))' }
 };
 
 function KindBreakdown({ data }: { data: Analytics }) {
   const kt = data.kindTimes ?? [];
   const total = kt.reduce((a, k) => a + k.hours, 0);
   return (
-    <Card title={t('Onde o tempo vai')} subtitle={t('Tempo somado por tipo de etapa. O tipo vem das regras do seu fluxo: onde o agente trabalha, onde a IA espera alguém, onde há aprovação.')}>
+    <Card title={t('Where the time goes')} subtitle={t('Total time by stage type. The type comes from your workflow\'s rules: where the agent works, where the AI waits on someone, where there\'s approval.')}>
       {total > 0 ? (
         <div className="space-y-3">
           <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full">
@@ -465,13 +465,13 @@ function KindBreakdown({ data }: { data: Analytics }) {
                 <span className="mt-1 size-2.5 shrink-0 rounded-sm" style={{ background: KINDS[k.kind].color }} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-2"><span>{KINDS[k.kind].label()}</span><span className="tabular-nums text-dim">{Math.round((k.hours / total) * 100)}%</span></div>
-                  <div className="text-[11px] text-mute">{t('{0} no total · {1} por passagem', hours(k.hours), hours(k.avgHours))} · {KINDS[k.kind].hint()}</div>
+                  <div className="text-[11px] text-mute">{t('{0} total · {1} per pass', hours(k.hours), hours(k.avgHours))} · {KINDS[k.kind].hint()}</div>
                 </div>
               </div>
             ))}
           </div>
         </div>
-      ) : <p className="py-8 text-center text-mute">{t('Ainda sem passagens completas por etapas.')}</p>}
+      ) : <p className="py-8 text-center text-mute">{t('No complete passes through stages yet.')}</p>}
     </Card>
   );
 }
@@ -488,32 +488,32 @@ function TimeTab({ data }: { data: Analytics }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi icon={Clock} label={t('Criação → conclusão')} value={hours(data.issues.avgResolveHours)} sub={t('mediana {0}', hours(data.issues.medResolveHours))} />
-        <Kpi icon={CheckCircle2} label={t('Resolvidas no período')} value={String(data.issues.resolved)} sub={t('{0} abertas agora', data.issues.open)} />
-        <Kpi icon={AlertTriangle} label={t('Gargalo')} value={slowest ? t(slowest.name) : '—'} sub={slowest ? t('{0} em média', hours(slowest.avgHours)) : t('sem dados ainda')} />
-        <Kpi icon={Bot} label={t('Tempo de agente')} value={duration(tt.seconds)} sub={t('{0} por execução', duration(tt.runs ? tt.seconds / tt.runs : 0))} />
+        <Kpi icon={Clock} label={t('Creation → done')} value={hours(data.issues.avgResolveHours)} sub={t('median {0}', hours(data.issues.medResolveHours))} />
+        <Kpi icon={CheckCircle2} label={t('Resolved in the period')} value={String(data.issues.resolved)} sub={t('{0} open now', data.issues.open)} />
+        <Kpi icon={AlertTriangle} label={t('Bottleneck')} value={slowest ? t(slowest.name) : '—'} sub={slowest ? t('{0} on average', hours(slowest.avgHours)) : t('no data yet')} />
+        <Kpi icon={Bot} label={t('Agent time')} value={duration(tt.seconds)} sub={t('{0} per run', duration(tt.runs ? tt.seconds / tt.runs : 0))} />
       </div>
       <KindBreakdown data={data} />
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title={t('Tempo por etapa')} subtitle={t('Média de permanência em cada etapa (mediana ao lado)')} className="lg:col-span-2">
+        <Card title={t('Time per stage')} subtitle={t('Average time in each stage (median alongside)')} className="lg:col-span-2">
           {st.length ? st.map((s) => (
-            <RankRow key={s.stage} share={s.avgHours / maxSt} value={hours(s.avgHours)} sub={t('mediana {0} · {1}×', hours(s.medHours), s.passes)}
+            <RankRow key={s.stage} share={s.avgHours / maxSt} value={hours(s.avgHours)} sub={t('median {0} · {1}×', hours(s.medHours), s.passes)}
               left={<><StatusIcon status={s.stage} /><span className="truncate">{t(s.name)}</span>
                 {s.kind && s.kind !== 'queue' && <span className="shrink-0 rounded px-1 text-[10px]" style={{ color: KINDS[s.kind]?.color, background: 'rgb(var(--ink) / 0.05)' }}>{KINDS[s.kind]?.label()}</span>}</>} />
-          )) : <p className="py-10 text-center text-mute">{t('Ainda sem passagens completas por etapas.')}</p>}
+          )) : <p className="py-10 text-center text-mute">{t('No complete passes through stages yet.')}</p>}
         </Card>
-        <Card title={t('Tempo de agente por prioridade')} subtitle={t('Duração média de cada execução')}>
+        <Card title={t('Agent time by priority')} subtitle={t('Average duration of each run')}>
           {pr.length ? pr.map((p) => (
-            <RankRow key={p.priority} share={p.avgSeconds / maxPr} value={duration(p.avgSeconds)} sub={t('{0} exec.', p.runs)}
+            <RankRow key={p.priority} share={p.avgSeconds / maxPr} value={duration(p.avgSeconds)} sub={t('{0} runs', p.runs)}
               left={<><PriorityIcon priority={p.priority} /><span className="truncate">{PRIORITIES.find((x) => x.id === p.priority)?.label}</span></>} />
-          )) : <p className="py-10 text-center text-mute">{t('Nenhuma execução.')}</p>}
+          )) : <p className="py-10 text-center text-mute">{t('No runs.')}</p>}
         </Card>
       </div>
-      <Card title={t('Tempo de resposta')} subtitle={t('Quanto as issues de cada pessoa ficam esperando alguém responder à IA (etapas que as suas regras usam para isso)')}>
+      <Card title={t('Response time')} subtitle={t('How long each person\'s issues wait for someone to answer the AI (the stages your rules use for that)')}>
         {people.length ? people.map((p) => (
           <RankRow key={p.userId} share={p.replyHours / maxReply} value={hours(p.replyHours)}
             left={<><Avatar name={p.name} size={20} /><span className="truncate">{p.name}</span></>} />
-        )) : <p className="py-8 text-center text-mute">{t('Ninguém precisou responder à IA no período.')}</p>}
+        )) : <p className="py-8 text-center text-mute">{t('Nobody had to reply to the AI in this period.')}</p>}
       </Card>
     </>
   );
@@ -523,11 +523,11 @@ function CostByPriority({ data }: { data: Analytics }) {
   const pr = [...(data.priorities ?? [])].sort((a, b) => b.costUsd - a.costUsd);
   const max = Math.max(...pr.map((p) => p.costUsd), 0.0001);
   return (
-    <Card title={t('Custo por prioridade')} subtitle={t('Quanto cada urgência consome')}>
+    <Card title={t('Cost by priority')} subtitle={t('How much each urgency costs')}>
       {pr.length ? pr.map((p) => (
         <RankRow key={p.priority} share={p.costUsd / max} value={money(p.costUsd)} sub={t('{0} issue(s) · {1}/issue', p.issues, money(p.issues ? p.costUsd / p.issues : 0))}
           left={<><PriorityIcon priority={p.priority} /><span className="truncate">{PRIORITIES.find((x) => x.id === p.priority)?.label ?? '—'}</span></>} />
-      )) : <p className="py-10 text-center text-mute">{t('Nenhuma execução.')}</p>}
+      )) : <p className="py-10 text-center text-mute">{t('No runs.')}</p>}
     </Card>
   );
 }
@@ -536,40 +536,40 @@ function CostByCreator({ data }: { data: Analytics }) {
   const cr = data.creators ?? [];
   const max = Math.max(...cr.map((c) => c.costUsd), 0.0001);
   return (
-    <Card title={t('Custo por quem criou')} subtitle={t('Issues de cada pessoa, somando todas as execuções')}>
+    <Card title={t('Cost by creator')} subtitle={t('Each person\'s issues, summing every run')}>
       {cr.length ? cr.map((c) => (
-        <RankRow key={c.userId ?? 'ext'} share={c.costUsd / max} value={money(c.costUsd)} sub={t('{0} exec.', c.runs)}
+        <RankRow key={c.userId ?? 'ext'} share={c.costUsd / max} value={money(c.costUsd)} sub={t('{0} runs', c.runs)}
           left={<><Avatar name={c.name} size={20} /><span className="truncate">{c.name}</span></>} />
-      )) : <p className="py-10 text-center text-mute">{t('Ninguém ainda.')}</p>}
+      )) : <p className="py-10 text-center text-mute">{t('Nobody yet.')}</p>}
     </Card>
   );
 }
 
 type SortKey = 'created' | 'resolved' | 'openAssigned' | 'resolveHours' | 'replyHours' | 'comments' | 'approvals' | 'runs' | 'costUsd';
 
-// Uma linha por pessoa: o que criou, resolveu, quanto demora e quanto custa.
+// One row per person: what they created, resolved, how long it takes and how much it costs.
 function PeopleTab({ data }: { data: Analytics }) {
   const [sort, setSort] = useState<SortKey>('resolved');
   const people = [...(data.people ?? [])].sort((a, b) => (b[sort] as number) - (a[sort] as number));
   const cols: [SortKey, string, (p: Analytics['people'][number]) => string][] = [
-    ['created', t('Criou'), (p) => String(p.created)],
-    ['openAssigned', t('Abertas c/ ela'), (p) => String(p.openAssigned)],
-    ['resolved', t('Resolveu'), (p) => String(p.resolved)],
-    ['resolveHours', t('Tempo p/ resolver'), (p) => hours(p.resolveHours)],
-    ['replyHours', t('Tempo de resposta'), (p) => hours(p.replyHours)],
-    ['comments', t('Comentários'), (p) => String(p.comments)],
-    ['approvals', t('Aprovações'), (p) => String(p.approvals)],
-    ['runs', t('Pedidos ao agente'), (p) => String(p.runs)],
-    ['costUsd', t('Custo'), (p) => money(p.costUsd)]
+    ['created', t('Created'), (p) => String(p.created)],
+    ['openAssigned', t('Open, assigned'), (p) => String(p.openAssigned)],
+    ['resolved', t('Resolved'), (p) => String(p.resolved)],
+    ['resolveHours', t('Time to resolve'), (p) => hours(p.resolveHours)],
+    ['replyHours', t('Response time'), (p) => hours(p.replyHours)],
+    ['comments', t('Comments'), (p) => String(p.comments)],
+    ['approvals', t('Approvals'), (p) => String(p.approvals)],
+    ['runs', t('Agent requests'), (p) => String(p.runs)],
+    ['costUsd', t('Cost'), (p) => money(p.costUsd)]
   ];
   return (
-    <Card title={t('Desempenho por pessoa')} subtitle={t('No período · clique numa coluna para ordenar · “resolveu” conta as issues em que a pessoa é a responsável')}>
+    <Card title={t('Performance by person')} subtitle={t('In the period · click a column to sort · “resolved” counts issues where the person is the assignee')}>
       {people.length ? (
         <div className="-mx-4 overflow-x-auto">
           <table className="w-full text-left text-[13px]">
             <thead className="text-xs text-mute">
               <tr>
-                <th className="px-4 py-2 font-medium">{t('Pessoa')}</th>
+                <th className="px-4 py-2 font-medium">{t('Person')}</th>
                 {cols.map(([k, label]) => (
                   <th key={k} className="whitespace-nowrap px-3 text-right font-medium">
                     <button onClick={() => setSort(k)} className={clsx('hover:text-fg', sort === k && 'text-accent')}>{label}{sort === k && ' ↓'}</button>
@@ -587,27 +587,27 @@ function PeopleTab({ data }: { data: Analytics }) {
             </tbody>
           </table>
         </div>
-      ) : <p className="py-10 text-center text-mute"><Users className="mx-auto mb-2 size-5" />{t('Ninguém teve atividade no período.')}</p>}
+      ) : <p className="py-10 text-center text-mute"><Users className="mx-auto mb-2 size-5" />{t('Nobody had activity in this period.')}</p>}
     </Card>
   );
 }
 
-// Eficiência de cada agente: sucesso, tempo e custo por execução.
+// Each agent's efficiency: success, time and cost per run.
 function AgentTable({ data, agents }: { data: Analytics; agents: Agent[] }) {
   return (
-    <Card title={t('Eficiência por agente')} subtitle={t('No período')}>
+    <Card title={t('Efficiency by agent')} subtitle={t('In the period')}>
       {data.agents.length ? (
         <div className="-mx-4 overflow-x-auto">
           <table className="w-full text-left text-[13px]">
             <thead className="text-xs text-mute">
-              <tr>{[t('Agente'), t('Execuções'), t('Sucesso'), t('Tempo médio'), t('Custo/execução'), t('Tokens/execução'), t('Custo total')].map((h, i) => <th key={h} className={clsx('whitespace-nowrap py-2 font-medium', i ? 'px-3 text-right' : 'px-4')}>{h}</th>)}</tr>
+              <tr>{[t('Agent'), t('Runs'), t('Success'), t('Average time'), t('Cost/run'), t('Tokens/run'), t('Total cost')].map((h, i) => <th key={h} className={clsx('whitespace-nowrap py-2 font-medium', i ? 'px-3 text-right' : 'px-4')}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {data.agents.map((a) => {
                 const ok = a.runs ? Math.round(((a.runs - a.failed) / a.runs) * 100) : 0;
                 return (
                   <tr key={a.agentId ?? a.agentName} className="border-t border-line/60 hover:bg-white/[0.03]">
-                    <td className="whitespace-nowrap px-4 py-2.5"><span className="inline-flex items-center gap-2"><AgentIcon avatar={agents.find((x) => x.id === a.agentId)?.avatar} size={20} /> {a.agentName || t('Removido')}</span></td>
+                    <td className="whitespace-nowrap px-4 py-2.5"><span className="inline-flex items-center gap-2"><AgentIcon avatar={agents.find((x) => x.id === a.agentId)?.avatar} size={20} /> {a.agentName || t('Removed')}</span></td>
                     <td className="px-3 text-right tabular-nums">{a.runs}</td>
                     <td className={clsx('px-3 text-right tabular-nums', ok >= 80 ? 'text-emerald-400' : 'text-amber-400')}>{ok}%</td>
                     <td className="px-3 text-right tabular-nums">{duration(a.runs ? a.seconds / a.runs : 0)}</td>
@@ -620,27 +620,27 @@ function AgentTable({ data, agents }: { data: Analytics; agents: Agent[] }) {
             </tbody>
           </table>
         </div>
-      ) : <p className="py-10 text-center text-mute">{t('Nenhuma execução.')}</p>}
+      ) : <p className="py-10 text-center text-mute">{t('No runs.')}</p>}
     </Card>
   );
 }
 
-// De quem são os números: só os meus, de todo mundo ou de uma pessoa (com a permissão de equipe).
+// Whose numbers: only mine, everyone's or one person's (with the team permission).
 function PersonPicker({ global, team, value, onChange, meId }: { global?: boolean; team: boolean; value: string; onChange: (v: string) => void; meId?: string }) {
   const { ws } = useWs();
   const canUsers = useCan('user.view');
   const { data: members = [] } = useMembers(ws.id);
   const { data: users = [] } = useUsers(global && canUsers && team);
   const people = (global && canUsers ? users : members).filter((p) => p.id !== meId);
-  if (!team) return <span className="inline-flex h-8 items-center rounded-lg border border-line px-2.5 text-xs text-mute" title={t('Seu perfil vê só os próprios números')}>{t('Seus números')}</span>;
-  const label = value === 'all' ? t('Todo mundo') : value === 'me' ? t('Só eu') : people.find((p) => p.id === value)?.name ?? t('Pessoa');
+  if (!team) return <span className="inline-flex h-8 items-center rounded-lg border border-line px-2.5 text-xs text-mute" title={t('Your role only sees its own numbers')}>{t('Your numbers')}</span>;
+  const label = value === 'all' ? t('Everyone') : value === 'me' ? t('Just me') : people.find((p) => p.id === value)?.name ?? t('Person');
   return (
     <Popover align="right" trigger={() => <Chip>{label} <ChevronDown className="size-3.5 text-mute" /></Chip>}>
       {(close) => (
         <div className="max-h-80 overflow-y-auto">
-          <MenuItem selected={value === 'all'} onClick={() => { onChange('all'); close(); }}>{t('Todo mundo')}</MenuItem>
-          <MenuItem selected={value === 'me'} onClick={() => { onChange('me'); close(); }}>{t('Só eu')}</MenuItem>
-          {people.length > 0 && <div className="px-2 pb-1 pt-2 text-[11px] text-mute">{t('Uma pessoa')}</div>}
+          <MenuItem selected={value === 'all'} onClick={() => { onChange('all'); close(); }}>{t('Everyone')}</MenuItem>
+          <MenuItem selected={value === 'me'} onClick={() => { onChange('me'); close(); }}>{t('Just me')}</MenuItem>
+          {people.length > 0 && <div className="px-2 pb-1 pt-2 text-[11px] text-mute">{t('One person')}</div>}
           {people.map((p) => (
             <MenuItem key={p.id} selected={value === p.id} onClick={() => { onChange(p.id); close(); }}>
               <Avatar name={p.name} size={18} /> {p.name}
