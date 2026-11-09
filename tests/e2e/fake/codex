@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Mimics `codex exec --json … -`: JSONL events, the final text in agent_message.
+if [[ "$1" == "--version" ]]; then echo "codex-cli 9.9.9 (fake)"; exit 0; fi
+if [[ "$1" == "debug" ]]; then echo '{"models":[]}'; exit 0; fi
+prompt=$(cat)
+idir="${FOREMAN_SUMMARY%/*}"
+printf '%s\n' "$@" > "$idir/last-args.txt"
+echo "$prompt" > "$idir/last-prompt.txt"
+echo '{"type":"thread.started","thread_id":"fake-thread"}'
+echo '{"type":"turn.started"}'
+echo '{"type":"item.started","item":{"type":"command_execution","command":"ls","status":"in_progress"}}'
+echo '{"type":"item.completed","item":{"type":"command_execution","command":"ls","aggregated_output":"a.txt\n","exit_code":0}}'
+d="$(ls -d */ 2>/dev/null | head -1)"
+echo "codex change $(date +%N)" >> "${d}codex.txt"
+echo '{"type":"item.completed","item":{"type":"file_change","changes":[{"path":"codex.txt","kind":"add"}]}}'
+if [[ "$prompt" == *"[[CODEX_FAIL]]"* ]]; then
+  echo '{"type":"turn.failed","error":{"message":"simulated codex failure"}}'
+  exit 1
+fi
+printf '# Codex summary\n' > "$FOREMAN_SUMMARY"
+echo done > "$FOREMAN_STATUS"
+echo '{"type":"item.completed","item":{"type":"agent_message","text":"Codex finished."}}'
+echo '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":7}}'

@@ -41,6 +41,7 @@ An issue's path:
 - creating it in **To do** with an agent, or moving it there, queues it; every new request (issue, adjustment, reply, rule) moves the issue to **In progress** at once;
 - the AI finished → **In review**; it needs someone or didn't finish → **Waiting for you**; it failed or conflicted → **Blocked**;
 - in **In review**, the **✓ Approve** button takes it to **Done**, where by default a rule merges (swap it for "Open PR" if you prefer);
+- asking for something on a merged issue reopens it: the new commits go through approval and merge again;
 - an issue in **Backlog** doesn't run; moving it to **Backlog** or **Cancelled** stops the run.
 
 ## Workflow, roles and automations
@@ -55,7 +56,7 @@ The default rules (the `seed_workflow` function in the database):
 - **Run finished**, while in In progress: done → In review; needs you or incomplete → Waiting for you; failed → Blocked; stopped → Backlog.
 - **Backlog and Cancelled, on entry:** stop the agent.
 - **Merge done** → Done; **merge conflict** → Blocked.
-- **A rule failed** (agent without a repository, script, merge, PR…) → Blocked, unless the rule itself has "If it fails, move to".
+- **A rule failed** (agent without a repository, script, merge, PR…) → Blocked, unless the rule itself has "If it fails, move to". An e-mail or a webhook that fails only leaves a note on the issue: telling someone isn't the work itself, so it only moves the issue if the rule has "If it fails, move to".
 - **Done** closes the issue as resolved and **Cancelled** as cancelled (the "Close the issue" access rule); that's what analytics counts.
 - **In review:** 1 approval → Done. **Done, on entry:** merge. **Waiting for you, on entry:** an e-mail to whoever asked.
 
@@ -70,7 +71,7 @@ The **"the issue is in stage"** filter makes a general-trigger rule (agent finis
 - **Entry requirements:** having an agent, an assignee, a description or code changes.
 - **A limit** on issues at the same time.
 - **Read-only:** once in, nobody touches it any more (only the owner).
-- **Approval:** the issue gets the *✓ Approve* button; it only moves on when **N different people** approve (each counts once) and goes on its own to the chosen destination. E.g. with 2, the tech lead approves (1 of 2) and the issue waits; the PO approves (2 of 2) and it moves on. *In review* is born with 1 approval → *Done*.
+- **Approval:** the issue gets the *✓ Approve* button; it only moves on when **N different people** approve (each counts once) and goes on its own to the chosen destination. E.g. with 2, the tech lead approves (1 of 2) and the issue waits; the PO approves (2 of 2) and it moves on. *In review* is born with 1 approval → *Done*. It can't be walked around: without the approvals, nobody but the owner drags the issue to the destination (not even by way of another stage, if it has code waiting to be merged) or uses the merge button. New commits void the approvals given so far, since they were for other code. An issue without pending code, like a manual task, moves freely.
 - **Stage owners** (e-mail recipients).
 
 E.g. an Intern and a Junior can share **the same permission role**, but Triage only accepts the Intern and Development only the Junior: each works in their own stage. The owner goes through everything.
@@ -83,7 +84,7 @@ E.g. an Intern and a Junior can share **the same permission role**, but Triage o
 
 **Rule order.** A stage's rules run top to bottom, in the order you drag them. Quick actions (notify, comment, set fields) go on at once; script, merge and PR wait to finish; **run agent** in a stage rule waits too: the issue stays in the stage while the agent works and the next rule only runs when it finishes (if it needs someone, the issue goes to *Waiting for you*; if it fails, to *Blocked* or to the "If it fails" stage). **Move** takes the issue out of the stage, so leave it last — the screen warns you when it isn't. E.g. *say it arrived → agent reviews → say it finished → move to QA*.
 
-**Rules** = trigger + conditions + action. Triggers: entering, leaving or sitting X hours in a stage; issue created; comment; run finished (done, waiting, incomplete, failed); assignee set; priority changed; cost above US$ X. Conditions: priority, labels, agent, the role of whoever caused it. Actions: notify by e-mail (whoever asked, whoever created, the assignee, the stage owners, the team, administrators only, chosen roles or users — never a typed e-mail), webhook, comment, move, set the assignee (fixed, whoever created, whoever asked, or spread to whoever has the fewest issues in a group), priority, label, agent, run agent, open a PR, merge and script. Every action becomes a comment on the issue; loops stop on their own.
+**Rules** = trigger + conditions + action. Triggers: entering, leaving or sitting X hours in a stage; issue created; comment; run finished (done, waiting, incomplete, failed); assignee set; priority changed; cost above US$ X. Conditions: priority, labels, agent, the role of whoever caused it. Actions: notify by e-mail (whoever asked, whoever created, the assignee, the stage owners, the team, administrators only, chosen roles or users — never a typed e-mail), webhook, comment, move, set the assignee (fixed, whoever created, whoever asked, or spread to whoever has the fewest issues in a group), priority, label, agent, run agent, open a PR, merge and script. Every action becomes a comment on the issue; loops stop on their own: a rule stops after 12 firings a minute on the same issue, and one that restarts the agent when a run begins or ends, after 5 in an hour, because that one costs money.
 
 **Copying the workflow** from X to Y **replaces** Y's workflow: it is torn down and made identical to X's (stages, rules and access rules). The preview shows what will be deleted in Y, how many issues go to the first stage (those in stages that stop existing) and what will need adjusting. People without access to Y come along, without gaining access because of it, and show up in Y's workflow warnings for someone to fix. Labels are found or created by name. The workflow screen also warns when someone loses access later.
 
@@ -109,6 +110,7 @@ A workspace key (the issue prefix) doesn't change after it is created.
 - **Starting roles:** *Administrator* (everything) and *Member* (create, edit, run and merge issues). Changing a role applies at once to everyone using it.
 - **Workspaces:** whoever lacks "see all" sees only the workspaces they were linked to.
 - **Guarantee:** the API checks permission and membership on every route. Without permission the answer is 403; someone else's workspace answers 404. Menus and buttons disappear according to the role.
+- **No climbing:** whoever edits users can't touch someone with configuration powers they don't have themselves, can't hand out a role with such powers and can't give anyone a workspace they don't see. Issue, label, analytics and view-only permissions don't count, so a role that only manages people can still assign the usual roles.
 
 ## Notification e-mail
 
@@ -218,12 +220,23 @@ Put a reverse proxy (Caddy, nginx, Traefik) in front of port 8700 and set `FOREM
 | `FOREMAN_ADDR` | `127.0.0.1:8700` (`:8700` in Docker) | `0.0.0.0:8700` opens it to the network |
 | `FOREMAN_DATA` | `./data` (`/data` in Docker) | clones, worktrees, skills on disk |
 | `FOREMAN_MAX_PARALLEL` | `3` | simultaneous runs; the rest wait in the queue |
+| `FOREMAN_RUN_TIMEOUT` | `4h` | a run that goes over it is stopped and fails (a hung agent can't hold a slot forever) |
 | `CLAUDE_BIN` / `CODEX_BIN` | `claude` / `codex` | |
 | `FOREMAN_SECURE_COOKIE` | `false` | `true` behind HTTPS |
 
 ## Development
 
-End-to-end tests (Docker; starts an isolated stack on port 18700 with test git repositories and a simulated agent): `tests/e2e/run.sh` (or `--no-build` to reuse the image).
+Tests, all on an isolated stack (port 18700) with throwaway git repositories, never on your data:
+
+```bash
+tests/e2e/run.sh              # e2e.py (each feature) + flow.py (the flow under attack: races, restarts, bypasses, junk)
+tests/e2e/run.sh flow approval    # one suite, only the scenarios with that word; --no-build reuses the image
+tests/e2e/run.sh ui           # the flow in a real browser (uses the system chromium)
+tests/e2e/real.sh             # the REAL claude and codex, with their sandbox: spends a little of your plan
+cd server && go test ./...    # the pure parts: outcome, prompt, CLI flags, log parsing
+```
+
+They use a simulated agent (`tests/e2e/fake/claude`, programmed with `[[MARKERS]]` in the request), Mailpit as the SMTP server and a webhook receiver. Only `real.sh` proves what a simulation can't: that the CLI flags still exist and that the sandbox lets the agent work and really isolates it.
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db   # Postgres on localhost:5432
@@ -238,5 +251,5 @@ cd web && npm install && npm run dev                      # front end on :5700, 
 - **Cap per run:** each agent can have a US$ cap (`--max-budget-usd`, Claude only). Model and effort are also per agent.
 - **Lean context:** with several repositories, the prompt carries only the map (name, description, base). Project instructions live in the repository itself (`CLAUDE.md`, `AGENTS.md`), which the agent already reads.
 - **Context sent:** "Context sent to the agent" on each run shows exactly the prompt and system prompt used.
-- **Isolation:** the agent runs without asking for confirmation, but inside its own CLI's sandbox (bubblewrap on Linux): it writes **only** to the issue folder and to Foreman's package cache (`data/cache`, for `npm`, `pip`, `go`…); the rest of the disk is read-only. The network stays open to install dependencies. Claude: `--permission-mode acceptEdits` + `sandbox` in the settings; Codex: `-s workspace-write` with network. Without `bwrap` on the server (e.g. in a container without user namespaces) the agent runs unsandboxed and the run log warns about it; in that case the isolation is the container's.
+- **Isolation:** the agent runs without asking for confirmation, but inside its own CLI's sandbox (bubblewrap on Linux): it writes **only** to the issue folder, to Foreman's package cache (`data/cache`, for `npm`, `pip`, `go`…) and to the system's temporary folders; the rest of the disk is read-only. Read-only still means readable, and the network stays open to install dependencies: on your own machine, an agent can read your files, such as `~/.ssh`. For code or issues you don't trust, use the Docker deploy. Claude: `--permission-mode acceptEdits` + `sandbox` in the settings; Codex: `-s workspace-write` with network. Without `bwrap` on the server (e.g. in a container without user namespaces) the agent runs unsandboxed and the run log warns about it; in that case the isolation is the container's.
 - **Minimal configuration:** a repository is a URL and a name (plus an optional description). The issue starts from the remote's default branch and the merge lands there; for another one, change it on the issue or ask for it in the agent's instructions. Dependencies, `.env` and tests are up to the agent, inside the worktree.

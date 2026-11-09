@@ -26,6 +26,8 @@ type gitResult struct {
 func gitEnv() []string {
 	return append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
+		// ext:: and fd:: run commands: a repository URL can't be a way into the server.
+		"GIT_ALLOW_PROTOCOL=file:git:http:https:ssh",
 		"GIT_SSH_COMMAND=ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes",
 	)
 }
@@ -57,6 +59,10 @@ var credInURL = regexp.MustCompile(`(https?://)[^/@\s]+@`)
 // Removes credentials embedded in URLs (https://token@host) from messages.
 func redact(s string) string { return credInURL.ReplaceAllString(s, "${1}***@") }
 
+// MaskURL hides the credential of a repository URL. The server keeps the real one; people
+// only ever see this.
+func MaskURL(url string) string { return redact(url) }
+
 func (r *Runner) repoDir(repoID string) string      { return r.cfg.Path("repos", repoID+".git") }
 func (r *Runner) worktreeDir(issueID string) string { return r.cfg.Path("worktrees", issueID) }
 
@@ -65,7 +71,7 @@ func (r *Runner) syncRepo(ctx context.Context, repoID, url string) (string, erro
 	dir := r.repoDir(repoID)
 	if _, err := os.Stat(filepath.Join(dir, "HEAD")); err != nil {
 		os.MkdirAll(filepath.Dir(dir), 0o755)
-		if _, err := mustGit(ctx, filepath.Dir(dir), "clone", "--bare", url, dir); err != nil {
+		if _, err := mustGit(ctx, filepath.Dir(dir), "clone", "--bare", "--", url, dir); err != nil {
 			os.RemoveAll(dir)
 			return "", err
 		}
@@ -87,6 +93,9 @@ func defaultBranch(ctx context.Context, dir string) (string, error) {
 		if b := strings.TrimPrefix(strings.TrimSpace(runGit(ctx, dir, "symbolic-ref", "--short", ref).stdout), "origin/"); b != "" && refExists(ctx, dir, "refs/remotes/origin/"+b) {
 			return b, nil
 		}
+	}
+	if runGit(ctx, dir, "for-each-ref", "--count=1", "refs/remotes/origin", "refs/heads").stdout == "" {
+		return "", errors.New("the repository is empty: push a first commit so issues have somewhere to start from")
 	}
 	return "", errors.New("couldn't find the remote's default branch; choose the base on the issue")
 }
@@ -116,6 +125,24 @@ func (r *Runner) ensureWorktree(ctx context.Context, repoDir, wt, branch, base s
 		_, err = mustGit(ctx, repoDir, "worktree", "add", "--no-track", "-B", branch, wt, "origin/"+base)
 	}
 	return err == nil, err
+}
+
+// syncRemoteBranch brings in what someone pushed to the issue's branch since the last run;
+// otherwise the next publish (with the lease refreshed by the fetch) would overwrite it.
+func syncRemoteBranch(ctx context.Context, wt, branch string) error {
+	remote := "refs/remotes/origin/" + branch
+	if !refExists(ctx, wt, remote) || mergeInProgress(ctx, wt) || runGit(ctx, wt, "merge-base", "--is-ancestor", remote, "HEAD").ok {
+		return nil
+	}
+	if _, err := commitAll(ctx, wt, "Pending changes in the worktree", "Foreman"); err != nil {
+		return err
+	}
+	m := runGit(ctx, wt, "-c", "user.name=Foreman", "-c", "user.email=foreman@localhost", "merge", "--no-edit", remote)
+	if !m.ok {
+		runGit(ctx, wt, "merge", "--abort")
+		return fmt.Errorf("the branch %s changed on the remote and conflicts with the work here; resolve it on the branch and try again", branch)
+	}
+	return nil
 }
 
 func removeWorktree(ctx context.Context, repoDir, wt string) {
@@ -207,7 +234,7 @@ func worktreeDiff(ctx context.Context, wt, base string) Diff {
 		patch += "\n" + pending
 	}
 	if len(patch) > maxPatch {
-		patch = patch[:maxPatch] + "\n… (diff cortado)"
+		patch = patch[:maxPatch] + "\n… (diff truncated)"
 	}
 	return Diff{Stat: stat, Patch: patch, Pending: pending != "", Available: true}
 }

@@ -20,7 +20,7 @@ func skillsIndex(skills []store.Skill, dirOf func(store.Skill) string) string {
 		if desc == "" {
 			desc = "no description"
 		}
-		fmt.Fprintf(&b, "- **%s** — %s\n  arquivo: %s/SKILL.md\n", s.Name, desc, dirOf(s))
+		fmt.Fprintf(&b, "- **%s** — %s\n  file: %s/SKILL.md\n", s.Name, desc, dirOf(s))
 	}
 	return b.String()
 }

@@ -6,6 +6,8 @@ import (
 	"log"
 	"slices"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // ---------- etapas ----------
@@ -225,16 +227,24 @@ func (s *Store) FirstStage(ctx context.Context, wsID string) string {
 	return id
 }
 
-// DeleteStage sends the stage's issues to the first of the remaining ones and deletes its rules.
+// DeleteStage sends the stage's issues to the first of the remaining ones and deletes its
+// rules. The moved issues follow the new stage: history and the closed mark included.
 func (s *Store) DeleteStage(ctx context.Context, st *Stage) error {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
+	var first string
+	if err := tx.QueryRow(ctx, `select id from stages where workspace_id = $1 and id <> $2 order by position, created_at limit 1`, st.WorkspaceID, st.ID).Scan(&first); err != nil {
+		return err
+	}
+	moved, err := collectIDs(tx.Query(ctx, `update issues set status = $3, updated_at = now(), stage_entered_at = now()
+		where workspace_id = $1 and status = $2 returning id::text`, st.WorkspaceID, st.ID, first))
+	if err != nil {
+		return err
+	}
 	for _, q := range []string{
-		`update issues set status = (select id from stages where workspace_id = $1 and id <> $2 order by position, created_at limit 1),
-			updated_at = now(), stage_entered_at = now() where workspace_id = $1 and status = $2`,
 		`delete from rules where workspace_id = $1 and stage = $2`,
 		`delete from stages where workspace_id = $1 and id = $2`,
 	} {
@@ -242,7 +252,14 @@ func (s *Store) DeleteStage(ctx context.Context, st *Stage) error {
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	for _, id := range moved {
+		s.logStage(ctx, id, first)
+		s.syncClosed(ctx, id, first)
+	}
+	return nil
 }
 
 // OpenLoad: open issues per assignee (to distribute work).
@@ -423,22 +440,72 @@ func (s *Store) ReplaceWorkflow(ctx context.Context, wsID string, stages []Stage
 			return err
 		}
 	}
-	if _, err := tx.Exec(ctx, `update issues set status = $3, stage_entered_at = now() where workspace_id = $1 and not (status = any($2))`, wsID, ids, ids[0]); err != nil {
+	moved, err := collectIDs(tx.Query(ctx, `update issues set status = $3, stage_entered_at = now() where workspace_id = $1 and not (status = any($2)) returning id::text`, wsID, ids, ids[0]))
+	if err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	for _, id := range moved {
+		s.logStage(ctx, id, ids[0])
+	}
+	// The stages that close an issue may be different now.
+	return s.syncClosedAll(ctx, wsID)
+}
+
+func collectIDs(rows pgx.Rows, err error) ([]string, error) {
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// syncClosedAll applies syncClosed to a whole workspace after its workflow changed.
+func (s *Store) syncClosedAll(ctx context.Context, wsID string) error {
+	stages, err := s.Stages(ctx, wsID)
+	if err != nil {
+		return err
+	}
+	for _, st := range stages {
+		if _, err := s.DB.Exec(ctx, `update issues set closed = $3,
+			done_at = case when $3 = 'done' then coalesce(done_at, now()) else null end
+			where workspace_id = $1 and status = $2 and closed <> $3`, wsID, st.ID, st.Policy.Close); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ---------- approvals ----------
 
 // Approve records the person's approval in the current stage; returns the total.
 func (s *Store) Approve(ctx context.Context, issueID, stage, userID string) (int, error) {
-	if _, err := s.DB.Exec(ctx, `insert into issue_approvals(issue_id, stage, user_id) values($1,$2,$3) on conflict do nothing`, issueID, stage, userID); err != nil {
+	if _, err := s.DB.Exec(ctx, `insert into issue_approvals(issue_id, stage, user_id) values($1,$2,$3)
+		on conflict (issue_id, stage, user_id) do update set void_at = null, created_at = case when issue_approvals.void_at is null then issue_approvals.created_at else now() end`, issueID, stage, userID); err != nil {
 		return 0, err
 	}
+	return s.ApprovalCount(ctx, issueID, stage), nil
+}
+
+// ApprovalCount: valid approvals of the issue in a stage.
+func (s *Store) ApprovalCount(ctx context.Context, issueID, stage string) int {
 	var n int
-	err := s.DB.QueryRow(ctx, `select count(*) from issue_approvals where issue_id = $1 and stage = $2`, issueID, stage).Scan(&n)
-	return n, err
+	s.DB.QueryRow(ctx, `select count(*) from issue_approvals where issue_id = $1 and stage = $2 and void_at is null`, issueID, stage).Scan(&n)
+	return n
+}
+
+// VoidApprovals: the code changed, so what was approved is no longer what is there.
+func (s *Store) VoidApprovals(ctx context.Context, issueID string) error {
+	_, err := s.DB.Exec(ctx, `update issue_approvals set void_at = now() where issue_id = $1 and void_at is null`, issueID)
+	return err
 }
 
 // ---------- entrada por webhook ----------

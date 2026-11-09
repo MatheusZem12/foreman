@@ -177,8 +177,28 @@ func firstNonEmptyStr(vals ...string) string {
 
 // ---------- regras ----------
 
+// listRules: whoever can't see the workflow gets only what the screens need (the new-issue
+// form asks which stage starts the agent), without webhook URLs and scripts: they often
+// carry tokens.
 func (a *API) listRules(w http.ResponseWriter, r *http.Request) (any, error) {
-	return a.st.ListRules(r.Context(), chi.URLParam(r, "ws"))
+	rules, err := a.st.ListRules(r.Context(), chi.URLParam(r, "ws"))
+	if err != nil {
+		return nil, err
+	}
+	if u := userOf(r); u.Can("workflow.view") || u.Can("workflow.manage") {
+		return rules, nil
+	}
+	for i := range rules {
+		var c map[string]any
+		if json.Unmarshal(rules[i].Config, &c) == nil {
+			delete(c, "url")
+			delete(c, "script")
+			delete(c, "request")
+			delete(c, "message")
+			rules[i].Config, _ = json.Marshal(c)
+		}
+	}
+	return rules, nil
 }
 
 // ruleConfig is the part of the config the server checks.
@@ -457,6 +477,23 @@ func (a *API) workflowWarnings(ctx context.Context, wsID string, stages []store.
 			where = tr(ctx, "Stage %s · %s", stageName(r.Stage), tr(ctx, firstNonEmptyStr(actionNames[r.Action], r.Action)))
 		}
 		checkWho(store.Who{Roles: c.Roles, Users: c.Users}, where, "", r.ID)
+		// Stages can be deleted while rules still point to them: the rule does nothing, in
+		// silence, unless someone is told.
+		exists := func(id string) bool {
+			return slices.ContainsFunc(stages, func(s store.Stage) bool { return s.ID == id })
+		}
+		var cond store.Conditions
+		json.Unmarshal(r.Conditions, &cond)
+		targets := append([]string{c.OnFail, c.OnWait}, cond.Stages...)
+		if r.Action == "move" || r.Action == "approval" {
+			targets = append(targets, c.To)
+		}
+		for _, id := range targets {
+			if id != "" && !exists(id) {
+				out = append(out, warning{where, tr(ctx, "this rule points to a stage that no longer exists"), "", r.ID})
+				break
+			}
+		}
 		if c.LabelID != "" {
 			if l, err := a.st.Label(ctx, c.LabelID); err != nil || l.WorkspaceID != wsID {
 				out = append(out, warning{where, tr(ctx, "this rule's label doesn't exist in this workspace"), "", r.ID})
@@ -510,6 +547,9 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 	if err := a.ensureAccess(r, in.To); err != nil {
 		return nil, err
 	}
+	if _, err := a.st.Workspace(ctx, in.To); err != nil {
+		return nil, err
+	}
 	stages, err := a.st.Stages(ctx, from)
 	if err != nil {
 		return nil, err
@@ -533,31 +573,43 @@ func (a *API) copyWorkflow(w http.ResponseWriter, r *http.Request) (any, error) 
 
 	notes := []warning{}
 	destLabels, _ := a.st.ListLabels(ctx, in.To)
-	for i := range rules {
-		rl := &rules[i]
-		var c map[string]any
-		json.Unmarshal(rl.Config, &c)
-		lid, _ := c["labelId"].(string)
-		if lid == "" {
-			continue
-		}
+	// A label belongs to the workspace: the same name in the destination, or created there.
+	mapLabel := func(rl *store.Rule, lid string) string {
 		l, err := a.st.Label(ctx, lid)
 		if err != nil {
-			continue
+			return lid
 		}
-		idx := slices.IndexFunc(destLabels, func(x store.Label) bool { return strings.EqualFold(x.Name, l.Name) })
-		switch {
-		case idx >= 0:
-			c["labelId"] = destLabels[idx].ID
-		case in.DryRun:
+		if idx := slices.IndexFunc(destLabels, func(x store.Label) bool { return strings.EqualFold(x.Name, l.Name) }); idx >= 0 {
+			return destLabels[idx].ID
+		}
+		if in.DryRun {
 			notes = append(notes, warning{Where: tr(ctx, "Rule %s", tr(ctx, firstNonEmptyStr(actionNames[rl.Action], rl.Action))), Message: tr(ctx, "the label %s will be created in the destination", l.Name)})
-		default:
-			if nl, err := a.st.CreateLabel(ctx, in.To, l.Name, l.Color); err == nil {
-				c["labelId"] = nl.ID
-				destLabels = append(destLabels, *nl)
-			}
+			return lid
 		}
-		rl.Config, _ = json.Marshal(c)
+		nl, err := a.st.CreateLabel(ctx, in.To, l.Name, l.Color)
+		if err != nil {
+			return lid
+		}
+		destLabels = append(destLabels, *nl)
+		return nl.ID
+	}
+	for i := range rules {
+		rl := &rules[i]
+		var c, cond map[string]any
+		json.Unmarshal(rl.Config, &c)
+		if lid, _ := c["labelId"].(string); lid != "" {
+			c["labelId"] = mapLabel(rl, lid)
+			rl.Config, _ = json.Marshal(c)
+		}
+		json.Unmarshal(rl.Conditions, &cond)
+		if list, ok := cond["labels"].([]any); ok && len(list) > 0 {
+			for j, x := range list {
+				if lid, _ := x.(string); lid != "" {
+					list[j] = mapLabel(rl, lid)
+				}
+			}
+			rl.Conditions, _ = json.Marshal(cond)
+		}
 	}
 	// What will need fixing in the destination (people without access, deleted roles…).
 	warns := append(a.workflowWarnings(ctx, in.To, stages, rules), notes...)
@@ -600,6 +652,21 @@ func (a *API) approveIssue(w http.ResponseWriter, r *http.Request) (any, error) 
 	}
 	if is.ActiveRun != nil {
 		return nil, bad("wait for the run to finish before approving")
+	}
+	// If this approval completes the count, the destination has to take the issue; check
+	// before recording, so a refusal leaves no half-counted approval behind.
+	count := len(is.Approvals)
+	if !slices.Contains(is.Approvals, u.ID) {
+		count++
+	}
+	if count >= p.Approvals {
+		dest, err := a.st.StageOf(ctx, is.WorkspaceID, p.ApproveTo)
+		if err != nil {
+			return nil, bad("the stage this approval leads to no longer exists: fix the rule in the workflow")
+		}
+		if err := a.enterLimits(ctx, dest, is); err != nil {
+			return nil, err
+		}
 	}
 	n, err := a.st.Approve(ctx, is.ID, is.Status, u.ID)
 	if err != nil {

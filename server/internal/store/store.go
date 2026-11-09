@@ -276,6 +276,12 @@ func (s *Store) CreateSession(ctx context.Context, token, userID string, ttl tim
 	return err
 }
 
+// DeleteOtherSessions signs the user out everywhere except this session.
+func (s *Store) DeleteOtherSessions(ctx context.Context, userID, keep string) error {
+	_, err := s.DB.Exec(ctx, `delete from sessions where user_id = $1 and token <> $2`, userID, keep)
+	return err
+}
+
 func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	_, err := s.DB.Exec(ctx, `delete from sessions where token = $1 or expires_at < now()`, token)
 	return err

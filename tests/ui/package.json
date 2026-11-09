@@ -1,0 +1,9 @@
+{
+  "name": "foreman-ui-tests",
+  "private": true,
+  "type": "module",
+  "description": "The flow in a real browser. Run through tests/e2e/run.sh ui; uses the system chromium (CHROMIUM to change it).",
+  "dependencies": {
+    "playwright-core": "1.65.0"
+  }
+}

@@ -96,7 +96,7 @@ check(rm['api']['changed'] and rm['web']['changed'], 'an adjustment by comment c
 diff = ok(A('GET', f'/issues/{I["id"]}/diff'))
 check(sorted(x['name'] for x in diff) == ['api', 'web'], 'diff split per repository (changed ones only)')
 check(all('permission' not in a for a in ok(A('GET', '/agents'))) and all('setupScript' not in x for x in ok(A('GET', f'/workspaces/{ws["id"]}/repos'))), 'no per-agent permission nor setup/env/protected branches on the repository')
-res = ok(A('POST', f'/issues/{I["id"]}/merge', {}))
+res = ok(own('POST', f'/issues/{I["id"]}/merge', {}))
 check(not res['conflict'] and sorted(r['name'] for r in res['repos']) == ['api', 'web'], 'merge done on both changed repositories')
 check('api change' in show('api', 'main.txt') and 'web adjustment' in show('web', 'main.txt') and show('docs', 'main.txt') == 'docs v1', 'main of api and web received it; docs untouched')
 d = wait(A, I['id'], ['done'], 10)  # "merge done → Done" is a rule: it takes a moment
@@ -115,9 +115,9 @@ P = ok(A('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'P', 'description':
 Q = ok(A('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'Q', 'description': 'CONFLICT_Q', 'status': 'todo', 'agentId': ag['id']}))['issue']
 wait(A, P['id'], ['in_review']); dq = wait(A, Q['id'], ['in_review'])
 check(sorted(n for n, r in rmap(dq['issue']).items() if r['changed']) == ['api', 'web'], 'Q changed api and web')
-ok(A('POST', f'/issues/{P["id"]}/merge', {}))
+ok(own('POST', f'/issues/{P["id"]}/merge', {}))
 web_before = git('web', 'rev-parse', 'main')
-res = ok(A('POST', f'/issues/{Q["id"]}/merge', {}))
+res = ok(own('POST', f'/issues/{Q["id"]}/merge', {}))
 check(res['conflict'] and [r['name'] for r in res['repos'] if r.get('conflict')] == ['api'], 'merge of Q: conflict detected in the api')
 check(git('web', 'rev-parse', 'main') == web_before and not show('web', 'q.txt'), 'conflict in the api: the web was not published either (all or nothing)')
 dq = ok(A('GET', f'/issues/{Q["id"]}'))
@@ -125,7 +125,7 @@ check(dq['issue']['status'] == 'blocked' and rmap(dq['issue'])['api']['conflict'
 ok(A('POST', f'/issues/{Q["id"]}/run', {'kind': 'conflict'}))
 dq = wait(A, Q['id'], ['in_review', 'blocked'])
 check(dq['issue']['status'] == 'in_review' and not rmap(dq['issue'])['api']['conflict'], f'the AI resolved the conflict ({dq["runs"][-1]["error"]})')
-res = ok(A('POST', f'/issues/{Q["id"]}/merge', {}))
+res = ok(own('POST', f'/issues/{Q["id"]}/merge', {}))
 check(not res['conflict'] and show('api', 'conf.txt') == 'resolved' and show('web', 'q.txt') == 'file from Q', 'merging after the resolution publishes api and web')
 
 # ---------- a new repository joins the open issues on "all" ----------

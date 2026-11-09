@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -21,7 +22,7 @@ const issueSelect = `select i.*,
 		'targetBranch', ir.target_branch, 'changed', ir.changed, 'conflict', ir.conflict, 'mergedInto', ir.merged_into,
 		'mergedSha', ir.merged_sha) order by r.name)
 		from issue_repos ir join repos r on r.id = ir.repo_id where ir.issue_id = i.id), '[]'::jsonb) as repos,
-	coalesce((select array_agg(a.user_id::text) from issue_approvals a where a.issue_id = i.id and a.stage = i.status), '{}') as approvals
+	coalesce((select array_agg(a.user_id::text) from issue_approvals a where a.issue_id = i.id and a.stage = i.status and a.void_at is null), '{}') as approvals
 	from issues i`
 
 // IssueRepo is a repository in the issue's scope, with its branches and the merge
@@ -284,8 +285,14 @@ func (s *Store) SetIssueStatus(ctx context.Context, id, status string) error {
 }
 
 func (s *Store) SetIssueSummary(ctx context.Context, id, summary string) error {
-	_, err := s.DB.Exec(ctx, `update issues set summary = $2, updated_at = now() where id = $1`, id, summary)
+	_, err := s.DB.Exec(ctx, `update issues set summary = $2, updated_at = now() where id = $1`, id, cleanText(summary))
 	return err
+}
+
+// cleanText: what comes out of an agent can have NUL bytes or be cut in the middle of a
+// character, and Postgres refuses text like that (the comment or the README would be lost).
+func cleanText(s string) string {
+	return strings.ToValidUTF8(strings.ReplaceAll(s, "\x00", ""), "")
 }
 
 // ---------- the issue's repositories ----------
@@ -395,6 +402,12 @@ func (s *Store) SetRepoChanged(ctx context.Context, issueID, repoID string, chan
 	return err
 }
 
+// ClearRepoMerged: the issue was reopened and has new commits to merge in this repository.
+func (s *Store) ClearRepoMerged(ctx context.Context, issueID, repoID string) error {
+	_, err := s.DB.Exec(ctx, `update issue_repos set merged_into = '', merged_sha = '' where issue_id = $1 and repo_id = $2`, issueID, repoID)
+	return err
+}
+
 func (s *Store) SetRepoConflict(ctx context.Context, issueID, repoID, target string, conflict bool) error {
 	_, err := s.DB.Exec(ctx, `update issue_repos set conflict = $3, target_branch = coalesce(nullif($4, ''), target_branch)
 		where issue_id = $1 and repo_id = $2`, issueID, repoID, conflict, target)
@@ -423,10 +436,17 @@ func (s *Store) DeleteIssue(ctx context.Context, id string) error {
 
 // ---------- runs ----------
 
+// ErrRunActive: the issue already has a run queued or running (the runs_one_active index).
+var ErrRunActive = errors.New("the issue already has an active run")
+
 func (s *Store) CreateRun(ctx context.Context, issue *Issue, agent *Agent, kind, request string, userID *string, holdStage bool) (*Run, error) {
-	return one[Run](ctx, s, `insert into runs(issue_id, workspace_id, agent_id, agent_name, runtime, model, kind, request, created_by, hold_stage)
+	run, err := one[Run](ctx, s, `insert into runs(issue_id, workspace_id, agent_id, agent_name, runtime, model, kind, request, created_by, hold_stage)
 		values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning *`,
 		issue.ID, issue.WorkspaceID, agent.ID, agent.Name, agent.Runtime, agent.Model, kind, request, userID, holdStage)
+	if err != nil && strings.Contains(err.Error(), "runs_one_active") {
+		return nil, ErrRunActive
+	}
+	return run, err
 }
 
 // ClaimNextRun atomically takes the oldest run in the queue.
@@ -461,33 +481,65 @@ type RunResult struct {
 func (s *Store) FinishRun(ctx context.Context, id string, r RunResult) (*Run, error) {
 	return one[Run](ctx, s, `update runs set status=$2, error=$3, cost_usd=$4, input_tokens=$5, cached_tokens=$6, output_tokens=$7,
 		commit_sha=$8, ended_at=now() where id=$1 returning *`,
-		id, r.Status, r.Error, r.CostUSD, r.InputTokens, r.CachedTokens, r.OutputTokens, r.CommitSHA)
+		id, r.Status, cleanText(r.Error), r.CostUSD, r.InputTokens, r.CachedTokens, r.OutputTokens, r.CommitSHA)
 }
 
 func (s *Store) CancelQueuedRun(ctx context.Context, id string) (bool, error) {
-	tag, err := s.DB.Exec(ctx, `update runs set status = 'cancelled', error = 'Cancelada.', ended_at = now() where id = $1 and status = 'queued'`, id)
+	tag, err := s.DB.Exec(ctx, `update runs set status = 'cancelled', error = 'Cancelled.', ended_at = now() where id = $1 and status = 'queued'`, id)
 	return tag.RowsAffected() > 0, err
 }
 
-// RecoverInterrupted marks as failed whatever was running when the server went down.
-func (s *Store) RecoverInterrupted(ctx context.Context) ([]string, error) {
+// Interrupted is a run the server restart cut off.
+type Interrupted struct {
+	IssueID string
+	Hold    bool // it was a stage step: the sequence waiting for it died with the server
+}
+
+// RecoverInterrupted marks as failed whatever was running when the server went down. A
+// queued stage step goes too: nothing is left waiting for it to continue the sequence.
+func (s *Store) RecoverInterrupted(ctx context.Context) ([]Interrupted, error) {
 	rows, err := s.DB.Query(ctx, `update runs set status = 'failed', error = 'Interrupted: the server restarted during the run.', ended_at = now()
-		where status = 'running' returning issue_id::text`)
+		where status = 'running' or (status = 'queued' and hold_stage) returning issue_id::text, hold_stage`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []string
+	var out []Interrupted
 	for rows.Next() {
-		var id string
-		rows.Scan(&id)
-		ids = append(ids, id)
+		var it Interrupted
+		rows.Scan(&it.IssueID, &it.Hold)
+		out = append(out, it)
 	}
-	return ids, rows.Err()
+	return out, rows.Err()
+}
+
+// ActiveRunIDs: the runs queued or running in a workspace.
+func (s *Store) ActiveRunIDs(ctx context.Context, wsID string) ([]string, error) {
+	return s.strings(ctx, `select id::text from runs where workspace_id = $1 and status in ('queued','running')`, wsID)
+}
+
+// WorkspaceIssueIDs: every issue of a workspace.
+func (s *Store) WorkspaceIssueIDs(ctx context.Context, wsID string) ([]string, error) {
+	return s.strings(ctx, `select id::text from issues where workspace_id = $1`, wsID)
+}
+
+func (s *Store) strings(ctx context.Context, sql string, args ...any) ([]string, error) {
+	rows, err := s.DB.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var v string
+		rows.Scan(&v)
+		out = append(out, v)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) AddEvent(ctx context.Context, runID, kind, body string) (*RunEvent, error) {
-	return one[RunEvent](ctx, s, `insert into run_events(run_id, kind, body) values($1,$2,$3) returning *`, runID, kind, body)
+	return one[RunEvent](ctx, s, `insert into run_events(run_id, kind, body) values($1,$2,$3) returning *`, runID, kind, cleanText(body))
 }
 
 func (s *Store) Events(ctx context.Context, runID string) ([]RunEvent, error) {
@@ -502,7 +554,7 @@ func (s *Store) ListComments(ctx context.Context, issueID string) ([]Comment, er
 
 func (s *Store) AddComment(ctx context.Context, c Comment) (*Comment, error) {
 	return one[Comment](ctx, s, `insert into comments(issue_id, user_id, agent_id, run_id, kind, body) values($1,$2,$3,$4,$5,$6) returning *`,
-		c.IssueID, c.UserID, c.AgentID, c.RunID, c.Kind, c.Body)
+		c.IssueID, c.UserID, c.AgentID, c.RunID, c.Kind, cleanText(c.Body))
 }
 
 // ---------- analytics ----------
@@ -799,7 +851,7 @@ func (s *Store) Analytics(ctx context.Context, wsIDs []string, days int, person 
 	}
 	rows.Close()
 
-	rows, err = s.DB.Query(ctx, `select r.created_by::text, coalesce(max(u.name), 'Sistema'), count(*), coalesce(sum(r.cost_usd),0)::float8
+	rows, err = s.DB.Query(ctx, `select r.created_by::text, coalesce(max(u.name), 'System'), count(*), coalesce(sum(r.cost_usd),0)::float8
 		from runs r left join users u on u.id = r.created_by
 		where r.created_at >= $1 and r.started_at is not null and ($2::uuid[] is null or r.workspace_id = any($2::uuid[])) and ($3::uuid is null or r.created_by = $3 or r.issue_id in (select id from issues where created_by = $3 or assignee_id = $3))
 		group by r.created_by order by 3 desc limit 10`, since, wsIDs, who)
@@ -849,7 +901,7 @@ func (s *Store) performance(ctx context.Context, out *Analytics, since time.Time
 	}
 	rows.Close()
 
-	rows, err = s.DB.Query(ctx, `select coalesce(i.created_by::text, ''), coalesce(max(u.name), 'Entrada externa'), count(r.id), coalesce(sum(r.cost_usd),0)::float8
+	rows, err = s.DB.Query(ctx, `select coalesce(i.created_by::text, ''), coalesce(max(u.name), 'External'), count(r.id), coalesce(sum(r.cost_usd),0)::float8
 		from runs r join issues i on i.id = r.issue_id left join users u on u.id = i.created_by
 		where r.created_at >= $1 and r.started_at is not null and `+wsOnly+` group by i.created_by order by 4 desc limit 10`, since, wsIDs, who)
 	if err != nil {

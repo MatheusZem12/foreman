@@ -118,7 +118,7 @@ func normalizeClaude(line []byte) []Entry {
 			e.Cost = *ev.TotalCostUSD
 		}
 		if ev.IsError {
-			e.Body = "Falhou: " + firstNonEmpty(ev.Result, ev.Subtype)
+			e.Body = "Failed: " + firstNonEmpty(ev.Result, ev.Subtype)
 		}
 		out = append(out, e)
 	}

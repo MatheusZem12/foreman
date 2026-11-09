@@ -478,6 +478,8 @@ const ptBR: Record<string, string> = {
   "Merge {0} repositories": "Fazer merge em {0} repositórios",
   "Merge, choosing the branch": "Fazer merge escolhendo a branch",
   "merged": "merge feito",
+  "conflict": "conflito",
+  "changed": "alterado",
   "Merged": "Merge feito",
   "Merged ({0}); the branches were removed.": "Mesclada ({0}); as branches foram removidas.",
   "Merged: {0}": "Merge feito: {0}",

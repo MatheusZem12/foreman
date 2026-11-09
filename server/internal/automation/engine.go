@@ -31,10 +31,11 @@ type Engine struct {
 
 	mu    sync.Mutex
 	moves map[string][]time.Time // issue → recent changes made by rules (anti-loop)
+	fires map[string][]time.Time // rule+issue → recent firings (anti-loop for any action)
 }
 
 func New(st *store.Store, run *runner.Runner, ntf *notify.Notifier) *Engine {
-	e := &Engine{st: st, run: run, ntf: ntf, moves: map[string][]time.Time{}}
+	e := &Engine{st: st, run: run, ntf: ntf, moves: map[string][]time.Time{}, fires: map[string][]time.Time{}}
 	st.OnEvent = e.handle
 	return e
 }
@@ -122,7 +123,7 @@ func (e *Engine) sweep(ctx context.Context) {
 			issues, _ := e.st.StaleIssues(ctx, r.WorkspaceID, r.Stage, c.Hours)
 			for i := range issues {
 				if e.matches(ctx, &issues[i], c, store.Event{}) && e.st.MarkFired(ctx, r.ID, issues[i].ID) {
-					e.runRule(ctx, &issues[i], store.Event{Kind: "stale", To: r.Stage}, r)
+					e.background(&issues[i], store.Event{Kind: "stale", To: r.Stage}, r)
 				}
 			}
 		}
@@ -137,11 +138,27 @@ func (e *Engine) sweep(ctx context.Context) {
 			issues, _ := e.st.CostlyIssues(ctx, r.WorkspaceID, c.Cost)
 			for i := range issues {
 				if e.matches(ctx, &issues[i], c, store.Event{}) && e.st.MarkFired(ctx, r.ID, issues[i].ID) {
-					e.runRule(ctx, &issues[i], store.Event{Kind: "cost_over"}, r)
+					e.background(&issues[i], store.Event{Kind: "cost_over"}, r)
 				}
 			}
 		}
 	}
+}
+
+// background runs a sweep's rule on its own: a long one (an agent step, a script) can't
+// hold back the other issues' timers.
+func (e *Engine) background(is *store.Issue, ev store.Event, r store.Rule) {
+	cp := *is
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
+		defer cancel()
+		defer func() {
+			if p := recover(); p != nil {
+				log.Printf("automation: panic in %s: %v", cp.ID, p)
+			}
+		}()
+		e.runRule(ctx, &cp, ev, r)
+	}()
 }
 
 func (e *Engine) fire(ctx context.Context, is *store.Issue, ev store.Event, trigger, stage string) {
@@ -203,6 +220,13 @@ func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r
 	var cfg Config
 	json.Unmarshal(r.Config, &cfg)
 	label := actionLabel(r.Action)
+	switch e.throttle(r, is.ID) {
+	case throttleWarn:
+		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Rule **%s** (%s) fired too many times in a row and was stopped to avoid a loop.", label, e.triggerText(ctx, is, r)))
+		return true
+	case throttleSilent:
+		return true
+	}
 	msg, err := e.apply(ctx, is, ev, r.Action, cfg)
 	switch {
 	case errors.Is(err, errSkip):
@@ -211,6 +235,11 @@ func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r
 		return true
 	case err != nil:
 		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Rule **%s** (%s) failed: %s", label, e.triggerText(ctx, is, r), err))
+		// Telling someone isn't the work itself: an e-mail server or a chat that is down
+		// doesn't block the issue, unless the rule asked for it with "If it fails".
+		if (r.Action == "notify" || r.Action == "webhook") && cfg.OnFail == "" {
+			return false
+		}
 		// The rule's own "If it fails, move to" applies first; without it, the "A rule
 		// failed" rules decide (the default takes it to Blocked).
 		if cfg.OnFail != "" && e.st.ValidStage(ctx, is.WorkspaceID, cfg.OnFail) {
@@ -227,6 +256,51 @@ func (e *Engine) runRule(ctx context.Context, is *store.Issue, ev store.Event, r
 		e.run.SystemComment(ctx, is, fmt.Sprintf("⚙ Rule **%s**: %s", label, msg))
 	}
 	return false
+}
+
+// Limits per rule and issue. A rule that fires itself again (A→B→A, a field flipping back
+// and forth) stops at the first limit; one that restarts the agent, which costs money, at
+// the second.
+const (
+	maxRuleFires  = 12 // per minute
+	maxAgentFires = 5  // per hour
+)
+
+type throttleResult int
+
+const (
+	throttleOK throttleResult = iota
+	throttleWarn
+	throttleSilent // already warned in this window
+)
+
+func (e *Engine) throttle(r store.Rule, issueID string) throttleResult {
+	limit, window := maxRuleFires, time.Minute
+	if r.Action == "run_agent" && (r.Trigger == "run_finished" || r.Trigger == "run_started") {
+		limit, window = maxAgentFires, time.Hour
+	}
+	key := r.ID + "|" + issueID
+	now := time.Now()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	recent := e.fires[key][:0]
+	for _, t := range e.fires[key] {
+		if now.Sub(t) < window {
+			recent = append(recent, t)
+		}
+	}
+	over := len(recent) - limit
+	if over < 1 {
+		recent = append(recent, now)
+	}
+	e.fires[key] = recent
+	switch {
+	case over < 0:
+		return throttleOK
+	case over == 0:
+		return throttleWarn // the mark just added keeps the next attempts silent
+	}
+	return throttleSilent
 }
 
 func (e *Engine) triggerText(ctx context.Context, is *store.Issue, r store.Rule) string {
@@ -343,7 +417,7 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 			return "", errSkip
 		}
 		e.patch(ctx, is, map[string]any{"priority": float64(*cfg.Priority)})
-		return "prioridade: " + priorityName[*cfg.Priority] + ".", nil
+		return "priority: " + priorityName[*cfg.Priority] + ".", nil
 
 	case "add_label":
 		if cfg.LabelID == "" || slices.Contains(is.LabelIDs, cfg.LabelID) {
@@ -407,6 +481,9 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 			return "", errSkip // nothing changed or already merged (e.g. a merge done with the button)
 		}
 		res, err := e.run.Merge(ctx, is, targets, &store.User{Name: "Foreman"})
+		if errors.Is(err, runner.ErrNothingToMerge) {
+			return "", errSkip // someone merged in the meantime
+		}
 		if err != nil {
 			return "", err
 		}
@@ -436,7 +513,7 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 		if err != nil {
 			return "", fmt.Errorf("%v%s", err, block)
 		}
-		return "script rodou." + block, nil
+		return "script ran." + block, nil
 	}
 	return "", fmt.Errorf("unknown action %q", action)
 }
@@ -516,7 +593,7 @@ func (e *Engine) agentStep(ctx context.Context, is *store.Issue, cfg Config, kin
 		if cur.OutcomeNote != "" {
 			note = ": " + cur.OutcomeNote
 		}
-		return fmt.Sprintf("%s terminou%s.", cur.AgentName, note), nil
+		return fmt.Sprintf("%s finished%s.", cur.AgentName, note), nil
 	}
 }
 
@@ -683,9 +760,9 @@ func (e *Engine) webhook(ctx context.Context, cfg Config, payload map[string]any
 	}
 	res.Body.Close()
 	if res.StatusCode >= 300 {
-		return "", fmt.Errorf("o webhook respondeu %d", res.StatusCode)
+		return "", fmt.Errorf("the webhook answered %d", res.StatusCode)
 	}
-	return fmt.Sprintf("webhook chamado (%d).", res.StatusCode), nil
+	return fmt.Sprintf("webhook called (%d).", res.StatusCode), nil
 }
 
 func firstNonEmpty(vals ...string) string {

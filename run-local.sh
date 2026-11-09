@@ -42,7 +42,8 @@ fi
 if [[ "${1:-}" == "--build" || ! -x bin/foreman || -n "$(find server -name '*.go' -newer bin/foreman -print -quit)" || -n "$(find server/internal/webui/dist -newer bin/foreman -print -quit)" ]]; then
   echo "→ Building the server"
   mkdir -p bin "$HOME/.cache/foreman-go"
-  if command -v go >/dev/null; then
+  # `go version`, not just `command -v go`: a version manager's shim exists even with no version set.
+  if go version >/dev/null 2>&1; then
     (cd server && CGO_ENABLED=0 go build -o "$ROOT/bin/foreman" ./cmd/foreman)
   else
     docker run --rm -u "$(id -u):$(id -g)" -v "$ROOT/server:/src" -v "$ROOT/bin:/out" -w /src \

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -37,7 +38,8 @@ type Runner struct {
 	mu     sync.Mutex
 	active map[string]*activeRun // runID → processo
 
-	repoLocks sync.Map // repoID → *sync.Mutex (fetch/worktree/merge no mesmo clone)
+	repoLocks  sync.Map // repoID → *sync.Mutex (fetch/worktree/merge no mesmo clone)
+	mergeLocks sync.Map // issueID → *sync.Mutex
 
 	models modelCache
 
@@ -70,13 +72,21 @@ func (r *Runner) lockRepo(id string) func() {
 
 // Start recovers interrupted runs and starts consuming the queue.
 func (r *Runner) Start(ctx context.Context) {
-	ids, err := r.st.RecoverInterrupted(ctx)
+	cut, err := r.st.RecoverInterrupted(ctx)
 	if err != nil {
 		log.Printf("runner: recover runs: %v", err)
 	}
 	// An interrupted run (the server went down) counts as a failure: the rules decide the stage.
-	for _, id := range ids {
-		r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: id, Outcome: "failed"})
+	for _, it := range cut {
+		if is, err := r.st.Issue(ctx, it.IssueID); err == nil {
+			r.systemComment(ctx, is, nil, "Interrupted: the server restarted during the run. Ask again to continue; the work so far stays in the worktree.")
+		}
+		r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: it.IssueID, Outcome: "failed"})
+		// A stage step: the sequence waiting for it died with the server, and no "run
+		// finished" rule looks at this stage. Without this the issue would sit there silently.
+		if it.Hold {
+			r.st.Emit(ctx, store.Event{Kind: "rule_failed", IssueID: it.IssueID})
+		}
 	}
 	go r.refreshModelsLoop(ctx)
 	go func() {
@@ -90,6 +100,19 @@ func (r *Runner) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// Stop ends the running agents when the server shuts down. They are in their own process
+// group, so Ctrl+C doesn't reach them: they would keep working (and spending) with nobody
+// watching, on a worktree the next start considers free.
+func (r *Runner) Stop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, a := range r.active {
+		if a.cmd != nil && a.cmd.Process != nil {
+			syscall.Kill(-a.cmd.Process.Pid, syscall.SIGTERM)
+		}
+	}
 }
 
 func (r *Runner) running() int {
@@ -138,7 +161,11 @@ func (r *Runner) publishRun(run *store.Run) {
 	r.hub.Publish(hub.Event{Type: "run", WorkspaceID: run.WorkspaceID, Data: run})
 }
 
+// A log line is for reading: a gigantic one only weighs on the database and on the SSE stream.
+const maxEventBody = 1 << 20
+
 func (r *Runner) logEvent(ctx context.Context, run *store.Run, kind, body string) {
+	body = clip(body, maxEventBody)
 	ev, err := r.st.AddEvent(ctx, run.ID, kind, body)
 	if err != nil {
 		log.Printf("runner: evento: %v", err)
@@ -192,7 +219,13 @@ func (r *Runner) enqueue(ctx context.Context, issue *store.Issue, agentID, kind,
 	if scope, err := r.st.IssueRepos(ctx, issue.ID); err == nil && len(scope) == 0 {
 		return nil, errors.New("the workspace has no repository: add one under Workspace")
 	}
+	if agent.Archived {
+		return nil, fmt.Errorf("the agent %s was archived: choose another one", agent.Name)
+	}
 	run, err := r.st.CreateRun(ctx, issue, agent, kind, request, userID, hold)
+	if errors.Is(err, store.ErrRunActive) {
+		return nil, ErrBusy
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -214,6 +247,8 @@ func (r *Runner) Cancel(ctx context.Context, runID string) error {
 		if run, err := r.st.Run(ctx, runID); err == nil {
 			r.publishRun(run)
 			r.PublishIssue(ctx, run.IssueID)
+			// It never started, but it did finish: the rules move the issue like any cancel.
+			r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: run.IssueID, Outcome: "cancelled", ActorID: run.CreatedBy})
 		}
 		return nil
 	}
@@ -261,6 +296,8 @@ func (r *Runner) materializeSkills(skills []store.Skill) {
 	}
 }
 
+const maxTmpDir = 60
+
 func agentEnv(extra ...string) []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -268,6 +305,13 @@ func agentEnv(extra ...string) []string {
 		switch k {
 		case "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "DATABASE_URL":
 			continue
+		case "TMPDIR":
+			// The CLI's sandbox creates Unix sockets here, and their path has a short limit
+			// (108 characters). Past it the sandbox fails to start and the agent loses every
+			// command: it can't run tests or even git, and ends "waiting" for no visible reason.
+			if len(kv)-len("TMPDIR=") > maxTmpDir {
+				continue
+			}
 		}
 		env = append(env, kv)
 	}
@@ -370,7 +414,15 @@ type outcome struct {
 	exitErr  error
 	result   *Entry
 	lastText string
+	timedOut bool
 }
+
+// How long after its final result an agent has to exit. Something it left running (a dev
+// server, a watcher) inherits stdout and would keep the run open forever.
+const (
+	resultGrace = 20 * time.Second
+	exitGrace   = 5 * time.Second
+)
 
 func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, wt string, env []string) outcome {
 	cmd := exec.Command(ac.bin, ac.args...)
@@ -378,11 +430,44 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdin, _ := cmd.StdinPipe()
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	if err := cmd.Start(); err != nil {
+	// Our own pipes: Wait returns when the agent exits, even if something it left in the
+	// background still holds stdout open.
+	stdout, outW, err := os.Pipe()
+	if err != nil {
+		return outcome{exitErr: err}
+	}
+	defer stdout.Close()
+	stderr, errW, err := os.Pipe()
+	if err != nil {
+		outW.Close()
+		return outcome{exitErr: err}
+	}
+	defer stderr.Close()
+	cmd.Stdout, cmd.Stderr = outW, errW
+	err = cmd.Start()
+	outW.Close()
+	errW.Close()
+	if err != nil {
 		return outcome{exitErr: fmt.Errorf("couldn't start %s: %w", ac.bin, err)}
 	}
+	pid := cmd.Process.Pid
+	var timedOut, finished atomic.Bool
+	readDone, exited := make(chan struct{}), make(chan error, 1)
+	go func() {
+		err := cmd.Wait()
+		select {
+		case <-readDone:
+		case <-time.After(exitGrace):
+			syscall.Kill(-pid, syscall.SIGKILL) // the agent is gone; what it left behind goes too
+		}
+		exited <- err
+	}()
+	limit := time.AfterFunc(r.cfg.RunTimeout, func() {
+		timedOut.Store(true)
+		syscall.Kill(-pid, syscall.SIGTERM)
+		time.AfterFunc(10*time.Second, func() { syscall.Kill(-pid, syscall.SIGKILL) })
+	})
+	defer limit.Stop()
 	r.mu.Lock()
 	if a := r.active[run.ID]; a != nil {
 		a.cmd = cmd
@@ -409,6 +494,7 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 				r.logEvent(ctx, run, "error", clip(t, 800))
 			}
 		}
+		io.Copy(io.Discard, stderr) // a line over the limit can't leave the agent stuck writing
 	}()
 
 	var o outcome
@@ -430,6 +516,10 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 			switch e.Kind {
 			case "result":
 				o.result = &e
+				if finished.CompareAndSwap(false, true) {
+					grace := time.AfterFunc(resultGrace, func() { syscall.Kill(-pid, syscall.SIGKILL) })
+					defer grace.Stop()
+				}
 				body := e.Body
 				if e.Cost > 0 {
 					body += fmt.Sprintf(" · US$ %.4f", e.Cost)
@@ -443,8 +533,19 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 			}
 		}
 	}
+	if err := sc.Err(); err != nil {
+		r.logEvent(ctx, run, "error", "A line of the agent's output was too long to read: "+err.Error())
+	}
+	io.Copy(io.Discard, stdout) // without reading the rest, the agent would hang writing it
 	wg.Wait()
-	o.exitErr = cmd.Wait()
+	close(readDone)
+	o.exitErr = <-exited
+	// It delivered its result: being killed afterwards for leaving something running isn't a failure.
+	if o.result != nil && !o.result.IsError && !timedOut.Load() {
+		o.exitErr = nil
+	}
+	o.timedOut = timedOut.Load()
+	syscall.Kill(-pid, syscall.SIGKILL) // whatever it left running in the background goes with it
 	return o
 }
 
@@ -525,6 +626,10 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				errs[i] = fmt.Errorf("%s: %w", w.Name, err)
 				return
 			}
+			if err := syncRemoteBranch(ctx, w.wt, issue.Branch); err != nil {
+				errs[i] = fmt.Errorf("%s: %w", w.Name, err)
+				return
+			}
 			if created {
 				r.logEvent(ctx, run, "info", fmt.Sprintf("%s/ → branch %s from %s", w.slug, issue.Branch, w.base()))
 			}
@@ -551,7 +656,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	res := store.RunResult{Status: "failed"}
 	defer func() {
 		if r.isCancelled(run.ID) {
-			res.Status, res.Error = "cancelled", "Cancelada."
+			res.Status, res.Error = "cancelled", "Cancelled."
 		}
 		if res.Error != "" {
 			r.logEvent(ctx, run, "error", res.Error)
@@ -585,7 +690,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		return
 	}
 	if run.AgentID == nil {
-		res.Error = "agente removido"
+		res.Error = "the agent was removed"
 		return
 	}
 	agent, err := r.st.Agent(ctx, *run.AgentID)
@@ -708,7 +813,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	// --- commit and publish, repo by repo (failures included: nothing is lost) ---
 	label := ""
 	if run.Kind != "initial" {
-		label = " (" + map[string]string{"followup": "ajuste", "conflict": "conflito"}[run.Kind] + ")"
+		label = " (" + map[string]string{"followup": "adjustment", "conflict": "conflict"}[run.Kind] + ")"
 	}
 	var shas, stats []string
 	var cerr error
@@ -727,6 +832,10 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		}
 		changed := r.hasCommits(ctx, w)
 		r.st.SetRepoChanged(ctx, issue.ID, w.ID, changed)
+		// Reopened after a merge: the new commits still have to reach the target.
+		if changed && w.IssueRepo.MergedInto != "" {
+			r.st.ClearRepoMerged(ctx, issue.ID, w.ID)
+		}
 		if changed && !mergeInProgress(ctx, w.wt) && (sha != "" || !refExists(ctx, w.wt, "refs/remotes/origin/"+issue.Branch)) {
 			r.publishBranch(ctx, run, w, issue.Branch)
 		}
@@ -735,6 +844,9 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		}
 	}
 	res.CommitSHA = strings.Join(shas, ", ")
+	if len(shas) > 0 {
+		r.st.VoidApprovals(ctx, issue.ID) // whatever was approved is no longer what is there
+	}
 
 	// --- resumo ---
 	newSummary, _ := os.ReadFile(summaryPath)
@@ -763,6 +875,8 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	}
 
 	switch {
+	case o.timedOut:
+		res.Error = fmt.Sprintf("the run went over the time limit (%s, FOREMAN_RUN_TIMEOUT) and was stopped", r.cfg.RunTimeout)
 	case cerr != nil:
 		res.Error = cerr.Error()
 	case o.exitErr != nil:
@@ -794,7 +908,7 @@ func (r *Runner) publishBranch(ctx context.Context, run *store.Run, w *repoWork,
 		r.logEvent(ctx, run, "error", w.slug+": couldn't publish the branch to the remote: "+err.Error())
 		return
 	}
-	r.logEvent(ctx, run, "info", w.slug+": branch publicada "+branch)
+	r.logEvent(ctx, run, "info", w.slug+": branch published "+branch)
 }
 
 // hasCommits: the issue's branch has commits beyond the base in this repository.

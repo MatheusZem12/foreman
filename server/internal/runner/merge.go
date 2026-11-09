@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"foreman/internal/store"
@@ -35,12 +36,18 @@ type pendingMerge struct {
 	res     RepoMerge
 }
 
+var ErrNothingToMerge = errors.New("no repository with changes to merge")
+
 // Merge does a --no-ff merge of the issue's branch into the target of each changed
 // repository. First every merge happens locally, in temporary worktrees detached at
 // origin/<target>; only if none conflicts are the targets published. That way a
 // conflict in one repository doesn't leave the others half done. targets (repoID →
 // branch) overrides the target.
 func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[string]string, user *store.User) (*MergeResult, error) {
+	// One merge per issue at a time: the second sees what the first did and has nothing to do.
+	m, _ := r.mergeLocks.LoadOrStore(issue.ID, &sync.Mutex{})
+	m.(*sync.Mutex).Lock()
+	defer m.(*sync.Mutex).Unlock()
 	if _, err := r.st.ActiveRun(ctx, issue.ID); err == nil {
 		return nil, ErrBusy
 	}
@@ -66,7 +73,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		todo = append(todo, &pendingMerge{w: w, target: target, res: RepoMerge{RepoID: sc.ID, Name: sc.Name, Target: target}})
 	}
 	if len(todo) == 0 {
-		return nil, errors.New("no repository with changes to merge")
+		return nil, ErrNothingToMerge
 	}
 	// Concluding (cleaning the unchanged repositories) only after releasing the locks
 	// below: the defer registered earlier runs last.
@@ -108,7 +115,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		}
 		// Pending changes made by hand in the worktree go in before the merge.
 		if fileExists(w.wt) {
-			if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (ajustes manuais)", "Foreman"); err != nil {
+			if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (manual changes)", "Foreman"); err != nil {
 				return nil, fmt.Errorf("%s: %w", w.Name, err)
 			}
 		}
@@ -169,7 +176,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		out.Repos = append(out.Repos, p.res)
 	}
 	if len(done) > 0 {
-		r.systemComment(ctx, issue, nil, who+" fez merge: "+strings.Join(done, ", ")+".")
+		r.systemComment(ctx, issue, nil, who+" merged: "+strings.Join(done, ", ")+".")
 	}
 	if pushErr != nil {
 		r.PublishIssue(ctx, issue.ID)
@@ -226,6 +233,27 @@ func (r *Runner) Discard(ctx context.Context, issue *store.Issue) error {
 	return nil
 }
 
+// PurgeWorkspace stops the workspace's agents and frees its disk (clones, worktrees, issue
+// folders), right before the workspace is deleted.
+func (r *Runner) PurgeWorkspace(ctx context.Context, wsID string) {
+	if ids, err := r.st.ActiveRunIDs(ctx, wsID); err == nil {
+		for _, id := range ids {
+			r.Cancel(ctx, id)
+		}
+	}
+	if ids, err := r.st.WorkspaceIssueIDs(ctx, wsID); err == nil {
+		for _, id := range ids {
+			os.RemoveAll(r.worktreeDir(id))
+			os.RemoveAll(r.issueDir(id))
+		}
+	}
+	if repos, err := r.st.ListRepos(ctx, wsID); err == nil {
+		for _, rp := range repos {
+			os.RemoveAll(r.repoDir(rp.ID))
+		}
+	}
+}
+
 // RepoDiff is what the issue's branch introduced in a repository.
 type RepoDiff struct {
 	RepoID  string `json:"repoId"`
@@ -253,7 +281,7 @@ func (r *Runner) Diff(ctx context.Context, issue *store.Issue) []RepoDiff {
 			d.Stat = runGit(ctx, repoDir, "diff", "--stat", rng).stdout
 			d.Patch = runGit(ctx, repoDir, "diff", rng).stdout
 			if len(d.Patch) > maxPatch {
-				d.Patch = d.Patch[:maxPatch] + "\n… (diff cortado)"
+				d.Patch = d.Patch[:maxPatch] + "\n… (diff truncated)"
 			}
 		}
 		if d.Patch != "" {
@@ -286,11 +314,11 @@ func (r *Runner) Branches(ctx context.Context, repo *store.Repo) ([]string, erro
 func (r *Runner) CheckRemote(ctx context.Context, url string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	res := runGit(ctx, os.TempDir(), "ls-remote", "--heads", url)
+	res := runGit(ctx, os.TempDir(), "ls-remote", "--heads", "--", url)
 	if !res.ok {
 		msg := redact(firstNonEmpty(res.stderr, res.stdout))
 		if ctx.Err() != nil {
-			msg = "tempo esgotado (o servidor pediu senha? configure SSH ou token)"
+			msg = "timed out (did the server ask for a password? set up SSH or a token)"
 		}
 		return errors.New(msg)
 	}

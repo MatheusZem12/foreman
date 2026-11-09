@@ -1,9 +1,65 @@
 #!/usr/bin/env bash
 # Mimics `claude -p --output-format stream-json` with several repositories.
+#
+# flow.py programs it with [[MARKERS]] in the request (the adjustment's text when there
+# is one, otherwise the whole prompt):
+#   [[SLEEP:n]]        works for n seconds     [[EXIT:n]]    dies with that code, no result
+#   [[RESULT_ERROR]]   result with is_error    [[COST:n]]    reports that cost
+#   [[STATUS:line]]    what goes in STATUS     [[NO_STATUS]] / [[NO_SUMMARY]] writes nothing
+#   [[WRITE:repo/file]] changes a file (no repo = the folder it runs in)
+#   [[NO_CHANGES]]     changes nothing         [[KEEP_MARKERS]] leaves the conflict unresolved
+#   [[RESOLVE:text]]   writes text in the conflicted file (conf.txt)
+#   [[HUGE_LINE]]      a stdout line over the runner's limit
+#   [[NUL]]            an answer with a NUL byte and text cut in the middle of a character
+#   [[BACKGROUND:n]]   exits leaving `sleep n` running and holding stdout (a dev server)
 if [[ "$1" == "--version" ]]; then echo "9.9.9 (fake)"; exit 0; fi
+[[ "$1" == "-p" ]] || exit 0   # e.g. the model catalog asking for --help
 prompt=$(cat)
-grep -q SLOWLY <<<"$prompt" && sleep 3   # so the tests can see the agent working
 p() { if [[ -d "$1" ]]; then echo "$1/"; else echo ""; fi; }   # multi: subfolder; single: cwd
+idir="${FOREMAN_SUMMARY%/*}"
+printf '%s\n' "$@" > "$idir/last-args.txt"
+echo "$prompt" > "$idir/last-prompt.txt"
+env | grep -E '^(DATABASE_URL|FOREMAN_|XDG_CACHE_HOME|GOCACHE)' > "$idir/last-env.txt" || true
+
+scope="$prompt"
+[[ "$prompt" == *"## Adjustment request"* ]] && scope="${prompt##*## Adjustment request}"
+
+if [[ "$scope" == *"[["* ]]; then
+  echo '{"type":"system","subtype":"init","session_id":"fake","model":"fake"}'
+  [[ "$scope" =~ \[\[EXIT:([0-9]+)\]\] ]] && { echo "fatal: simulated crash" >&2; exit "${BASH_REMATCH[1]}"; }
+  if [[ "$scope" == *"[[HUGE_LINE]]"* ]]; then
+    node -e 'process.stdout.write(JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"x".repeat(40<<20)}]}})+"\n")'
+  fi
+  [[ "$scope" =~ \[\[SLEEP:([0-9]+)\]\] ]] && sleep "${BASH_REMATCH[1]}"
+  [[ "$scope" =~ \[\[BACKGROUND:([0-9]+)\]\] ]] && { sleep "${BASH_REMATCH[1]}" & }
+  if [[ "$scope" != *"[[NO_CHANGES]]"* && "$scope" != *"[[KEEP_MARKERS]]"* ]]; then
+    wrote=
+    while read -r target; do
+      [[ -n "$target" ]] || continue
+      mkdir -p "$(dirname "$target")"
+      echo "change $RANDOM $(date +%N)" >> "$target"
+      wrote=1
+    done < <(grep -oE '\[\[WRITE:[^]]+\]\]' <<<"$scope" | sed -E 's/\[\[WRITE:(.*)\]\]/\1/')
+    if [[ "$scope" =~ \[\[RESOLVE:([^]]*)\]\] ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}" > "$(p api)conf.txt"; wrote=1
+    fi
+    [[ -n "$wrote" ]] || { d="$(ls -d */ 2>/dev/null | head -1)"; echo "change $RANDOM $(date +%N)" >> "${d}work.txt"; }
+  fi
+  [[ "$scope" == *"[[NO_SUMMARY]]"* ]] || printf '# Summary\n- run at %s\n' "$(date +%T.%N)" > "$FOREMAN_SUMMARY"
+  if [[ "$scope" =~ \[\[STATUS:([^]]*)\]\] ]]; then
+    echo "${BASH_REMATCH[1]}" > "$FOREMAN_STATUS"
+  elif [[ "$scope" != *"[[NO_STATUS]]"* ]]; then
+    echo done > "$FOREMAN_STATUS"
+  fi
+  cost=0.01; [[ "$scope" =~ \[\[COST:([0-9.]+)\]\] ]] && cost="${BASH_REMATCH[1]}"
+  iserr=false; [[ "$scope" == *"[[RESULT_ERROR]]"* ]] && iserr=true
+  text='Done.'; [[ "$scope" == *"[[NUL]]"* ]] && text='before\u0000after ação'
+  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"'"$text"'"}]}}'
+  echo '{"type":"result","subtype":"success","is_error":'"$iserr"',"result":"'"$text"'","total_cost_usd":'"$cost"',"usage":{"input_tokens":10,"cache_read_input_tokens":5,"output_tokens":2}}'
+  exit 0
+fi
+
+grep -q SLOWLY <<<"$prompt" && sleep 3   # so the tests can see the agent working
 echo '{"type":"system","subtype":"init","session_id":"fake","model":"fake"}'
 if grep -q "Resolve conflicts" <<<"$prompt"; then
   printf 'resolved\n' > "$(p api)conf.txt"
@@ -18,7 +74,6 @@ elif grep -q WEB_ONLY <<<"$prompt"; then
 else
   echo "api change" >> "$(p api)main.txt"
 fi
-echo "$prompt" > "${FOREMAN_SUMMARY%/*}/last-prompt.txt"
 printf '# Summary\n- ok\n' > "$FOREMAN_SUMMARY"
 if grep -q NEEDS_DECISION <<<"$prompt" && ! grep -q "Adjustment request" <<<"$prompt"; then
   echo "waiting: blue or green?" > "$FOREMAN_STATUS"

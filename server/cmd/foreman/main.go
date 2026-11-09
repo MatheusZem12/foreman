@@ -58,6 +58,8 @@ func main() {
 	}()
 	log.Printf("Foreman on %s (data in %s, %d parallel runs)", cfg.Addr, cfg.DataDir, cfg.MaxParallel)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		rn.Stop()
 		log.Fatal(err)
 	}
+	rn.Stop()
 }

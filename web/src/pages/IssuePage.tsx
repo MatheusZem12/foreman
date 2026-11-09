@@ -217,7 +217,7 @@ const pick = (r?: IssueRepo) => (r ? { baseBranch: r.baseBranch, targetBranch: r
 
 // One of the issue's repositories: base (fixed once the AI touches it) → merge target.
 function IssueRepoRow({ r, locked, onChange }: { r: IssueRepo; locked: boolean; onChange: (b: { baseBranch?: string; targetBranch?: string }) => void }) {
-  const state = r.mergedInto ? ['mesclado', 'text-sky-400'] : r.conflict ? ['conflito', 'text-red-400'] : r.changed ? ['alterado', 'text-emerald-400'] : null;
+  const state = r.mergedInto ? [t('merged'), 'text-sky-400'] : r.conflict ? [t('conflict'), 'text-red-400'] : r.changed ? [t('changed'), 'text-emerald-400'] : null;
   return (
     <div className="ml-24 rounded-md border border-line/70 px-2 py-1.5">
       <div className="flex items-center gap-2 text-xs">

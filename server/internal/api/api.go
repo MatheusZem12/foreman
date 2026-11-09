@@ -11,12 +11,14 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 
 	"foreman/internal/config"
@@ -181,7 +183,7 @@ func (a *API) h(fn handler) http.HandlerFunc {
 				if he.format != "" {
 					msg = tr(r.Context(), he.format, he.args...)
 				}
-			case errors.Is(err, store.ErrNotFound):
+			case errors.Is(err, store.ErrNotFound), isBadUUID(err):
 				status, msg = http.StatusNotFound, "not found"
 			case errors.Is(err, runner.ErrBusy):
 				status = http.StatusConflict
@@ -202,6 +204,12 @@ func (a *API) h(fn handler) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, v)
 	}
+}
+
+// isBadUUID: an id in the address that isn't even a uuid is just something that doesn't exist.
+func isBadUUID(err error) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == "22P02"
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -338,6 +346,9 @@ func (a *API) postSetup(w http.ResponseWriter, r *http.Request) (any, error) {
 		roleID = &role.ID
 	}
 	u, err := a.st.CreateUser(r.Context(), c.Email, strings.TrimSpace(c.Name), string(hash), true, roleID)
+	if err != nil && strings.Contains(err.Error(), "users_single_owner") {
+		return nil, httpError{status: http.StatusForbidden, msg: "Foreman is already set up"} // lost the race
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -391,6 +402,10 @@ func (a *API) patchMe(w http.ResponseWriter, r *http.Request) (any, error) {
 		hash, _ := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 		if err := a.st.SetPassword(r.Context(), u.ID, string(hash)); err != nil {
 			return nil, err
+		}
+		// Whoever had the old password (or another session) is out; this one stays.
+		if c, err := r.Cookie(sessionCookie); err == nil {
+			a.st.DeleteOtherSessions(r.Context(), u.ID, c.Value)
 		}
 	}
 	if strings.TrimSpace(in.Name) == "" {
@@ -447,6 +462,12 @@ func (a *API) createUser(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := a.canGrantRole(r.Context(), userOf(r), roleID); err != nil {
+		return nil, err
+	}
+	if err := a.canGrantWorkspaces(r, c.WorkspaceIDs); err != nil {
+		return nil, err
+	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(c.Password), bcrypt.DefaultCost)
 	u, err := a.st.CreateUser(r.Context(), c.Email, strings.TrimSpace(c.Name), string(hash), false, roleID)
 	if err != nil {
@@ -468,6 +489,9 @@ func (a *API) patchUser(w http.ResponseWriter, r *http.Request) (any, error) {
 	if target.IsOwner && !me.IsOwner {
 		return nil, httpError{status: http.StatusForbidden, msg: "only the owner can change their own account"}
 	}
+	if id != me.ID && !coversPowers(me, target.Permissions) {
+		return nil, forbidden("%s has powers your role doesn't have: you can't change this account", target.Name)
+	}
 	var in struct {
 		Name         *string   `json:"name"`
 		RoleID       *string   `json:"roleId"`
@@ -487,6 +511,9 @@ func (a *API) patchUser(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := a.canGrantRole(ctx, me, roleID); err != nil {
+			return nil, err
+		}
 		if err := a.st.SetUserRole(ctx, id, roleID); err != nil {
 			return nil, err
 		}
@@ -504,11 +531,60 @@ func (a *API) patchUser(w http.ResponseWriter, r *http.Request) (any, error) {
 		}
 	}
 	if in.WorkspaceIDs != nil {
+		if err := a.canGrantWorkspaces(r, *in.WorkspaceIDs); err != nil {
+			return nil, err
+		}
 		if err := a.st.SetUserWorkspaces(ctx, id, *in.WorkspaceIDs); err != nil {
 			return nil, err
 		}
 	}
 	return a.st.UserByID(ctx, id)
+}
+
+// coversPowers: "edit users" can't turn into every other permission. Whoever isn't the owner
+// can't touch someone holding configuration powers they don't have themselves, nor hand
+// those powers out. Work permissions (issues, labels) and view-only ones stay free, so a
+// role that only manages people can still assign the usual roles.
+func coversPowers(u *store.User, perms []string) bool {
+	if u.IsOwner || u.Can("*") {
+		return true
+	}
+	for _, p := range perms {
+		if p == "*" {
+			return false
+		}
+		if strings.HasPrefix(p, "issue.") || strings.HasPrefix(p, "label.") || strings.HasPrefix(p, "analytics.") || strings.HasSuffix(p, ".view") {
+			continue
+		}
+		if !u.Can(p) {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *API) canGrantRole(ctx context.Context, u *store.User, roleID *string) error {
+	if roleID == nil {
+		return nil
+	}
+	role, err := a.st.Role(ctx, *roleID)
+	if err != nil {
+		return bad("invalid role")
+	}
+	if !coversPowers(u, role.Permissions) {
+		return forbidden("the %s role has powers yours doesn't: you can't give it to anyone", role.Name)
+	}
+	return nil
+}
+
+// canGrantWorkspaces: only workspaces the person can already see can be given to someone.
+func (a *API) canGrantWorkspaces(r *http.Request, ids []string) error {
+	for _, id := range ids {
+		if err := a.ensureAccess(r, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // roleOrDefault validates the chosen role; empty = "Member".
@@ -632,11 +708,16 @@ func (a *API) patchWorkspace(w http.ResponseWriter, r *http.Request) (any, error
 }
 
 func (a *API) deleteWorkspace(w http.ResponseWriter, r *http.Request) (any, error) {
+	a.run.PurgeWorkspace(r.Context(), chi.URLParam(r, "ws"))
 	return nil, a.st.DeleteWorkspace(r.Context(), chi.URLParam(r, "ws"))
 }
 
 func (a *API) listRepos(w http.ResponseWriter, r *http.Request) (any, error) {
-	return a.st.ListRepos(r.Context(), chi.URLParam(r, "ws"))
+	repos, err := a.st.ListRepos(r.Context(), chi.URLParam(r, "ws"))
+	for i := range repos {
+		repos[i].URL = runner.MaskURL(repos[i].URL)
+	}
+	return repos, err
 }
 
 func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -652,6 +733,10 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 	if in.URL == "" {
 		return nil, bad("enter the repository URL")
 	}
+	// A URL starting with a dash would reach git as an option.
+	if strings.HasPrefix(in.URL, "-") {
+		return nil, bad("invalid repository URL")
+	}
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, bad("enter the repository name")
 	}
@@ -665,6 +750,10 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 			return nil, err
 		}
 		in.WorkspaceID = cur.WorkspaceID
+		// The form comes back with the credential masked: that means "keep the one you have".
+		if in.URL == runner.MaskURL(cur.URL) {
+			in.URL = cur.URL
+		}
 	}
 	// A unique name in the workspace: it becomes the repository's folder in the issue's directory.
 	repos, _ := a.st.ListRepos(r.Context(), in.WorkspaceID)
@@ -679,10 +768,14 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	isNew := in.ID == ""
 	repo, err := a.st.SaveRepo(r.Context(), in)
-	if err == nil && isNew {
+	if err != nil {
+		return nil, err
+	}
+	if isNew {
 		a.st.AddRepoToOpenIssues(r.Context(), repo)
 	}
-	return repo, err
+	repo.URL = runner.MaskURL(repo.URL)
+	return repo, nil
 }
 
 func (a *API) gitInfo(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -690,7 +783,14 @@ func (a *API) gitInfo(w http.ResponseWriter, r *http.Request) (any, error) {
 }
 
 func (a *API) deleteRepo(w http.ResponseWriter, r *http.Request) (any, error) {
-	return nil, a.st.DeleteRepo(r.Context(), chi.URLParam(r, "id"))
+	repo, err := a.st.Repo(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		return nil, err
+	}
+	if err := a.ensureAccess(r, repo.WorkspaceID); err != nil {
+		return nil, err
+	}
+	return nil, a.st.DeleteRepo(r.Context(), repo.ID)
 }
 
 func (a *API) repoBranches(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -907,6 +1007,9 @@ func (a *API) createIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err := a.guardNewIssue(r.Context(), u, wsID, &in); err != nil {
 		return nil, err
 	}
+	if err := a.checkNewIssue(r.Context(), wsID, &in); err != nil {
+		return nil, err
+	}
 	is, err := a.st.CreateIssue(store.WithActor(r.Context(), u.ID), wsID, u.ID, in)
 	if err != nil {
 		return nil, err
@@ -984,11 +1087,8 @@ func (a *API) patchIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	if err := decode(r, &patch); err != nil {
 		return nil, err
 	}
-	if s, ok := patch["status"].(string); ok && !a.st.ValidStage(r.Context(), before.WorkspaceID, s) {
-		return nil, bad("invalid stage")
-	}
-	if t, ok := patch["title"].(string); ok && strings.TrimSpace(t) == "" {
-		return nil, bad("the title can't be empty")
+	if err := a.checkPatch(r.Context(), before, patch); err != nil {
+		return nil, err
 	}
 	// Each field's permission + the current stage's policy (and the target's, if it changes).
 	ctx, u := r.Context(), userOf(r)
@@ -1025,6 +1125,9 @@ func (a *API) patchIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	if to, ok := patch["status"].(string); ok && to != before.Status {
 		if err := a.canEnter(ctx, u, &next, to); err != nil {
+			return nil, err
+		}
+		if err := a.approvalGate(ctx, u, before, to); err != nil {
 			return nil, err
 		}
 	}
@@ -1064,11 +1167,22 @@ func (a *API) runIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	default:
 		in.Kind = "initial"
 	}
-	if in.AgentID != "" && (is.AgentID == nil || *is.AgentID != in.AgentID) {
-		is, _ = a.st.PatchIssue(r.Context(), is.ID, map[string]any{"agentId": in.AgentID})
-	}
 	u := userOf(r)
+	if in.AgentID != "" && (is.AgentID == nil || *is.AgentID != in.AgentID) {
+		if err := a.canField(r.Context(), u, is, "agentId"); err != nil {
+			return nil, err
+		}
+		if err := a.checkAgent(r.Context(), in.AgentID); err != nil {
+			return nil, err
+		}
+		if is, err = a.st.PatchIssue(r.Context(), is.ID, map[string]any{"agentId": in.AgentID}); err != nil {
+			return nil, err
+		}
+	}
 	run, err := a.run.Enqueue(r.Context(), is, in.AgentID, in.Kind, in.Request, &u.ID)
+	if errors.Is(err, runner.ErrBusy) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, bad("%s", err.Error())
 	}
@@ -1090,6 +1204,9 @@ func (a *API) cancelIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 func (a *API) mergeIssue(w http.ResponseWriter, r *http.Request) (any, error) {
 	is, err := a.loadActable(r, "issue.merge", "merge")
 	if err != nil {
+		return nil, err
+	}
+	if err := a.approvalGate(r.Context(), userOf(r), is, ""); err != nil {
 		return nil, err
 	}
 	var in struct {
@@ -1125,6 +1242,15 @@ func (a *API) setIssueRepos(w http.ResponseWriter, r *http.Request) (any, error)
 	}
 	if !in.All && len(in.Repos) == 0 {
 		return nil, bad("choose at least one repository")
+	}
+	valid, err := a.st.ListRepos(r.Context(), is.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range in.Repos {
+		if !slices.ContainsFunc(valid, func(x store.Repo) bool { return x.ID == c.RepoID }) {
+			return nil, bad("repository doesn't belong to this workspace")
+		}
 	}
 	if err := a.st.SetIssueRepos(r.Context(), is.ID, in.All, in.Repos); err != nil {
 		return nil, err

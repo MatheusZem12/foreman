@@ -386,7 +386,7 @@ func deliver(ctx context.Context, c Settings, to []string, msg []byte) error {
 		}
 	}
 	if err := cl.Mail(c.From); err != nil {
-		return fmt.Errorf("remetente recusado: %w", err)
+		return fmt.Errorf("sender refused: %w", err)
 	}
 	// One refused address doesn't stop sending to the others.
 	var refused []string
@@ -406,11 +406,11 @@ func deliver(ctx context.Context, c Settings, to []string, msg []byte) error {
 		return err
 	}
 	if err := w.Close(); err != nil {
-		return fmt.Errorf("envio: %w", err)
+		return fmt.Errorf("sending: %w", err)
 	}
 	cl.Quit()
 	if len(refused) > 0 {
-		return fmt.Errorf("enviado, mas recusados: %s", strings.Join(refused, ", "))
+		return fmt.Errorf("sent, but refused: %s", strings.Join(refused, ", "))
 	}
 	return nil
 }
