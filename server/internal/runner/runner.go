@@ -767,7 +767,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 			if mergeInProgress(ctx, w.wt) {
 				r.logEvent(ctx, run, "info", w.slug+": resuming the merge that was left halfway")
 			} else {
-				if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (pending changes)", author); err != nil {
+				if _, err := commitAll(ctx, w.wt, ref+": pending changes left in the worktree", author); err != nil {
 					res.Error = w.Name + ": " + err.Error()
 					return
 				}
@@ -808,6 +808,8 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	os.WriteFile(summaryPath, []byte(issue.Summary), 0o644)
 	statusPath := filepath.Join(idir, "STATUS")
 	os.Remove(statusPath)
+	commitPath := filepath.Join(idir, "COMMIT_MSG")
+	os.Remove(commitPath)
 	history := ""
 	if past, err := r.st.ListRuns(ctx, issue.ID); err == nil {
 		history = runHistory(past, run.ID)
@@ -826,7 +828,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	system := buildSystem(agent, skills, r.skillDir)
 	prompt := buildPrompt(promptInput{
 		Key: ws.Key, Issue: issue, Repos: prs, Root: cwd, Kind: run.Kind, Request: run.Request, Requester: requester,
-		SummaryPath: summaryPath, StatusPath: statusPath, History: history,
+		SummaryPath: summaryPath, StatusPath: statusPath, CommitPath: commitPath, History: history,
 	})
 	r.logEvent(ctx, run, "prompt", "<!-- system -->\n"+system+"\n\n<!-- prompt -->\n"+prompt)
 	addDirs := []string{idir}
@@ -849,6 +851,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	o := r.spawn(ctx, run, ac, ac.preamble+prompt, cwd, agentEnv(append(r.cacheEnv(),
 		"FOREMAN_SUMMARY="+summaryPath,
 		"FOREMAN_STATUS="+statusPath,
+		"FOREMAN_COMMIT="+commitPath,
 		"FOREMAN_ISSUE="+ref,
 	)...))
 	if o.result != nil {
@@ -856,14 +859,11 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	}
 
 	// --- commit and publish, repo by repo (failures included: nothing is lost) ---
-	label := ""
-	if run.Kind != "initial" {
-		label = " (" + map[string]string{"followup": "adjustment", "conflict": "conflict"}[run.Kind] + ")"
-	}
+	message := commitMessage(ref, commitPath, agent.Name, run.Kind)
 	var shas, stats []string
 	var cerr error
 	for _, w := range works {
-		sha, err := commitAll(ctx, w.wt, ref+" "+issue.Title+label, author)
+		sha, err := commitAll(ctx, w.wt, message, author)
 		if err != nil {
 			cerr = errors.Join(cerr, fmt.Errorf("%s: %w", w.Name, err))
 			continue
@@ -990,6 +990,36 @@ type runOutcome struct{ Kind, Note string }
 
 // readOutcome reads the line the AI wrote in STATUS: "done", "waiting: …" or
 // "incomplete: …" (the Portuguese words from before the rename are still accepted).
+// commitMessage is the message of the run's commit: the one the agent wrote in English
+// to $FOREMAN_COMMIT, after the issue key ("FORE-1: Add …"). Issue titles are in the
+// team's language, so they never go into commits; without a message from the agent, an
+// English one says who made the change.
+func commitMessage(ref, path, agentName, kind string) string {
+	b, _ := os.ReadFile(path)
+	text := strings.TrimSpace(strings.ReplaceAll(string(b), "\r\n", "\n"))
+	subject, body, _ := strings.Cut(text, "\n")
+	subject = strings.TrimSpace(subject)
+	// The agent may have added the key anyway: it isn't repeated.
+	for _, p := range []string{ref + ":", ref + " -", ref + " "} {
+		subject = strings.TrimSpace(strings.TrimPrefix(subject, p))
+	}
+	if subject == "" {
+		subject = "changes by " + agentName
+		switch kind {
+		case "followup":
+			subject = "adjustment by " + agentName
+		case "conflict":
+			subject = "merge conflict resolved by " + agentName
+		}
+		body = ""
+	}
+	msg := ref + ": " + subject
+	if body = strings.TrimSpace(body); body != "" {
+		msg += "\n\n" + body
+	}
+	return msg
+}
+
 func readOutcome(path string) runOutcome {
 	b, err := os.ReadFile(path)
 	if err != nil {

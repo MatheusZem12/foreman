@@ -293,3 +293,24 @@ func TestProbeParsers(t *testing.T) {
 		}
 	}
 }
+
+// Commits are in English: the agent's message (from $FOREMAN_COMMIT) after the key, or
+// an English fallback. The issue title never goes in.
+func TestCommitMessage(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "COMMIT_MSG")
+	if m := commitMessage("FORE-1", p, "Claude", "initial"); m != "FORE-1: changes by Claude" {
+		t.Fatalf("no file: %q", m)
+	}
+	if m := commitMessage("FORE-1", p, "Claude", "followup"); m != "FORE-1: adjustment by Claude" {
+		t.Fatalf("no file, adjustment: %q", m)
+	}
+	os.WriteFile(p, []byte("FORE-1: feat: unique workspace names\r\n\nThe key was already unique.\n"), 0o644)
+	if m := commitMessage("FORE-1", p, "Claude", "initial"); m != "FORE-1: feat: unique workspace names\n\nThe key was already unique." {
+		t.Fatalf("with message: %q", m)
+	}
+	os.WriteFile(p, []byte("  \n"), 0o644)
+	if m := commitMessage("FORE-1", p, "Claude", "initial"); m != "FORE-1: changes by Claude" {
+		t.Fatalf("blank file: %q", m)
+	}
+}

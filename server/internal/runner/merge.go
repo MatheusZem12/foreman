@@ -104,7 +104,6 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		who = user.Name
 	}
 	ref := fmt.Sprintf("%s-%d", ws.Key, issue.Number)
-	msg := fmt.Sprintf("Merge %s: %s", ref, issue.Title)
 	conflict := false
 	for _, p := range todo {
 		w := p.w
@@ -116,7 +115,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		}
 		// Pending changes made by hand in the worktree go in before the merge.
 		if fileExists(w.wt) {
-			if _, err := commitAll(ctx, w.wt, ref+" "+issue.Title+" (manual changes)", "Foreman"); err != nil {
+			if _, err := commitAll(ctx, w.wt, ref+": manual changes made in the worktree", "Foreman"); err != nil {
 				return nil, fmt.Errorf("%s: %w", w.Name, err)
 			}
 		}
@@ -133,7 +132,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 			p.tmp = ""
 			return nil, fmt.Errorf("%s: %w", w.Name, err)
 		}
-		m := runGit(ctx, p.tmp, "-c", "user.name="+who, "-c", "user.email=foreman@localhost", "merge", "--no-ff", "-m", msg, source)
+		m := runGit(ctx, p.tmp, "-c", "user.name="+who, "-c", "user.email=foreman@localhost", "merge", "--no-ff", "-m", mergeMessage(ctx, p.repoDir, ref, source), source)
 		if !m.ok {
 			files := conflictedFiles(ctx, p.tmp)
 			runGit(ctx, p.tmp, "merge", "--abort")
@@ -253,6 +252,19 @@ func (r *Runner) PurgeWorkspace(ctx context.Context, wsID string) {
 			os.RemoveAll(r.repoDir(rp.ID))
 		}
 	}
+}
+
+// mergeMessage: "Merge FORE-1: <subject of the branch's last commit>", in English like the
+// commits (never the issue title, which is in the team's language).
+func mergeMessage(ctx context.Context, repoDir, ref, source string) string {
+	subject := strings.TrimSpace(runGit(ctx, repoDir, "log", "-1", "--no-merges", "--format=%s", source).stdout)
+	for _, p := range []string{ref + ":", ref + " "} {
+		subject = strings.TrimSpace(strings.TrimPrefix(subject, p))
+	}
+	if subject == "" {
+		return "Merge " + ref
+	}
+	return "Merge " + ref + ": " + subject
 }
 
 // RepoDiff is what the issue's branch introduced in a repository.
