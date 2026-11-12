@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,9 +18,11 @@ import (
 //   - Codex: `codex debug models` returns the official catalog (Codex itself keeps it
 //     up to date); without network, it falls back to its cache (~/.codex/models_cache.json).
 //   - Gemini: `gemini models -o json` (the models the signed-in account can use).
-//   - Claude: the aliases (opus, sonnet…) always point to the newest version and
-//     come from `claude --help`; full names come from the Anthropic API when there is an
-//     ANTHROPIC_API_KEY, or from the models already used on this machine.
+//   - Claude: the aliases (opus, sonnet…) from `claude --help`, as `/model` offers them;
+//     each always points to the newest version.
+//
+// Then every model is tested with the server's account (probe.go) and the screen offers
+// only the ones that answered: what the plan really has.
 
 type ModelOption struct {
 	ID            string   `json:"id"`
@@ -186,72 +187,6 @@ func (r *Runner) claudeModels(ctx context.Context) RuntimeModels {
 	}
 	out.Source = "claude --help"
 
-	// Full names: the Anthropic API (with a key) or the ones already used on this machine.
-	if full, err := anthropicModels(ctx); err == nil && len(full) > 0 {
-		out.Models = append(out.Models, full...)
-		out.Source += " + Anthropic API"
-	} else if used := claudeUsedModels(); len(used) > 0 {
-		out.Models = append(out.Models, used...)
-		out.Source += " + local history"
-	}
-	return out
-}
-
-func anthropicModels(ctx context.Context) ([]ModelOption, error) {
-	key := os.Getenv("ANTHROPIC_API_KEY")
-	if key == "" {
-		return nil, nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.anthropic.com/v1/models?limit=100", nil)
-	req.Header.Set("x-api-key", key)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	var body struct {
-		Data []struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"display_name"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
-		return nil, err
-	}
-	var out []ModelOption
-	for _, m := range body.Data {
-		out = append(out, ModelOption{ID: m.ID, Label: firstNonEmpty(m.DisplayName, m.ID), Group: "model"})
-	}
-	return out, nil
-}
-
-// Models Claude Code has already used on this computer (its local statistics).
-func claudeUsedModels() []ModelOption {
-	home, _ := os.UserHomeDir()
-	b, err := os.ReadFile(filepath.Join(home, ".claude", "stats-cache.json"))
-	if err != nil {
-		return nil
-	}
-	var stats struct {
-		ModelUsage map[string]json.RawMessage `json:"modelUsage"`
-	}
-	if json.Unmarshal(b, &stats) != nil {
-		return nil
-	}
-	ids := []string{}
-	for id := range stats.ModelUsage {
-		if strings.HasPrefix(id, "claude-") {
-			ids = append(ids, id)
-		}
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(ids)))
-	var out []ModelOption
-	for _, id := range ids {
-		out = append(out, ModelOption{ID: id, Label: id, Description: "Pinned version, already used on this computer", Group: "used"})
-	}
 	return out
 }
 

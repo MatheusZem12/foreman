@@ -649,7 +649,11 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				return
 			}
 			if w.IssueRepo.BaseBranch == "" || w.IssueRepo.TargetBranch == "" {
-				def, err := defaultBranch(ctx, repoDir)
+				// The repository's working branch, if set; otherwise the remote's default.
+				def, err := w.WorkBranch, error(nil)
+				if def == "" {
+					def, err = defaultBranch(ctx, repoDir)
+				}
 				if err != nil && w.IssueRepo.BaseBranch == "" {
 					errs[i] = fmt.Errorf("%s: %w", w.Name, err)
 					return
@@ -792,7 +796,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	}
 
 	// --- skills, resumo e prompt ---
-	skills, err := r.st.SkillsFor(ctx, append(append([]string{}, agent.SkillIDs...), issue.SkillIDs...))
+	skills, err := r.st.SkillsFor(ctx, issue.WorkspaceID, issue.LabelIDs, append(append([]string{}, agent.SkillIDs...), issue.SkillIDs...))
 	if err != nil {
 		res.Error = err.Error()
 		return

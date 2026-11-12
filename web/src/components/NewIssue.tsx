@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Maximize2, Minimize2, X } from 'lucide-react';
+import { BookOpen, Maximize2, Minimize2, X } from 'lucide-react';
 import clsx from 'clsx';
 import { createPortal } from 'react-dom';
 import { Button, Toggle, useToast } from './ui';
 import { AgentPicker, AssigneePicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from './pickers';
 import { useWs } from './Layout';
-import { useAgents, useCan, useRepos, useRules } from '../lib/queries';
+import { useAgents, useCan, useRepos, useRules, useSkills } from '../lib/queries';
 import { api } from '../lib/api';
 import { LAST_AGENT, STATUSES } from '../lib/constants';
 import type { Issue, Status } from '../lib/types';
@@ -70,6 +70,16 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus?: Stat
   const { data: rules = [] } = useRules(ws.id);
   const startStages = rules.filter((r) => r.enabled && r.trigger === 'enter' && r.action === 'run_agent').map((r) => r.stage);
   const willStart = !!form.agentId && startStages.includes(form.status);
+
+  // The skills that go along with the agent's runs on this issue: the agent's, this
+  // workspace's and the chosen labels' (the server resolves the same).
+  const { data: skills = [] } = useSkills();
+  const agent = agents.find((a) => a.id === form.agentId);
+  const byLabel = (s: (typeof skills)[number]) => s.labelIds?.some((id) => form.labelIds.includes(id));
+  const sent = agent ? skills.filter((s) => s.always || s.workspaceIds?.includes(ws.id) || agent.skillIds.includes(s.id) || byLabel(s)) : [];
+  const why = (s: (typeof skills)[number]) => [
+    agent?.skillIds.includes(s.id) && t('the agent'), s.workspaceIds?.includes(ws.id) && t('this workspace'), byLabel(s) && t('a label'), s.always && t('every issue')
+  ].filter(Boolean).join(', ');
   useEffect(() => {
     try {
       localStorage.setItem(`foreman.newStage.${ws.id}`, form.status);
@@ -135,6 +145,12 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus?: Stat
           {repos.length > 1 && !form.repoIds.length && t(' The AI gets every repository and only touches the ones it needs.')}
           {!repos.length && <span className="text-amber-400"> · {canRepos ? t('Add a repository under Workspace so the agent can work.') : t('This workspace has no repository yet; ask an administrator.')}</span>}
         </div>
+        {agent && (
+          <div className="flex flex-wrap items-center gap-1.5 px-5 pb-2.5 text-xs sm:px-6">
+            <span className="inline-flex items-center gap-1 text-mute"><BookOpen className="size-3.5" /> {sent.length ? t('Skills sent to {0}:', agent.name) : t('No skills go to {0}.', agent.name)}</span>
+            {sent.map((s) => <span key={s.id} className="badge" title={`${why(s)}${s.description ? ` · ${s.description}` : ''}`}>{s.name}</span>)}
+          </div>
+        )}
         <div className="flex flex-wrap gap-1.5 px-5 pb-4 sm:px-6">
           <StatusPicker value={form.status} onChange={(status) => set({ status })} />
           {may.priority && <PriorityPicker value={form.priority} onChange={(priority) => set({ priority })} />}

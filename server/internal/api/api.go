@@ -764,8 +764,16 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 			return nil, bad("a repository named %q already exists in this workspace", o.Name)
 		}
 	}
-	// Only accepts a git repository reachable with the server's credentials.
-	if err := a.run.CheckRemote(r.Context(), in.URL); err != nil {
+	in.WorkBranch = strings.TrimSpace(in.WorkBranch)
+	if strings.HasPrefix(in.WorkBranch, "-") || strings.ContainsAny(in.WorkBranch, " \t~^:?*[\\") {
+		return nil, bad("invalid branch name")
+	}
+	// Only accepts a git repository reachable with the server's credentials (and, when
+	// given, a working branch that exists there).
+	if err := a.run.CheckRemote(r.Context(), in.URL, in.WorkBranch); err != nil {
+		if errors.Is(err, runner.ErrNoBranch) {
+			return nil, bad("the branch %q doesn't exist in this repository", in.WorkBranch)
+		}
 		return nil, bad("not a git repository the server can reach: %v", err)
 	}
 	isNew := in.ID == ""
@@ -901,7 +909,92 @@ func (a *API) saveSkill(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, bad("give the skill a name")
 	}
 	in.Slug = store.Slugify(in.Name, 48)
+	ids, err := a.skillWorkspaces(r, in.ID, in.WorkspaceIDs)
+	if err != nil {
+		return nil, err
+	}
+	in.WorkspaceIDs = ids
+	labels, err := a.skillLabels(r, in.ID, in.LabelIDs)
+	if err != nil {
+		return nil, err
+	}
+	in.LabelIDs = labels
 	return a.st.SaveSkill(r.Context(), in)
+}
+
+// skillLabels checks the labels a skill is tied to, like skillWorkspaces: only labels of
+// workspaces the person sees can be added; the others already there stay.
+func (a *API) skillLabels(r *http.Request, skillID string, want []string) ([]string, error) {
+	visible, err := a.st.ListWorkspacesFor(r.Context(), userOf(r))
+	if err != nil {
+		return nil, err
+	}
+	wsIDs := make([]string, len(visible))
+	for i, w := range visible {
+		wsIDs[i] = w.ID
+	}
+	var old []string
+	if skillID != "" {
+		if cur, err := a.st.Skill(r.Context(), skillID); err == nil {
+			old = cur.LabelIDs
+		}
+	}
+	sees, err := a.st.LabelsIn(r.Context(), wsIDs, append(append([]string{}, want...), old...))
+	if err != nil {
+		return nil, err
+	}
+	out, seen := []string{}, map[string]bool{}
+	for _, id := range want {
+		if seen[id] {
+			continue
+		}
+		if !sees[id] {
+			return nil, bad("label not found")
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	for _, id := range old {
+		if !sees[id] && !seen[id] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// skillWorkspaces checks the workspaces a skill is tied to: only ones the person sees can
+// be added; the ones they don't see that were already there stay as they were.
+func (a *API) skillWorkspaces(r *http.Request, skillID string, want []string) ([]string, error) {
+	visible, err := a.st.ListWorkspacesFor(r.Context(), userOf(r))
+	if err != nil {
+		return nil, err
+	}
+	sees := map[string]bool{}
+	for _, w := range visible {
+		sees[w.ID] = true
+	}
+	out := []string{}
+	seen := map[string]bool{}
+	for _, id := range want {
+		if seen[id] {
+			continue
+		}
+		if !sees[id] {
+			return nil, bad("workspace not found")
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if skillID != "" {
+		if cur, err := a.st.Skill(r.Context(), skillID); err == nil {
+			for _, id := range cur.WorkspaceIDs {
+				if !sees[id] && !seen[id] {
+					out = append(out, id)
+				}
+			}
+		}
+	}
+	return out, nil
 }
 
 func (a *API) deleteSkill(w http.ResponseWriter, r *http.Request) (any, error) {

@@ -70,6 +70,8 @@ type Repo struct {
 	URL         string    `db:"url" json:"url"`
 	CreatedAt   time.Time `db:"created_at" json:"createdAt"`
 	Description string    `db:"description" json:"description"`
+	// Where its issues start and merge (empty = the remote's default branch).
+	WorkBranch string `db:"work_branch" json:"workBranch"`
 }
 
 type Skill struct {
@@ -80,7 +82,11 @@ type Skill struct {
 	Content     string      `db:"content" json:"content"`
 	Files       []FileEntry `db:"files" json:"files"`
 	Always      bool        `db:"always" json:"always"`
-	UpdatedAt   time.Time   `db:"updated_at" json:"updatedAt"`
+	// Workspaces whose issues always get it (any agent).
+	WorkspaceIDs []string `db:"workspace_ids" json:"workspaceIds"`
+	// Issues with any of these labels get it.
+	LabelIDs  []string  `db:"label_ids" json:"labelIds"`
+	UpdatedAt time.Time `db:"updated_at" json:"updatedAt"`
 }
 
 type Agent struct {
@@ -313,9 +319,27 @@ func (s *Store) UpdateWorkspace(ctx context.Context, id, name string) (*Workspac
 	return one[Workspace](ctx, s, `update workspaces set name = $2 where id = $1 returning *`, id, name)
 }
 
+// DeleteWorkspace removes the workspace and everything in it (the foreign keys cascade:
+// issues, runs, logs, comments, repositories, labels, stages, rules, members), plus what
+// points to it without a foreign key: skills tied to it and each person's board layout.
 func (s *Store) DeleteWorkspace(ctx context.Context, id string) error {
-	_, err := s.DB.Exec(ctx, `delete from workspaces where id = $1`, id)
-	return err
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	for _, q := range []string{
+		`update skills set workspace_ids = array_remove(workspace_ids, $1::uuid) where $1::uuid = any(workspace_ids)`,
+		`update skills set label_ids = array(select unnest(label_ids) except select id from labels where workspace_id = $1::uuid)
+			where label_ids && array(select id from labels where workspace_id = $1::uuid)`,
+		`delete from user_prefs where key = 'board:' || $1`,
+		`delete from workspaces where id = $1`,
+	} {
+		if _, err := tx.Exec(ctx, q, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 // ---------- repositories ----------
@@ -330,13 +354,13 @@ func (s *Store) Repo(ctx context.Context, id string) (*Repo, error) {
 
 func (s *Store) SaveRepo(ctx context.Context, r Repo) (*Repo, error) {
 	if r.ID == "" {
-		return one[Repo](ctx, s, `insert into repos(workspace_id, name, url, description)
-			values($1,$2,$3,$4) returning *`,
-			r.WorkspaceID, r.Name, r.URL, r.Description)
+		return one[Repo](ctx, s, `insert into repos(workspace_id, name, url, description, work_branch)
+			values($1,$2,$3,$4,$5) returning *`,
+			r.WorkspaceID, r.Name, r.URL, r.Description, r.WorkBranch)
 	}
-	return one[Repo](ctx, s, `update repos set name=$2, url=$3, description=$4
+	return one[Repo](ctx, s, `update repos set name=$2, url=$3, description=$4, work_branch=$5
 		where id = $1 returning *`,
-		r.ID, r.Name, r.URL, r.Description)
+		r.ID, r.Name, r.URL, r.Description, r.WorkBranch)
 }
 
 func (s *Store) DeleteRepo(ctx context.Context, id string) error {
@@ -356,11 +380,11 @@ func (s *Store) Skill(ctx context.Context, id string) (*Skill, error) {
 
 func (s *Store) SaveSkill(ctx context.Context, k Skill) (*Skill, error) {
 	if k.ID == "" {
-		return one[Skill](ctx, s, `insert into skills(slug, name, description, content, files, always) values($1,$2,$3,$4,$5,$6) returning *`,
-			k.Slug, k.Name, k.Description, k.Content, nzf(k.Files), k.Always)
+		return one[Skill](ctx, s, `insert into skills(slug, name, description, content, files, always, workspace_ids, label_ids) values($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+			k.Slug, k.Name, k.Description, k.Content, nzf(k.Files), k.Always, nz(k.WorkspaceIDs), nz(k.LabelIDs))
 	}
-	return one[Skill](ctx, s, `update skills set slug=$2, name=$3, description=$4, content=$5, files=$6, always=$7, updated_at=now() where id=$1 returning *`,
-		k.ID, k.Slug, k.Name, k.Description, k.Content, nzf(k.Files), k.Always)
+	return one[Skill](ctx, s, `update skills set slug=$2, name=$3, description=$4, content=$5, files=$6, always=$7, workspace_ids=$8, label_ids=$9, updated_at=now() where id=$1 returning *`,
+		k.ID, k.Slug, k.Name, k.Description, k.Content, nzf(k.Files), k.Always, nz(k.WorkspaceIDs), nz(k.LabelIDs))
 }
 
 func (s *Store) DeleteSkill(ctx context.Context, id string) error {
@@ -368,9 +392,27 @@ func (s *Store) DeleteSkill(ctx context.Context, id string) error {
 	return err
 }
 
-// SkillsFor resolves a run's skills: `always` + the agent's + the issue's.
-func (s *Store) SkillsFor(ctx context.Context, ids []string) ([]Skill, error) {
-	return many[Skill](ctx, s, `select * from skills where always or id = any($1) order by name`, nz(ids))
+// SkillsFor resolves a run's skills: the agent's and the issue's (ids), the workspace's
+// and the ones of any of the issue's labels (and the old `always`).
+func (s *Store) SkillsFor(ctx context.Context, wsID string, labelIDs, ids []string) ([]Skill, error) {
+	return many[Skill](ctx, s, `select * from skills
+		where always or id = any($1) or $2::uuid = any(workspace_ids) or label_ids && $3::uuid[] order by name`, nz(ids), wsID, nz(labelIDs))
+}
+
+// LabelsIn returns which of the ids are labels of these workspaces.
+func (s *Store) LabelsIn(ctx context.Context, wsIDs, ids []string) (map[string]bool, error) {
+	rows, err := s.DB.Query(ctx, `select id::text from labels where workspace_id = any($1::uuid[]) and id = any($2::uuid[])`, nz(wsIDs), nz(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 // ---------- agentes ----------
@@ -430,6 +472,9 @@ func (s *Store) UpdateLabel(ctx context.Context, id, name, color string) (*Label
 
 func (s *Store) DeleteLabel(ctx context.Context, id string) error {
 	if _, err := s.DB.Exec(ctx, `update issues set label_ids = array_remove(label_ids, $1::uuid) where $1::uuid = any(label_ids)`, id); err != nil {
+		return err
+	}
+	if _, err := s.DB.Exec(ctx, `update skills set label_ids = array_remove(label_ids, $1::uuid) where $1::uuid = any(label_ids)`, id); err != nil {
 		return err
 	}
 	_, err := s.DB.Exec(ctx, `delete from labels where id = $1`, id)

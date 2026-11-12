@@ -45,8 +45,9 @@ export interface FileEntry { path: string; content: string }
 export interface Repo {
   id: string; workspaceId: string; name: string; url: string;
   description: string;
+  workBranch: string; // where its issues start and merge ('' = the remote's default)
 }
-export interface Skill { id: string; slug: string; name: string; description: string; content: string; files: FileEntry[]; always: boolean; updatedAt: string }
+export interface Skill { id: string; slug: string; name: string; description: string; content: string; files: FileEntry[]; always: boolean; workspaceIds: string[]; labelIds: string[]; updatedAt: string }
 export interface Agent {
   id: string; name: string; avatar: string; runtime: 'claude' | 'codex' | 'gemini'; model: string; effort: string;
   maxBudgetUsd: number | null; instructions: string; skillIds: string[]; extraArgs: string;
@@ -84,7 +85,7 @@ export interface Caps {
 export interface IssueDetail { issue: Issue; runs: Run[]; comments: Comment[]; caps: Caps }
 export interface RepoDiff { repoId: string; name: string; stat: string; patch: string; pending: boolean; merged: string }
 export interface RepoMerge { repoId: string; name: string; target: string; conflict?: boolean; files?: string[]; sha?: string }
-export interface GitInfo { version: string; home: string; sshKey?: string; credentialHelper: string; user: string; gh: boolean }
+export interface GitInfo { version: string; home: string; sshKey?: string; sshGitHub?: string; credentialHelper: string; user: string; gh: boolean }
 export interface Totals { costUsd: number; inputTokens: number; cachedTokens: number; outputTokens: number; seconds: number; runs: number; failed: number }
 export interface Analytics {
   totals: Totals;

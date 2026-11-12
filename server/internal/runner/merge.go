@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -310,8 +311,8 @@ func (r *Runner) Branches(ctx context.Context, repo *store.Repo) ([]string, erro
 }
 
 // CheckRemote confirms the URL is a git repository reachable with the server's
-// credentials (git ls-remote, without cloning).
-func (r *Runner) CheckRemote(ctx context.Context, url string) error {
+// credentials (git ls-remote, without cloning). branch, when given, must exist there.
+func (r *Runner) CheckRemote(ctx context.Context, url, branch string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	res := runGit(ctx, os.TempDir(), "ls-remote", "--heads", "--", url)
@@ -322,18 +323,51 @@ func (r *Runner) CheckRemote(ctx context.Context, url string) error {
 		}
 		return errors.New(msg)
 	}
+	if branch != "" && !strings.Contains(res.stdout+"\n", "refs/heads/"+branch+"\n") {
+		return ErrNoBranch
+	}
 	return nil
 }
+
+// ErrNoBranch: the repository's working branch doesn't exist on the remote.
+var ErrNoBranch = errors.New("that branch doesn't exist on the remote")
+
+var reGitHubUser = regexp.MustCompile(`Hi ([\w.-]+)! You've successfully authenticated`)
 
 // GitInfo shows how the server authenticates with git, for the settings screen.
 func (r *Runner) GitInfo(ctx context.Context) map[string]any {
 	home, _ := os.UserHomeDir()
 	info := map[string]any{"version": runCmd(ctx, "git", "--version").stdout, "home": home}
+	// The key SSH really uses for GitHub (it reads ~/.ssh/config: a key with any name, set
+	// per host), then the default names.
+	var keys []string
+	for _, l := range strings.Split(runCmd(ctx, "ssh", "-G", "github.com").stdout, "\n") {
+		if f, ok := strings.CutPrefix(strings.TrimSpace(l), "identityfile "); ok {
+			if strings.HasPrefix(f, "~/") {
+				f = filepath.Join(home, f[2:])
+			}
+			keys = append(keys, f+".pub")
+		}
+	}
 	for _, k := range []string{"id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub"} {
-		if b, err := os.ReadFile(filepath.Join(home, ".ssh", k)); err == nil {
+		keys = append(keys, filepath.Join(home, ".ssh", k))
+	}
+	for _, k := range keys {
+		if b, err := os.ReadFile(k); err == nil {
 			info["sshKey"] = strings.TrimSpace(string(b))
 			break
 		}
+	}
+	// A key loaded in the SSH agent counts too (it may have any file name).
+	if info["sshKey"] == nil {
+		if l := strings.SplitN(runCmd(ctx, "ssh-add", "-L").stdout, "\n", 2)[0]; strings.HasPrefix(l, "ssh-") || strings.HasPrefix(l, "ecdsa-") {
+			info["sshKey"] = strings.TrimSpace(l)
+		}
+	}
+	// The real test: GitHub answers "Hi <user>!" when SSH works, whatever the key is.
+	hello := runCmd(ctx, "ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new", "git@github.com")
+	if m := reGitHubUser.FindStringSubmatch(hello.stdout + hello.stderr); m != nil {
+		info["sshGitHub"] = m[1]
 	}
 	info["credentialHelper"] = runCmd(ctx, "git", "config", "--global", "credential.helper").stdout
 	info["user"] = runCmd(ctx, "git", "config", "--global", "user.name").stdout

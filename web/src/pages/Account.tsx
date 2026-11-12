@@ -47,14 +47,15 @@ function GitSection() {
   const { data } = useQuery({ queryKey: ['git'], queryFn: () => api.get<GitInfo>('/git'), staleTime: 60_000 });
   const toast = useToast();
   if (!data) return null;
-  const ok = !!(data.sshKey || data.credentialHelper || data.gh);
+  const ok = !!(data.sshGitHub || data.sshKey || data.credentialHelper || data.gh);
   return (
     <section>
       <SectionHeader title={t('Git access')} description={<>{t('Foreman clones and pushes with the git credentials of the user running the server (')}{data.home}{t('). When a repository is saved, it tests access with')} <code>{t('git ls-remote')}</code>.</>} />
       <div className="surface space-y-3 p-4 sm:p-5">
         <div className="flex items-center gap-2">{ok ? <CheckCircle2 className="size-4 text-emerald-400" /> : <XCircle className="size-4 text-amber-400" />}<span>{data.version}</span></div>
         <div className="grid gap-1 text-xs text-dim">
-          <div>{t('SSH key:')} {data.sshKey ? <span className="text-emerald-400">{t('found')}</span> : <span className="text-mute">{t('none in ~/.ssh')}</span>}</div>
+          <div>{t('SSH on GitHub:')} {data.sshGitHub ? <span className="text-emerald-400">{t('works, as {0}', data.sshGitHub)}</span> : <span className="text-mute">{t('not working')}</span>}</div>
+          <div>{t('SSH key:')} {data.sshKey ? <span className="text-emerald-400">{t('found')}</span> : <span className="text-mute">{t('none in ~/.ssh or in the SSH agent')}</span>}</div>
           <div>{t('Credential helper (HTTPS):')} {data.credentialHelper ? <span className="font-mono text-emerald-400">{data.credentialHelper}</span> : <span className="text-mute">{t('not configured')}</span>}</div>
           <div>{t('GitHub CLI (gh):')} {data.gh ? <span className="text-emerald-400">{t('authenticated')}</span> : <span className="text-mute">{t('not authenticated')}</span>}</div>
         </div>

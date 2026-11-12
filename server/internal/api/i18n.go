@@ -47,6 +47,10 @@ func tr(ctx context.Context, format string, args ...any) string {
 }
 
 var ptMsgs = map[string]string{
+	"label not found":     "label não encontrada",
+	"invalid branch name": "nome de branch inválido",
+	"the branch %q doesn't exist in this repository": "a branch %q não existe neste repositório",
+	"workspace not found":                            "workspace não encontrado",
 	"enter the Gmail address that sends the e-mails": "informe o endereço do Gmail que envia os e-mails",
 	"enter the Gmail app password":                   "informe a senha de app do Gmail",
 	"Gmail didn't accept the address and app password: create an app password (not your normal password) with two-step verification on": "o Gmail não aceitou o endereço e a senha de app: crie uma senha de app (não a sua senha normal), com a verificação em duas etapas ligada",
@@ -222,10 +226,10 @@ var ptMsgs = map[string]string{
 	"the assignee":    "o responsável",
 	"the description": "a descrição",
 	"the label %s will be created in the destination": "a label %s será criada no destino",
-	"the labels":                         "as labels",
-	"the Foreman owner can't be removed": "o dono do Foreman não pode ser removido",
-	"the order":                          "a ordem",
-	"the password needs at least 8 characters":            "a senha precisa de pelo menos 8 caracteres",
+	"the labels":                               "as labels",
+	"the Foreman owner can't be removed":       "o dono do Foreman não pode ser removido",
+	"the order":                                "a ordem",
+	"the password needs at least 8 characters": "a senha precisa de pelo menos 8 caracteres",
 	"the preference must be a JSON object of up to 16 KB": "a preferência precisa ser um objeto JSON de até 16 KB",
 	"the priority":             "a prioridade",
 	"the README":               "o README",

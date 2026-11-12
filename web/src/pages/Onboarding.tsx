@@ -25,6 +25,9 @@ export function CreateWorkspaceForm({ onDone }: { onDone: (ws: Workspace) => voi
     setBusy(true);
     try {
       const ws = await api.post<Workspace>('/workspaces', { name, key: key || suggestKey(name) });
+      // In the list before navigating: otherwise the address of the new workspace isn't
+      // known yet and the screen falls back to the last one.
+      qc.setQueryData<Workspace[]>(['workspaces'], (old) => [...(old ?? []).filter((w) => w.id !== ws.id), ws]);
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       onDone(ws);
     } catch (err) {

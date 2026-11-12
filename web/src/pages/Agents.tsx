@@ -62,7 +62,7 @@ export function AgentsPage() {
         <PageHeader
           icon={Bot}
           title={t('Agents')}
-          description={t('Each agent is a preset (runtime, model, instructions and a bundle of skills) shared by every workspace. Same model, different roles: developer, reviewer, tester. Every run starts in a clean chat.')}
+          description={t('Each agent is a runtime and a model from the server, shared by every workspace. Role, style and rules go in Skills, linked to the agent. Every run starts in a clean chat.')}
           actions={<>
             {(canCreate || canUpdate) && <Button onClick={checkAll} loading={checking}><Plug className="size-4" /> {checking ? t('Testing…') : t('Test all')}</Button>}
             {canCreate && <Button variant="primary" onClick={create}><Plus className="size-4" /> {t('New agent')}</Button>}
@@ -98,7 +98,6 @@ export function AgentsPage() {
                       <span>{warning}. {canUpdate && <button onClick={() => setEditing(a)} className="font-medium underline-offset-2 hover:underline">{t('Pick another')}</button>}</span>
                     </div>
                   )}
-                  <p className="mt-3 line-clamp-2 min-h-[2.75em] text-[13px] leading-snug text-dim">{a.instructions || <span className="text-mute">{t('No custom instructions.')}</span>}</p>
                   <div className="mb-3 mt-3 flex flex-wrap gap-1.5 empty:hidden">
                     {a.effort && <span className="badge"><Gauge className="size-3" /> {a.effort}</span>}
                     {a.maxBudgetUsd ? <span className="badge"><Wallet className="size-3" /> {t('up to $')}{a.maxBudgetUsd}</span> : null}
@@ -218,9 +217,6 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
             <input className="field-input" type="number" min="0" step="0.5" disabled={a.runtime !== 'claude'} value={a.maxBudgetUsd ?? ''} onChange={(e) => set({ maxBudgetUsd: e.target.value === '' ? null : Number(e.target.value) })} placeholder={t('no cap')} />
           </Field>
         </div>
-        <Field label={t('Instructions')} hint={t('role, style and rules; sent as the system prompt')}>
-          <textarea className="field-input" rows={6} value={a.instructions ?? ''} onChange={(e) => set({ instructions: e.target.value })} placeholder={t('You are a senior developer. Small, focused changes, follow the code style, run the tests…')} />
-        </Field>
         <Field label={t('Agent skills')} hint={t('{0} in the bundle; sent on every run of this agent', skillIds.length + skills.filter((x) => x.always && !skillIds.includes(x.id)).length)}>
           <div className="flex flex-wrap gap-1.5">
             {skills.map((s) => {
@@ -297,9 +293,8 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
   const models = rt?.models ?? [];
   const current = models.find((m) => m.id === value);
   const known = (!value || !!current) && current?.available !== false && rt?.connected !== false;
-  // Only what answered (or wasn't tested yet) is offered; what this account can't use
-  // goes to the end, greyed out, with the reason.
-  const unavailable = rt?.connected === false ? [] : models.filter((m) => m.available === false);
+  // Like /model in each CLI: only what this server's account can use (it answered the
+  // test, or was only overloaded at the time). Nothing else is listed.
   // Reads the CLIs' catalog again and tests every model again.
   const refresh = async () => {
     setRefreshing(true);
@@ -311,7 +306,7 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
     }
   };
   const groups: [string, string][] = runtime === 'claude'
-    ? [['alias', t('Always the newest version')], ['model', t('Pinned versions')], ['used', t('Pinned versions already used here')]]
+    ? [['alias', t('Claude models')]]
     : runtime === 'gemini'
       ? [['alias', t('Automatic')], ['model', t('Gemini models')]]
       : [['model', t('Codex models')]];
@@ -342,8 +337,7 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
     >
       {(close) => (
         <div>
-          <ModelRow selected={!value} title={t('CLI default')} disabled={rt?.defaultOk === false && !!value}
-            desc={rt?.defaultOk === false ? t('Doesn\'t work with this account: {0}', rt.defaultError ?? '') : t('Whatever is configured in the server\'s CLI')} onClick={() => { onChange(''); close(); }} />
+          {rt?.defaultOk !== false && <ModelRow selected={!value} title={t('CLI default')} desc={t('Whatever is configured in the server\'s CLI')} onClick={() => { onChange(''); close(); }} />}
           {!rt?.installed && <div className="px-2.5 py-2 text-xs text-amber-300">{rt?.error ?? t('Loading catalog…')}</div>}
           {rt?.installed && rt.connected === false && (
             <div className="m-1 rounded-lg bg-red-500/[0.08] px-2.5 py-2 text-xs leading-snug text-red-300 [overflow-wrap:anywhere]">
@@ -351,26 +345,23 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
               {rt.checkError && <div className="mt-0.5 opacity-90">{rt.checkError}</div>}
             </div>
           )}
-          {rt?.checking && <div className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-mute"><RefreshCw className="size-3 animate-spin" /> {t('Testing which models this account can use…')}</div>}
+          {rt?.checking && <div className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-mute"><RefreshCw className="size-3 animate-spin" /> {t('Checking which models your plan has…')}</div>}
+          {!rt?.checking && rt?.connected !== false && !models.some((m) => m.available === true || m.busy) && rt?.installed && (
+            <div className="px-2.5 py-2 text-xs text-mute">{t('No model tested yet: use “Refresh and test”.')}</div>
+          )}
           {rt?.connected !== false && groups.map(([g, title]) => {
-            const list = models.filter((m) => m.group === g && m.available !== false);
+            const list = models.filter((m) => m.group === g && (m.available === true || m.busy));
             if (!list.length) return null;
             return (
               <div key={g} className="mt-1 border-t border-line pt-1">
                 <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-mute">{g === 'alias' && <Sparkles className="size-3 text-accent" />}{title}</div>
                 {list.map((m) => (
                   <ModelRow key={m.id} selected={m.id === value} title={m.label} id={m.id !== m.label ? m.id : undefined}
-                    desc={m.busy ? t('Overloaded at the last test (temporary)') : m.description} warn={m.busy} onClick={() => { onChange(m.id); close(); }} />
+                    desc={m.description} onClick={() => { onChange(m.id); close(); }} />
                 ))}
               </div>
             );
           })}
-          {unavailable.length > 0 && (
-            <div className="mt-1 border-t border-line pt-1">
-              <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-mute">{t('Not available on this account ({0})', unavailable.length)}</div>
-              {unavailable.map((m) => <ModelRow key={m.id} disabled selected={m.id === value} title={m.label} id={m.id !== m.label ? m.id : undefined} desc={m.problem} onClick={() => {}} />)}
-            </div>
-          )}
           <div className="mt-1 flex items-center gap-2 border-t border-line px-2.5 pb-1 pt-2 text-[11px] text-mute">
             <span className="min-w-0 flex-1 truncate" title={rt?.source}>{rt ? t('Read from {0} · {1}', rt.source, timeAgo(rt.fetchedAt)) : ''}</span>
             <button type="button" onClick={refresh} disabled={refreshing} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-dim transition hover:bg-hover hover:text-fg">

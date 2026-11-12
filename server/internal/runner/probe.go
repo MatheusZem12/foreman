@@ -33,16 +33,16 @@ const (
 
 // Probe is one test: a runtime with a model ("" = the CLI's default model).
 type Probe struct {
-	Runtime string    `json:"runtime"`
-	Model   string    `json:"model"`
-	OK      bool      `json:"ok"`
-	Error   string    `json:"error,omitempty"`
+	Runtime string `json:"runtime"`
+	Model   string `json:"model"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
 	// Busy: the model exists for this account but was overloaded or rate-limited at the
 	// time (503, 429, "high demand"): it stays selectable, with a warning.
-	Busy bool `json:"busy,omitempty"`
-	Reply   string    `json:"reply,omitempty"`
-	Ms      int64     `json:"ms"`
-	At      time.Time `json:"at"`
+	Busy  bool      `json:"busy,omitempty"`
+	Reply string    `json:"reply,omitempty"`
+	Ms    int64     `json:"ms"`
+	At    time.Time `json:"at"`
 }
 
 type probeState struct {
@@ -158,9 +158,18 @@ func (r *Runner) checkRuntime(ctx context.Context, runtime string) {
 			models = c.Models
 		}
 	}
+	// A few at a time: each answer takes seconds, and the screen fills in as they arrive.
+	sem := make(chan struct{}, 3)
+	var wg sync.WaitGroup
 	for _, m := range models {
-		r.probeSave(ctx, r.probe(ctx, runtime, m.ID)) // one at a time: the screen fills in as it goes
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(id string) {
+			defer func() { <-sem; wg.Done() }()
+			r.probeSave(ctx, r.probe(ctx, runtime, id))
+		}(m.ID)
 	}
+	wg.Wait()
 }
 
 // RuntimeWorks: the runtime answered with this account, with its default model or with
@@ -288,7 +297,9 @@ func jsonMessage(s string) string {
 var reBusy = regexp.MustCompile(`(?i)\b(503|429|529)\b|high demand|overloaded|rate.?limit|resource.?exhausted|try again later|temporarily|capacity`)
 
 // busy: an error that says "not now" rather than "not for you".
-func busy(err string) bool { return reBusy.MatchString(err) && !strings.Contains(strings.ToLower(err), "not supported") }
+func busy(err string) bool {
+	return reBusy.MatchString(err) && !strings.Contains(strings.ToLower(err), "not supported")
+}
 
 func errText(err error) string {
 	if err == nil {
@@ -299,7 +310,9 @@ func errText(err error) string {
 
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
-func cleanErr(s string) string { return strings.TrimSpace(spaces.ReplaceAllString(ansi.ReplaceAllString(s, ""), " ")) }
+func cleanErr(s string) string {
+	return strings.TrimSpace(spaces.ReplaceAllString(ansi.ReplaceAllString(s, ""), " "))
+}
 
 func probeLastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(ansi.ReplaceAllString(s, "")), "\n")
