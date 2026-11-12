@@ -119,13 +119,11 @@ When someone creates an issue, everyone in the workspace gets an e-mail.
 - **Recipients:** the linked members and the admins. Left out: whoever created the issue and whoever turned e-mail off under *My account*.
 - **One message per issue:** the recipients go in Bcc.
 - **One thread per workspace:** the subject is always `[Foreman] <workspace name>` and every message points to the same root (`In-Reply-To`/`References`). Gmail, Outlook and the like group everything into one thread per workspace.
-- **Settings in the database:** SMTP lives in the `settings` table, not in `.env`. The admin configures it under *Server → Notification email*:
-  - server, port, security, user and password, sender and the Foreman address used in links;
-  - shortcuts for Gmail and Outlook;
-  - a **Send me a test** button.
-- **Password:** it stays in the database and never goes back to the browser.
+- **Through Gmail:** one Gmail (or Google Workspace) account sends every notification. The admin sets it under *Server → Notification email* with just the **Gmail address** and an **app password** (two-step verification on, then [create one](https://myaccount.google.com/apppasswords)). Server, port and encryption are filled in by Foreman.
+- **Who it's from:** Gmail always sends as that account, so each e-mail shows "Ana via Foreman" and its Reply-To is the person who caused it: replying goes straight to them.
+- **Password:** it stays in the database (the `settings` table) and never goes back to the browser.
+- **Test sending:** a *Send me a test* button.
 - **On and off:** it starts off, and while off nobody gets anything. When the admin turns it on, it notifies everyone who hasn't turned it off in their own profile.
-- **Gmail:** use an [app password](https://myaccount.google.com/apppasswords).
 
 ## Language and theme
 

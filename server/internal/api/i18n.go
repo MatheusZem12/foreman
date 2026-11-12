@@ -47,6 +47,9 @@ func tr(ctx context.Context, format string, args ...any) string {
 }
 
 var ptMsgs = map[string]string{
+	"enter the Gmail address that sends the e-mails": "informe o endereço do Gmail que envia os e-mails",
+	"enter the Gmail app password":                   "informe a senha de app do Gmail",
+	"Gmail didn't accept the address and app password: create an app password (not your normal password) with two-step verification on": "o Gmail não aceitou o endereço e a senha de app: crie uma senha de app (não a sua senha normal), com a verificação em duas etapas ligada",
 	"%s requires %d approval(s) first (it has %d)":                                    "%s exige %d aprovação(ões) antes (tem %d)",
 	"this rule points to a stage that no longer exists":                               "esta regra aponta para uma etapa que não existe mais",
 	"the stage this approval leads to no longer exists: fix the rule in the workflow": "a etapa de destino desta aprovação não existe mais: corrija a regra no fluxo",

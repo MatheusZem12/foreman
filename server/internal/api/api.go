@@ -1513,16 +1513,15 @@ func (a *API) emailForm(r *http.Request) (notify.Settings, error) {
 	if err := decode(r, &in); err != nil {
 		return in, err
 	}
-	in.Host, in.From, in.Username = strings.TrimSpace(in.Host), strings.TrimSpace(in.From), strings.TrimSpace(in.Username)
 	in.AppURL = strings.TrimRight(strings.TrimSpace(in.AppURL), "/")
-	if in.Password == "" {
+	if strings.TrimSpace(in.Password) == "" {
 		cur, err := a.ntf.Settings(r.Context())
 		if err != nil {
 			return in, err
 		}
 		in.Password = cur.Password
 	}
-	return in, nil
+	return in.Gmail(), nil
 }
 
 func (a *API) saveEmailSettings(w http.ResponseWriter, r *http.Request) (any, error) {
