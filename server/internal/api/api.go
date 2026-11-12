@@ -161,6 +161,8 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.With(a.can("analytics.global")).Get("/analytics", a.h(a.globalAnalytics))
 			r.Get("/runtimes", a.h(a.runtimes))
 			r.Get("/runtimes/models", a.h(a.runtimeModels))
+			r.With(a.can("agent.create", "agent.update", "settings.manage")).Post("/runtimes/check", a.h(a.checkRuntimes))
+			r.With(a.can("agent.view", "agent.create", "agent.update", "settings.manage")).Post("/agents/{id}/check", a.h(a.probeAgent))
 		})
 	})
 	r.Handle("/*", static)
@@ -871,7 +873,7 @@ func (a *API) saveAgent(w http.ResponseWriter, r *http.Request) (any, error) {
 	if in.Name == "" {
 		return nil, bad("give the agent a name")
 	}
-	if in.Runtime != "codex" {
+	if in.Runtime != "codex" && in.Runtime != "gemini" {
 		in.Runtime = "claude"
 	}
 	if in.Avatar == "" {
@@ -1414,6 +1416,22 @@ func (a *API) runtimeModels(w http.ResponseWriter, r *http.Request) (any, error)
 	u := userOf(r)
 	force := r.URL.Query().Get("refresh") == "1" && (u.Can("agent.create") || u.Can("agent.update"))
 	return a.run.Models(r.Context(), force), nil
+}
+
+// checkRuntimes tests every runtime and model again (in the background; the catalog says
+// "checking" until it ends).
+func (a *API) checkRuntimes(w http.ResponseWriter, r *http.Request) (any, error) {
+	a.run.CheckAll(true)
+	return a.run.Models(r.Context(), false), nil
+}
+
+// probeAgent tests the agent's runtime and model right now and answers with the result.
+func (a *API) probeAgent(w http.ResponseWriter, r *http.Request) (any, error) {
+	ag, err := a.st.Agent(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		return nil, err
+	}
+	return a.run.ProbeAgent(r.Context(), ag.Runtime, ag.Model), nil
 }
 
 func (a *API) runtimes(w http.ResponseWriter, r *http.Request) (any, error) {

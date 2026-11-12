@@ -26,7 +26,7 @@ services:
       DATABASE_URL: postgres://foreman:${POSTGRES_PASSWORD:-foreman}@db:5432/foreman?sslmode=disable
       FOREMAN_MAX_PARALLEL: ${FOREMAN_MAX_PARALLEL:-3}
       FOREMAN_SECURE_COOKIE: ${FOREMAN_SECURE_COOKIE:-false}
-    # Chaves opcionais (ANTHROPIC_API_KEY, OPENAI_API_KEY) e git (GIT_*) ficam no .env.
+    # Chaves opcionais (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) e git (GIT_*) ficam no .env.
     env_file:
       - path: .env
         required: false

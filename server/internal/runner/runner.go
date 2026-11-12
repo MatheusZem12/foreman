@@ -42,6 +42,7 @@ type Runner struct {
 	mergeLocks sync.Map // issueID → *sync.Mutex
 
 	models modelCache
+	probes probeState
 
 	sandboxOnce sync.Once
 	sandboxOK   bool
@@ -381,6 +382,9 @@ func (r *Runner) agentCommand(a *store.Agent, wt, system string, addDirs, writab
 		}
 		return agentCmd{bin: r.cfg.CodexBin, args: args, preamble: pre}
 	}
+	if a.Runtime == "gemini" {
+		return r.geminiCommand(a, wt, system, addDirs, writable, sandbox)
+	}
 	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
 	if a.Model != "" {
 		args = append(args, "--model", a.Model)
@@ -408,6 +412,42 @@ func (r *Runner) agentCommand(a *store.Agent, wt, system string, addDirs, writab
 		args = append(args, "--dangerously-skip-permissions")
 	}
 	return agentCmd{bin: r.cfg.ClaudeBin, args: append(args, splitArgs(a.ExtraArgs)...)}
+}
+
+// Gemini CLI has no sandbox of its own that fits here (its -s runs a container), so the
+// process itself goes inside bubblewrap: the whole disk read-only, except the issue's
+// folder, Foreman's cache, a private /tmp and ~/.gemini (its sign-in and sessions). The
+// prompt arrives on stdin; Gemini has no "append system prompt", so the instructions go
+// in front of it, as with Codex.
+func (r *Runner) geminiCommand(a *store.Agent, wt, system string, addDirs, writable []string, sandbox bool) agentCmd {
+	args := []string{"--output-format", "stream-json", "--approval-mode", "yolo", "--skip-trust",
+		"-p", "Carry out the task described above."}
+	if a.Model != "" {
+		args = append(args, "--model", a.Model)
+	}
+	for _, d := range append(addDirs, writable...) {
+		if d != wt {
+			args = append(args, "--include-directories", d)
+		}
+	}
+	args = append(args, splitArgs(a.ExtraArgs)...)
+	pre := ""
+	if system != "" {
+		pre = system + "\n\n---\n\n"
+	}
+	if !sandbox {
+		return agentCmd{bin: r.cfg.GeminiBin, args: args, preamble: pre}
+	}
+	home, _ := os.UserHomeDir()
+	gdir := filepath.Join(home, ".gemini")
+	os.MkdirAll(gdir, 0o700)
+	bw := []string{"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--setenv", "TMPDIR", "/tmp",
+		"--bind", gdir, gdir, "--die-with-parent"}
+	for _, d := range append([]string{wt}, writable...) {
+		bw = append(bw, "--bind", d, d)
+	}
+	bw = append(bw, "--chdir", wt, "--", r.cfg.GeminiBin)
+	return agentCmd{bin: "bwrap", args: append(bw, args...), preamble: pre}
 }
 
 type outcome struct {
@@ -489,8 +529,8 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 		sc.Buffer(make([]byte, 64*1024), 4<<20)
 		for sc.Scan() {
 			t := strings.TrimSpace(sc.Text())
-			// Codex writes progress to stderr; it is only worth showing what looks like an error.
-			if t != "" && (run.Runtime != "codex" || strings.Contains(strings.ToLower(t), "error")) {
+			// Codex and Gemini write progress to stderr; it is only worth showing what looks like an error.
+			if t != "" && (run.Runtime == "claude" || run.Runtime == "" || strings.Contains(strings.ToLower(t), "error")) {
 				r.logEvent(ctx, run, "error", clip(t, 800))
 			}
 		}
@@ -498,18 +538,19 @@ func (r *Runner) spawn(ctx context.Context, run *store.Run, ac agentCmd, input, 
 	}()
 
 	var o outcome
+	parse, end := parserFor(run.Runtime)
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 256*1024), 32<<20)
-	for sc.Scan() {
-		line := sc.Bytes()
-		if len(strings.TrimSpace(string(line))) == 0 {
-			continue
-		}
+	for more := true; more; {
 		var entries []Entry
-		if run.Runtime == "codex" {
-			entries = normalizeCodex(line)
+		if more = sc.Scan(); more {
+			line := sc.Bytes()
+			if len(strings.TrimSpace(string(line))) == 0 {
+				continue
+			}
+			entries = parse(line)
 		} else {
-			entries = normalizeClaude(line)
+			entries = end()
 		}
 		for _, e := range entries {
 			e := e

@@ -202,3 +202,94 @@ func TestClaudeCommandWithoutSandbox(t *testing.T) {
 		t.Errorf("without bwrap, the isolation is the container's: %v", ac.args)
 	}
 }
+
+// Gemini sends the assistant's text in deltas: they become one log line per message,
+// written out when a tool starts or the run ends, and the result carries the tokens.
+func TestGeminiParser(t *testing.T) {
+	parse, end := parserFor("gemini")
+	var got []Entry
+	for _, l := range []string{
+		`{"type":"init","session_id":"s1","model":"gemini-3.5-flash"}`,
+		`{"type":"message","role":"user","content":"do it"}`,
+		`{"type":"message","role":"assistant","content":"Let me ","delta":true}`,
+		`{"type":"message","role":"assistant","content":"look.","delta":true}`,
+		`{"type":"tool_use","tool_name":"run_shell_command","tool_id":"t1","parameters":{"command":"ls"}}`,
+		`{"type":"tool_result","tool_id":"t1","status":"success","output":"a.txt"}`,
+		`{"type":"message","role":"assistant","content":"Done.","delta":true}`,
+		`{"type":"result","status":"success","stats":{"input_tokens":100,"output_tokens":20,"cached":30}}`,
+	} {
+		got = append(got, parse([]byte(l))...)
+	}
+	got = append(got, end()...)
+	kinds := []string{}
+	for _, e := range got {
+		kinds = append(kinds, e.Kind)
+	}
+	want := "info text tool out text result"
+	if strings.Join(kinds, " ") != want {
+		t.Fatalf("kinds = %v, want %s", kinds, want)
+	}
+	if got[1].Body != "Let me look." || got[2].Body != "run_shell_command  ls" {
+		t.Fatalf("bodies: %q, %q", got[1].Body, got[2].Body)
+	}
+	r := got[5]
+	if r.In != 70 || r.Cached != 30 || r.Out != 20 || r.IsError || r.Final != "Let me look.Done." {
+		t.Fatalf("result = %+v", r)
+	}
+	// Text still pending when the output ends is not lost.
+	parse, end = parserFor("gemini")
+	parse([]byte(`{"type":"message","role":"assistant","content":"partial","delta":true}`))
+	if e := end(); len(e) != 1 || e[0].Body != "partial" {
+		t.Fatalf("end() = %+v", e)
+	}
+	// A failed run.
+	parse, _ = parserFor("gemini")
+	if e := parse([]byte(`{"type":"result","status":"error","error":{"type":"x","message":"quota"}}`)); len(e) != 1 || !e[0].IsError || e[0].Body != "Failed: quota" {
+		t.Fatalf("error result = %+v", e)
+	}
+}
+
+// The connection test reads each CLI's answer: a reply is OK; an error says why.
+func TestProbeParsers(t *testing.T) {
+	if r, p := parseClaudeProbe([]byte(`{"type":"result","is_error":false,"result":"OK"}`)); r != "OK" || p != "" {
+		t.Fatalf("claude ok: %q %q", r, p)
+	}
+	if _, p := parseClaudeProbe([]byte(`{"type":"result","is_error":true,"result":"Claude Opus is not available with the Claude Pro plan"}`)); !strings.Contains(p, "not available") {
+		t.Fatalf("claude error: %q", p)
+	}
+	codexOK := `{"type":"thread.started","thread_id":"x"}
+{"type":"item.completed","item":{"type":"agent_message","text":"OK"}}
+{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}`
+	if r, p := parseCodexProbe([]byte(codexOK)); r != "OK" || p != "" {
+		t.Fatalf("codex ok: %q %q", r, p)
+	}
+	codexNoPlan := `{"type":"thread.started","thread_id":"x"}
+{"type":"error","message":"You've hit your usage limit. Upgrade to Plus to continue."}
+{"type":"turn.failed","error":{"message":"You've hit your usage limit. Upgrade to Plus to continue."}}`
+	if r, p := parseCodexProbe([]byte(codexNoPlan)); r != "" || !strings.Contains(p, "Upgrade") {
+		t.Fatalf("codex no plan: %q %q", r, p)
+	}
+	if r, p := parseGeminiProbe([]byte("Loaded cached credentials.\n{\n  \"response\": \"OK\",\n  \"stats\": {}\n}")); r != "OK" || p != "" {
+		t.Fatalf("gemini ok: %q %q", r, p)
+	}
+	if _, p := parseGeminiProbe([]byte(`{"error":{"type":"Error","message":"Model not found: gemini-9"}}`)); !strings.Contains(p, "not found") {
+		t.Fatalf("gemini error: %q", p)
+	}
+	// An error printed as indented JSON, over several lines.
+	if m := jsonMessage("Error when talking to Gemini API\n{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"Quota exceeded for \\\"gemini-2.5-pro\\\"\"\n  }\n}"); m != `Quota exceeded for "gemini-2.5-pro"` {
+		t.Fatalf("jsonMessage = %q", m)
+	}
+	if m := jsonMessage(`{"error":{"code":503,"message":"high demand"}} {"message":""}`); m != "high demand" {
+		t.Fatalf("an empty message afterwards must be skipped: %q", m)
+	}
+	for _, e := range []string{"no answer in 2 minutes: { \"error\": { \"code\": 503, \"message\": \"This model is currently experiencing high demand.\" } }", "429 Too Many Requests", "Overloaded"} {
+		if !busy(e) {
+			t.Fatalf("should be busy: %q", e)
+		}
+	}
+	for _, e := range []string{"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.", "This model models/gemini-2.5-pro is no longer available to new users."} {
+		if busy(e) {
+			t.Fatalf("should not be busy: %q", e)
+		}
+	}
+}

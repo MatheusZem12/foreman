@@ -1,6 +1,6 @@
 # Foreman
 
-A self-hosted issue tracker whose issues are carried out by coding agents (Claude Code and Codex). You create the issue, assign an agent, and it moves on its own:
+A self-hosted issue tracker whose issues are carried out by coding agents (Claude Code, Codex and Gemini CLI). You create the issue, assign an agent, and it moves on its own:
 
 **To do → In progress → In review → merge**
 
@@ -8,7 +8,7 @@ Each run works in an isolated worktree on the server, on its own branch `fm/<key
 
 The idea is little configuration and more function. There are only three things to configure: **agents**, **skills** and each workspace's **repositories**. Who may configure them is set by role. Everything else is creating, ordering and following issues, in the browser, on a tablet or on a phone.
 
-**It runs only on your machine.** There is no Foreman cloud and no telemetry. The agents are the `claude` and `codex` you are already signed in to, git uses your credentials and the server listens only on `localhost`. Reaching it from outside is your call: VPN, tunnel or proxy (see [Access from outside](#access-from-outside)). The `/about` page explains everything with screenshots.
+**It runs only on your machine.** There is no Foreman cloud and no telemetry. The agents are the `claude`, `codex` and `gemini` you are already signed in to, git uses your credentials and the server listens only on `localhost`. Reaching it from outside is your call: VPN, tunnel or proxy (see [Access from outside](#access-from-outside)). The `/about` page explains everything with screenshots.
 
 ## Run it on your machine
 
@@ -16,7 +16,7 @@ The idea is little configuration and more function. There are only three things 
 ./run-local.sh     # Postgres in Docker + a native server with your claude/codex/git
 ```
 
-Open `http://localhost:8700`. The first time, the script builds the front end (npm) and the server (local Go or, without Go, in a container). Requirements: Docker, git, Node and `claude` and/or `codex` on the PATH.
+Open `http://localhost:8700`. The first time, the script builds the front end (npm) and the server (local Go or, without Go, in a container). Requirements: Docker, git, Node and `claude`, `codex` and/or `gemini` on the PATH.
 
 - `./run-local.sh --build`: forces a rebuild.
 - `./run-local.sh --stop`: stops Postgres.
@@ -26,7 +26,7 @@ Open `http://localhost:8700`. The first time, the script builds the front end (n
 
 | | |
 |---|---|
-| **Agents as presets** | You create them once (runtime, model, effort, a US$ cap, instructions and a bundle of indexed skills) and they apply to every workspace. You can have several on the same model with different jobs. On each issue or adjustment you pick (and switch) the agent. |
+| **Agents as presets** | You create them once (runtime — Claude Code, Codex or Gemini CLI —, model, effort, a US$ cap, instructions and a bundle of indexed skills) and they apply to every workspace. You can have several on the same model with different jobs. On each issue or adjustment you pick (and switch) the agent. |
 | **Several repositories** | A workspace has as many repositories as you like. Each issue gets a worktree of each one (or only of the chosen ones) and the AI touches only the ones the request needs, guided by each repository's **description**. Only the changed ones get a branch, a push and a merge. |
 | **Clean chat + README** | Every request opens a fresh chat. Continuity comes from the **issue README**, which the agent rewrites when it finishes (goal, what was done per request, files, decisions, how to test, open items), from the **request history** Foreman records (when, agent, request, outcome, commits) and from the commit log. Both go as attachments to the next chat and stay in the issue's README tab. If the agent doesn't write the README, the server generates one. |
 | **Declared outcome** | When it finishes, the AI writes to `$FOREMAN_STATUS` whether it is `done`, `waiting: <what it needs>` or `incomplete: <why>`. Done goes to *In review*; the others go to *Waiting for you*, with the question as a comment and a box to reply straight to the agent. |
@@ -138,7 +138,7 @@ When someone creates an issue, everyone in the workspace gets an e-mail.
 - **Go**: HTTP server, a run queue in Postgres (`FOR UPDATE SKIP LOCKED`, survives restarts), agent processes in their own group (cancelling kills the whole tree), git through the system binary. Everything becomes a single binary, with the front end embedded.
 - **PostgreSQL**: users, access roles, settings (e-mail), workspaces, per-issue repositories, repositories, agents, skills, issues, runs, log events and comments.
 - **React + TypeScript + Vite + Tailwind**: a responsive, installable SPA (PWA). TanStack Query for the cache, dnd-kit for dragging with mouse and touch.
-- **Docker**: the image ships `git`, `claude` and `codex`. The agents run as a regular user.
+- **Docker**: the image ships `git`, `claude`, `codex` and `gemini`. The agents run as a regular user.
 
 ```
 server/
@@ -173,9 +173,10 @@ The CLIs use the sign-in done inside the container. It is kept in the `home` vol
 ```bash
 docker compose exec foreman claude                      # run /login and follow the link
 docker compose exec foreman codex login --device-auth
+docker compose exec foreman gemini                      # sign in once, then /quit
 ```
 
-You can also use API keys: put `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` in `.env`. Under **Server** you can see whether both are installed, each one's version and how git is authenticated.
+You can also use API keys: put `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY` in `.env`. Under **Server** you can see whether they are installed, each one's version and how git is authenticated.
 
 ### Repository access
 
@@ -221,7 +222,7 @@ Put a reverse proxy (Caddy, nginx, Traefik) in front of port 8700 and set `FOREM
 | `FOREMAN_DATA` | `./data` (`/data` in Docker) | clones, worktrees, skills on disk |
 | `FOREMAN_MAX_PARALLEL` | `3` | simultaneous runs; the rest wait in the queue |
 | `FOREMAN_RUN_TIMEOUT` | `4h` | a run that goes over it is stopped and fails (a hung agent can't hold a slot forever) |
-| `CLAUDE_BIN` / `CODEX_BIN` | `claude` / `codex` | |
+| `CLAUDE_BIN` / `CODEX_BIN` / `GEMINI_BIN` | `claude` / `codex` / `gemini` | |
 | `FOREMAN_SECURE_COOKIE` | `false` | `true` behind HTTPS |
 
 ## Development

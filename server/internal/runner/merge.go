@@ -345,7 +345,7 @@ func (r *Runner) GitInfo(ctx context.Context) map[string]any {
 // Runtimes tells whether the CLIs are installed on the server (and their version).
 func (r *Runner) Runtimes(ctx context.Context) []map[string]any {
 	var out []map[string]any
-	for _, rt := range []struct{ name, bin string }{{"claude", r.cfg.ClaudeBin}, {"codex", r.cfg.CodexBin}} {
+	for _, rt := range []struct{ name, bin string }{{"claude", r.cfg.ClaudeBin}, {"codex", r.cfg.CodexBin}, {"gemini", r.cfg.GeminiBin}} {
 		res := runCmd(ctx, rt.bin, "--version")
 		out = append(out, map[string]any{"runtime": rt.name, "bin": rt.bin, "installed": res.ok, "version": firstNonEmpty(res.stdout, res.stderr), "sandbox": r.sandboxed()})
 	}
