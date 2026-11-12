@@ -162,7 +162,15 @@ await mem.mouse.move(b.x + 20, b.y + 60, { steps: 15 });
 await mem.waitForTimeout(300);
 await mem.mouse.up();
 check(await inColumn(mem, 'Blocked', 'Manual card', 5000), 'an allowed drag moves the card');
-check((await api(mem)('GET', `/issues/${m.issue.id}`)).issue.status === 'blocked', 'and the server agrees');
+// The move is saved in the background: give the request a moment to land.
+const agreed = await (async () => {
+  for (let i = 0; i < 40; i++) {
+    if ((await api(mem)('GET', `/issues/${m.issue.id}`)).issue.status === 'blocked') return true;
+    await mem.waitForTimeout(250);
+  }
+  return false;
+})();
+check(agreed, 'and the server agrees');
 
 // ---------- approving on the screen merges ----------
 await owner.bringToFront();
@@ -180,9 +188,9 @@ await owner.getByPlaceholder('Comment…').fill('please also [[WRITE:more.txt]]'
 await owner.getByText('Send to the agent').click();
 await owner.getByRole('button', { name: /^(Comment|Send)/ }).last().click();
 const reopened = await (async () => {
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 120; i++) { // up to 30 s: the run goes through the queue
     const x = await call('GET', '/issues/SHOP-1');
-    if (x.runs.length === 2 && !x.issue.activeRun) return x;
+    if (x.runs.length === 2 && !x.issue.activeRun && x.issue.status === 'in_review') return x;
     await owner.waitForTimeout(250);
   }
   return null;
