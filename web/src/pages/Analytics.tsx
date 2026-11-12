@@ -7,9 +7,9 @@ import {
 } from 'recharts';
 import { Activity, AlertTriangle, BarChart3, Bot, ChevronDown, Globe2, CheckCircle2, Clock, Coins, Cpu, Sparkles, Table2, Users, Zap } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Avatar, Chip, EmptyState, MenuItem, PageHeader, Popover, PriorityIcon, Spinner, StatusIcon } from '../components/ui';
+import { Avatar, Chip, EmptyState, MenuItem, PageHeader, PageLoader, Popover, PriorityIcon, Segmented, StatusIcon, Tabs } from '../components/ui';
 import { api } from '../lib/api';
-import { PRIORITIES, STATUSES, statusOf } from '../lib/constants';
+import { PRIORITIES, STATUSES, runtimeOf, statusOf } from '../lib/constants';
 import { compact, duration, money } from '../lib/format';
 import { useAgents, useCan, useMe, useMembers, useUsers } from '../lib/queries';
 import type { Agent, Analytics, StageKind, Totals } from '../lib/types';
@@ -36,26 +36,13 @@ const metricOf = (tt: Totals | undefined, m: Metric) =>
 const fmtMetric = (v: number, m: Metric) => (m === 'cost' ? money(v) : m === 'time' ? duration(v) : compact(v));
 const hours = (h: number) => (!h ? '—' : h < 1 ? t('{0} min', Math.round(h * 60)) : h < 48 ? `${h.toFixed(1)} h` : t('{0} days', (h / 24).toFixed(1)));
 
-function Segmented<T extends string>({ items, value, onChange }: { items: { id: T; label: string }[]; value: T; onChange: (v: T) => void }) {
-  return (
-    <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
-      {items.map((i) => (
-        <button key={i.id} onClick={() => onChange(i.id)}
-          className={clsx('rounded-md px-2.5 py-1 text-xs transition', value === i.id ? 'bg-white/10 text-fg shadow-sm' : 'text-mute hover:text-fg')}>
-          {i.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function Card({ title, subtitle, actions, children, className }: { title: string; subtitle?: string; actions?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <section className={clsx('surface flex flex-col p-4', className)}>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1">
+    <section className={clsx('surface flex min-w-0 flex-col p-4 sm:p-5', className)}>
+      <div className="mb-4 flex flex-wrap items-start gap-2">
+        <div className="min-w-0 flex-1 basis-48">
           <h2 className="font-medium">{title}</h2>
-          {subtitle && <p className="text-xs text-mute">{subtitle}</p>}
+          {subtitle && <p className="mt-0.5 text-xs leading-relaxed text-mute">{subtitle}</p>}
         </div>
         {actions}
       </div>
@@ -71,7 +58,7 @@ function Tip({ active, payload, label, format, labelFormat }: {
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-white/10 bg-panel/95 px-3 py-2 text-xs shadow-pop backdrop-blur">
+    <div className="rounded-lg border border-line bg-card px-3 py-2 text-xs shadow-pop">
       {label && <div className="mb-1 text-mute">{labelFormat ? labelFormat(label) : label}</div>}
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-2">
@@ -89,12 +76,12 @@ function Kpi({ icon: Icon, label, value, sub, spark, color = C1, className }: {
 }) {
   const id = `sp-${label.replace(/\W/g, '')}`;
   return (
-    <div className={clsx('surface relative overflow-hidden p-4', className)}>
-      <div className="flex items-center gap-2 text-xs text-mute"><Icon className="size-3.5" /> {label}</div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
+    <div className={clsx('surface relative min-w-0 overflow-hidden p-4', className)}>
+      <div className="flex items-center gap-1.5 text-xs text-mute"><Icon className="size-3.5 shrink-0" /> <span className="truncate">{label}</span></div>
+      <div className="mt-2 truncate text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
       {sub && <div className="relative z-10 mt-0.5 text-xs text-mute">{sub}</div>}
       {spark && spark.some(Boolean) && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 opacity-60">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-9 opacity-50">
           <ResponsiveContainer>
             <AreaChart data={spark.map((v, i) => ({ i, v }))} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
               <defs>
@@ -121,7 +108,7 @@ function RankRow({ left, value, share, sub }: { left: React.ReactNode; value: st
         <span className="font-medium tabular-nums">{value}</span>
       </div>
       <div className="mt-1.5 flex items-center gap-2">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/5">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
           <div className="h-full rounded-full" style={{ width: `${Math.max(2, share * 100)}%`, background: C1 }} />
         </div>
         {sub && <span className="w-28 shrink-0 text-right text-[11px] text-mute">{sub}</span>}
@@ -174,7 +161,7 @@ export function AnalyticsPage({ global }: { global?: boolean }) {
       d.setDate(d.getDate() - (Number(days) - 1 - k));
       const key = d.toISOString().slice(0, 10);
       const tt = by.get(key);
-      return { day: key, value: metricOf(tt, metric), cost: tt?.costUsd ?? 0, runs: tt?.runs ?? 0, tt };
+      return { day: key, value: metricOf(tt, metric), cost: tt?.costUsd ?? 0, runs: tt?.runs ?? 0, t: tt };
     });
   }, [data, days, metric]);
 
@@ -186,22 +173,15 @@ export function AnalyticsPage({ global }: { global?: boolean }) {
           title={global ? t('Overall Analytics') : t('Analytics')}
           description={global ? t('Every workspace you can access, combined.') : t('Cost, volume and pace of {0}\'s issues and agents.', ws.name)}
           actions={
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <PersonPicker global={global} team={team} value={person} onChange={setPerson} meId={me?.id} />
               <Segmented items={[{ id: '7', label: '7d' }, { id: '30', label: '30d' }, { id: '90', label: '90d' }, { id: '365', label: t('1 year') }]} value={days} onChange={setDays} />
             </div>
           }
         />
-        <div className="mb-5 flex gap-1 overflow-x-auto border-b border-line">
-          {TABS.map((x) => (
-            <button key={x.id} onClick={() => pick(x.id)} title={x.hint}
-              className={clsx('-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] transition-colors', tab === x.id ? 'border-accent font-medium text-fg' : 'border-transparent text-mute hover:text-fg')}>
-              <x.icon className="size-3.5" /> {x.label}
-            </button>
-          ))}
-        </div>
+        <Tabs className="mb-5" items={TABS} value={tab} onChange={pick} />
         {isLoading || !data
-          ? <div className="grid h-64 place-items-center"><Spinner /></div>
+          ? <div className="h-64"><PageLoader /></div>
           : <Dashboards tab={tab} data={data} daily={daily} days={days} metric={metric} setMetric={setMetric} table={table} setTable={setTable} agents={agents} wsKey={ws.key} />}
       </div>
     </div>
@@ -251,8 +231,8 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
                 <YAxis allowDecimals={false} tick={AXIS} axisLine={false} tickLine={false} />
                 <Tooltip cursor={{ fill: 'rgb(var(--ink) / 0.04)' }} content={<Tip />} />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, color: 'rgb(var(--dim))' }} />
-                <Bar animationDuration={500} dataKey="created" name="Criadas" fill={C1} radius={[4, 4, 0, 0]} maxBarSize={18} />
-                <Bar animationDuration={500} dataKey="resolved" name="Resolvidas" fill={C3} radius={[4, 4, 0, 0]} maxBarSize={18} />
+                <Bar animationDuration={500} dataKey="created" name={t('Created')} fill={C1} radius={[4, 4, 0, 0]} maxBarSize={18} />
+                <Bar animationDuration={500} dataKey="resolved" name={t('Resolved')} fill={C3} radius={[4, 4, 0, 0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -288,9 +268,9 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
           subtitle={t('Last {0} days', days)}
           className="lg:col-span-3"
           actions={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Segmented items={METRICS} value={metric} onChange={setMetric} />
-              <button onClick={() => setTable(!table)} title={t('View as table')} className={clsx('rounded-lg border border-line p-1.5', table ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}><Table2 className="size-3.5" /></button>
+              <button onClick={() => setTable(!table)} title={t('View as table')} aria-pressed={table} className={clsx('icon-btn border border-line', table && 'bg-hover text-fg')}><Table2 className="size-3.5" /></button>
             </div>
           }
         >
@@ -349,7 +329,7 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
                 <XAxis dataKey="label" tick={AXIS} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={AXIS} axisLine={false} tickLine={false} tickFormatter={(v) => money(v)} />
                 <Tooltip cursor={{ fill: 'rgb(var(--ink) / 0.04)' }} content={<Tip format={money} />} />
-                <Bar animationDuration={500} dataKey="costUsd" name="Custo" fill={C1} radius={[4, 4, 0, 0]} maxBarSize={22} />
+                <Bar animationDuration={500} dataKey="costUsd" name={t('Cost')} fill={C1} radius={[4, 4, 0, 0]} maxBarSize={22} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -362,15 +342,15 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
           {data.models.length ? data.models.map((m) => (
             <RankRow key={m.runtime + m.model} share={m.costUsd / maxModel} value={money(m.costUsd)}
               sub={t('{0} tokens', compact(m.inputTokens + m.cachedTokens + m.outputTokens))}
-              left={<><Cpu className="size-4 shrink-0 text-mute" /><span className="truncate">{m.model || t('default')}</span><span className="rounded bg-white/5 px-1.5 text-[10px] text-mute">{m.runtime === 'codex' ? t('Codex') : t('Claude')}</span></>} />
+              left={<><Cpu className="size-4 shrink-0 text-mute" /><span className="truncate">{m.model || t('default')}</span><span className="badge shrink-0 py-0 text-[10px]">{runtimeOf(m.runtime).label}</span></>} />
           )) : <p className="py-10 text-center text-mute">{t('No runs.')}</p>}
         </Card>
         </div>
         <Card title={t('Most expensive issues')} subtitle={t('In the period')}>
           {data.top.length ? (
-            <div className="-mx-4 overflow-x-auto">
+            <div className="-mx-4 overflow-x-auto sm:-mx-5">
               <table className="w-full text-left text-[13px]">
-                <thead className="text-xs text-mute"><tr><th className="px-4 py-2 font-medium">{t('Issue')}</th><th className="px-4 font-medium">{t('Status')}</th><th className="px-4 text-right font-medium">{t('Runs')}</th><th className="px-4 text-right font-medium">{t('Cost')}</th></tr></thead>
+                <thead className="text-xs text-mute"><tr><th className="px-4 py-2 font-medium sm:px-5">{t('Issue')}</th><th className="px-4 font-medium">{t('Status')}</th><th className="px-4 text-right font-medium">{t('Runs')}</th><th className="px-4 text-right font-medium">{t('Cost')}</th></tr></thead>
                 <tbody>
                   {data.top.map((i) => (
                     <tr key={i.id} className="border-t border-line/60 transition-colors hover:bg-white/[0.03]">
@@ -420,7 +400,7 @@ function Dashboards({ tab, data, daily, days, metric, setMetric, table, setTable
           {data.models.length ? data.models.map((m) => (
             <RankRow key={m.runtime + m.model} share={m.costUsd / maxModel} value={money(m.costUsd)}
               sub={t('{0} tokens', compact(m.inputTokens + m.cachedTokens + m.outputTokens))}
-              left={<><Cpu className="size-4 shrink-0 text-mute" /><span className="truncate">{m.model || t('default')}</span><span className="rounded bg-white/5 px-1.5 text-[10px] text-mute">{m.runtime === 'codex' ? t('Codex') : t('Claude')}</span></>} />
+              left={<><Cpu className="size-4 shrink-0 text-mute" /><span className="truncate">{m.model || t('default')}</span><span className="badge shrink-0 py-0 text-[10px]">{runtimeOf(m.runtime).label}</span></>} />
           )) : <p className="py-10 text-center text-mute">{t('No runs.')}</p>}
         </Card>
         </div>
@@ -565,11 +545,11 @@ function PeopleTab({ data }: { data: Analytics }) {
   return (
     <Card title={t('Performance by person')} subtitle={t('In the period · click a column to sort · “resolved” counts issues where the person is the assignee')}>
       {people.length ? (
-        <div className="-mx-4 overflow-x-auto">
+        <div className="-mx-4 overflow-x-auto sm:-mx-5">
           <table className="w-full text-left text-[13px]">
             <thead className="text-xs text-mute">
               <tr>
-                <th className="px-4 py-2 font-medium">{t('Person')}</th>
+                <th className="px-4 py-2 font-medium sm:px-5">{t('Person')}</th>
                 {cols.map(([k, label]) => (
                   <th key={k} className="whitespace-nowrap px-3 text-right font-medium">
                     <button onClick={() => setSort(k)} className={clsx('hover:text-fg', sort === k && 'text-accent')}>{label}{sort === k && ' ↓'}</button>
@@ -597,7 +577,7 @@ function AgentTable({ data, agents }: { data: Analytics; agents: Agent[] }) {
   return (
     <Card title={t('Efficiency by agent')} subtitle={t('In the period')}>
       {data.agents.length ? (
-        <div className="-mx-4 overflow-x-auto">
+        <div className="-mx-4 overflow-x-auto sm:-mx-5">
           <table className="w-full text-left text-[13px]">
             <thead className="text-xs text-mute">
               <tr>{[t('Agent'), t('Runs'), t('Success'), t('Average time'), t('Cost/run'), t('Tokens/run'), t('Total cost')].map((h, i) => <th key={h} className={clsx('whitespace-nowrap py-2 font-medium', i ? 'px-3 text-right' : 'px-4')}>{h}</th>)}</tr>
@@ -632,7 +612,7 @@ function PersonPicker({ global, team, value, onChange, meId }: { global?: boolea
   const { data: members = [] } = useMembers(ws.id);
   const { data: users = [] } = useUsers(global && canUsers && team);
   const people = (global && canUsers ? users : members).filter((p) => p.id !== meId);
-  if (!team) return <span className="inline-flex h-8 items-center rounded-lg border border-line px-2.5 text-xs text-mute" title={t('Your role only sees its own numbers')}>{t('Your numbers')}</span>;
+  if (!team) return <span className="inline-flex h-7 items-center rounded-lg border border-line px-2.5 text-xs text-mute" title={t('Your role only sees its own numbers')}>{t('Your numbers')}</span>;
   const label = value === 'all' ? t('Everyone') : value === 'me' ? t('Just me') : people.find((p) => p.id === value)?.name ?? t('Person');
   return (
     <Popover align="right" trigger={() => <Chip>{label} <ChevronDown className="size-3.5 text-mute" /></Chip>}>

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import clsx from 'clsx';
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button, Field, PageHeader, useToast, useConfirm } from '../components/ui';
 import { Page } from './Account';
@@ -22,14 +21,14 @@ export function RolesPage() {
     <Page>
       <PageHeader icon={ShieldCheck} title={t('Permissions')} description={t('Only you, the Foreman owner, see this screen. Build roles with what each group can do and assign them under Users. The owner can always do everything.')}
         actions={<Button variant="primary" onClick={() => setSelected('new')}><Plus className="size-4" /> {t('New role')}</Button>} />
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
+      <div className="no-scrollbar -mt-4 flex gap-1.5 overflow-x-auto">
         {roles.map((r) => (
           <button key={r.id} onClick={() => setSelected(r.id)}
-            className={clsx('shrink-0 rounded-full border px-3 py-1 text-xs', selected === r.id ? 'border-accent/60 bg-accent/15 text-fg' : 'border-line text-dim hover:bg-hover')}>
+            aria-pressed={selected === r.id} className="pill shrink-0">
             {r.name} <span className="text-mute">· {r.users}</span>
           </button>
         ))}
-        {selected === 'new' && <span className="shrink-0 rounded-full border border-accent/60 bg-accent/15 px-3 py-1 text-xs">{t('New role')}</span>}
+        {selected === 'new' && <span className="pill pill-on shrink-0">{t('New role')}</span>}
       </div>
       {selected && <RoleEditor key={selected} role={current} onDone={setSelected} />}
     </Page>
@@ -78,21 +77,21 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
     }
   };
   return (
-    <div className="space-y-4">
+    <div className="-mt-4 space-y-4">
       <Field label={t('Role name')}><input className="field-input" value={name} onChange={(e) => setName(e.target.value)} placeholder={t('E.g. Dev, Reviewer, Manager')} /></Field>
       <div className="grid gap-3 sm:grid-cols-2">
         {groups.map((g) => {
           const items = perms.filter((p) => p.group === g);
           const all = items.every((p) => on.includes(p.id));
           return (
-            <div key={g} className="surface p-3">
+            <div key={g} className="surface p-4">
               <div className="mb-2 flex items-center">
                 <span className="font-medium">{g}</span>
                 <button onClick={() => toggleGroup(g)} className="ml-auto text-[11px] text-mute hover:text-fg">{all ? t('none') : t('all')}</button>
               </div>
               <div className="space-y-1">
                 {items.map((p) => (
-                  <label key={p.id} className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 hover:bg-hover">
+                  <label key={p.id} className="-mx-1.5 flex cursor-pointer items-start gap-2.5 rounded-md px-1.5 py-1 hover:bg-hover coarse:py-2">
                     <input type="checkbox" checked={on.includes(p.id)} onChange={() => toggle(p.id)} className="mt-0.5 accent-[rgb(var(--accent))]" />
                     <span className="text-[13px] text-dim">{p.label}</span>
                   </label>
@@ -102,7 +101,7 @@ function RoleEditor({ role, onDone }: { role: Role | null; onDone: (id: string |
           );
         })}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center gap-2 border-t border-line bg-bg px-1 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {role && <Button variant="ghost" onClick={remove}><Trash2 className="size-3.5" /> {t('Delete role')}</Button>}
         <span className="ml-auto text-xs text-mute">{on.length} {t('of')} {perms.length} {t('permissions')}</span>
         <Button variant="primary" loading={busy} onClick={save}>{t('Save')}</Button>

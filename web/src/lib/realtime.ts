@@ -19,7 +19,47 @@ function upsert<T extends { id: string | number }>(list: T[] | undefined, item: 
   return copy;
 }
 
-function apply(qc: QueryClient, ws: string, ev: Event) {
+// A running agent sends many log lines per second. Writing each one to the cache would
+// re-render the log every time; they are gathered and applied together a few times a
+// second (a timer, not an animation frame: it has to keep working in a background tab).
+const FLUSH_MS = 80;
+function logBuffer(qc: QueryClient) {
+  const pending = new Map<string, RunEvent[]>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    timer = undefined;
+    for (const [runId, events] of pending) {
+      qc.setQueryData<RunEvent[]>(['events', runId], (list) => {
+        if (!list) return list; // nobody opened this log: it loads whole when they do
+        const at = new Map(list.map((e, i) => [e.id, i]));
+        const copy = list.slice();
+        for (const e of events) {
+          const i = at.get(e.id);
+          if (i === undefined) {
+            at.set(e.id, copy.length);
+            copy.push(e);
+          } else copy[i] = e;
+        }
+        return copy;
+      });
+    }
+    pending.clear();
+  };
+  return {
+    push(e: RunEvent) {
+      const list = pending.get(e.runId);
+      if (list) list.push(e);
+      else pending.set(e.runId, [e]);
+      timer ??= setTimeout(flush, FLUSH_MS);
+    },
+    stop() {
+      clearTimeout(timer);
+      flush();
+    }
+  };
+}
+
+function apply(qc: QueryClient, ws: string, ev: Event, log: ReturnType<typeof logBuffer>) {
   switch (ev.type) {
     case 'issue':
       upsertIssue(qc, ws, ev.data);
@@ -34,7 +74,7 @@ function apply(qc: QueryClient, ws: string, ev: Event) {
       qc.invalidateQueries({ queryKey: ['working', ws] });
       break;
     case 'run_event':
-      qc.setQueryData<RunEvent[]>(['events', ev.data.event.runId], (l) => (l ? upsert(l, ev.data.event) : l));
+      log.push(ev.data.event);
       break;
     case 'comment':
       qc.setQueryData<IssueDetail>(['issue', ev.data.issueId], (d) => (d ? { ...d, comments: upsert(d.comments, ev.data)! } : d));
@@ -47,13 +87,14 @@ export function useRealtime(ws?: string) {
   const qc = useQueryClient();
   useEffect(() => {
     if (!ws) return;
+    const log = logBuffer(qc);
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout>;
     const connect = () => {
       es = new EventSource(`/api/workspaces/${ws}/events`);
       es.onmessage = (m) => {
         try {
-          apply(qc, ws, JSON.parse(m.data));
+          apply(qc, ws, JSON.parse(m.data), log);
         } catch {
           /* evento malformado: ignora */
         }
@@ -72,6 +113,7 @@ export function useRealtime(ws?: string) {
     return () => {
       clearTimeout(retry);
       es?.close();
+      log.stop();
     };
   }, [ws, qc]);
 }

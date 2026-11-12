@@ -45,9 +45,8 @@ export function AgentIcon({ avatar, size = 18, className }: { avatar?: string; s
       className={clsx('inline-grid shrink-0 place-items-center text-snow', className)}
       style={{
         width: size, height: size,
-        borderRadius: Math.max(4, size * 0.3),
-        background: `linear-gradient(145deg, ${from}, ${to})`,
-        boxShadow: `inset 0 1px 0 0 rgb(255 255 255 / .25), 0 ${size > 28 ? 6 : 2}px ${size > 28 ? 16 : 6}px -${size > 28 ? 6 : 2}px ${to}`
+        borderRadius: Math.max(4, size * 0.28),
+        background: `linear-gradient(145deg, ${from}, ${to})`
       }}
     >
       <Icon style={{ width: size * 0.56, height: size * 0.56, strokeWidth: size > 28 ? 1.9 : 2.2 }} />

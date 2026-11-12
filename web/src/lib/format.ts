@@ -30,3 +30,9 @@ export function runSeconds(r: { startedAt: string | null; endedAt: string | null
   if (!r.startedAt) return null;
   return ((r.endedAt ? new Date(r.endedAt) : new Date()).getTime() - new Date(r.startedAt).getTime()) / 1000;
 }
+
+// "5 min" → "5 min ago"; "now" and dates stay as they are.
+export function ago(iso: string | null | undefined): string {
+  const tt = timeAgo(iso);
+  return /^\d+ /.test(tt) ? t('{0} ago', tt) : tt;
+}

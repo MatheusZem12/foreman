@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import clsx from 'clsx';
 import { Lock, Sparkles, UserCheck, Zap } from 'lucide-react';
 import { StatusIcon, Toggle } from '../components/ui';
 import { PRIORITIES, stageGroups } from '../lib/constants';
@@ -256,7 +255,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
           <Toggle checked={system} onChange={setSystem} label={t('Agent & merge')} />
         </span>
       </div>
-      <div className="surface overflow-auto">
+      <div className="surface overflow-auto overscroll-x-contain">
         <div className="relative mx-auto" style={{ width: layout.width, height: layout.height }}>
           <svg className="absolute inset-0" width={layout.width} height={layout.height}>
             <defs>
@@ -293,7 +292,7 @@ export function FlowMap({ stages, rules }: { stages: Stage[]; rules: Rule[] }) {
             const locked = !!(s.policy?.act?.roles?.length || s.policy?.act?.users?.length || s.policy?.readOnly);
             return (
               <div key={n.id} title={rs.length ? t('{0} rule(s) in this stage', rs.length) : undefined}
-                className={clsx('absolute flex flex-col justify-center rounded-xl border bg-card px-3 shadow-[0_8px_24px_-14px_rgb(0_0_0/0.9)]', s.parallel ? 'border-white/15' : 'border-white/[0.09]')}
+                className="absolute flex flex-col justify-center rounded-lg border border-line bg-card px-3"
                 style={{ ...style, boxShadow: `inset 3px 0 0 0 ${s.color}` }}>
                 <div className="flex items-center gap-1.5 text-[13px] font-medium"><StatusIcon status={s.id} /><span className="truncate">{s.name}</span></div>
                 <div className="mt-0.5 flex h-3.5 items-center gap-2 text-[10px] text-mute">

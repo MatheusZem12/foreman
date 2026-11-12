@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Navigate, NavLink, useParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { Bot, Server, Settings as SettingsIcon, ShieldCheck, UserRound, Users } from 'lucide-react';
+import { Bot, Server, ShieldCheck, UserRound, Users } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { can, canSee, useMe } from '../lib/queries';
 import type { User } from '../lib/types';
@@ -43,17 +43,17 @@ export function SettingsPage() {
   if (!current) return <Navigate to={`/w/${ws.key}/config/${tabs[0].id}`} replace />;
   return (
     <div className="flex h-full flex-col md:flex-row">
-      <nav className="shrink-0 border-b border-line/70 bg-panel/30 md:w-56 md:border-b-0 md:border-r">
-        <div className="hidden items-center gap-2 px-4 pb-2 pt-5 text-[13px] font-semibold md:flex"><SettingsIcon className="size-4 text-accent" /> {t('General settings')}</div>
+      <nav className="shrink-0 border-b border-line md:w-56 md:overflow-y-auto md:border-b-0 md:border-r">
+        <div className="hidden px-4 pb-1 pt-8 text-[15px] font-semibold tracking-tight md:block">{t('General settings')}</div>
         {/* Phone: tabs scrolling horizontally; desktop: a grouped list. */}
-        <div ref={bar} className="flex gap-1 overflow-x-auto px-2 py-2 md:block md:space-y-3 md:overflow-visible md:py-2">
+        <div ref={bar} className="no-scrollbar flex gap-1 overflow-x-auto px-2 py-2 md:block md:space-y-4 md:overflow-visible md:py-3">
           {groups.map((g) => (
             <div key={g} className="contents md:block">
-              <div className="hidden px-2 pb-1 text-[11px] font-medium text-mute md:block">{g}</div>
+              <div className="label-caps hidden px-2 pb-1 md:block">{g}</div>
               {tabs.filter((tt) => tt.group === g).map((tt) => (
                 <NavLink key={tt.id} to={`/w/${ws.key}/config/${tt.id}`}
-                  className={({ isActive }) => clsx('flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[13px] transition-colors md:w-full',
-                    isActive ? 'bg-white/[0.07] text-fg' : 'text-dim hover:bg-white/[0.04] hover:text-fg')}>
+                  className={({ isActive }) => clsx('flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 text-[13px] transition-colors md:w-full coarse:h-9',
+                    isActive ? 'bg-hover text-fg' : 'text-dim hover:bg-hover hover:text-fg')}>
                   <tt.icon className="size-4" /> {tt.label}
                 </NavLink>
               ))}

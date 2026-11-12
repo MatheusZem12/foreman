@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { AlertTriangle, Bot, Check, ChevronDown, Copy, Cpu, Gauge, Pencil, Plus, RefreshCw, Sparkles, Trash2, Wallet } from 'lucide-react';
+import { AlertTriangle, Bot, Check, ChevronDown, Copy, Cpu, Gauge, Pencil, Plug, Plus, RefreshCw, Sparkles, Trash2, Wallet } from 'lucide-react';
 import { Button, EmptyState, Field, Modal, PageHeader, Popover, useToast, useConfirm } from '../components/ui';
 import { AGENT_COLORS, AGENT_ICONS, AgentIcon, parseAvatar } from '../components/AgentIcon';
 import { api } from '../lib/api';
-import { modelStatus, useCan, useAgents, useModels, useSkills } from '../lib/queries';
-import { timeAgo } from '../lib/format';
-import type { Agent, RuntimeModels } from '../lib/types';
+import { connectionOf, modelStatus, runtimeConnection, useCan, useAgents, useModels, useSkills, type Connection } from '../lib/queries';
+import { ago, timeAgo } from '../lib/format';
+import { RUNTIMES, runtimeOf } from '../lib/constants';
+import type { Agent, Probe, RuntimeModels } from '../lib/types';
 import { t } from '../lib/i18n';
 
 export function AgentsPage() {
@@ -30,6 +31,31 @@ export function AgentsPage() {
   };
 
   const create = () => setEditing({ runtime: 'claude', model: 'sonnet', avatar: 'bot:violet', skillIds: [] });
+  const checking = !!catalog?.some((r) => r.checking);
+  const [testing, setTesting] = useState<Record<string, boolean>>({});
+  // Tests every runtime and model again, in the background (the cards update as it goes).
+  const checkAll = async () => {
+    try {
+      qc.setQueryData(['models'], await api.post<RuntimeModels[]>('/runtimes/check'));
+      toast('info', t('Testing the connection of every AI…'));
+    } catch (err) {
+      toast('error', (err as Error).message);
+    }
+  };
+  // Tests this agent's runtime and model right now.
+  const checkOne = async (a: Agent) => {
+    setTesting((x) => ({ ...x, [a.id]: true }));
+    try {
+      const p = await api.post<Probe>(`/agents/${a.id}/check`);
+      await qc.invalidateQueries({ queryKey: ['models'] });
+      if (p.ok) toast('success', t('{0} answered in {1}s', a.name, (p.ms / 1000).toFixed(1)));
+      else toast('error', t('{0} didn\'t work: {1}', a.name, p.error ?? ''));
+    } catch (err) {
+      toast('error', (err as Error).message);
+    } finally {
+      setTesting((x) => ({ ...x, [a.id]: false }));
+    }
+  };
   return (
     <div className="h-full overflow-y-auto">
       <div className="page">
@@ -37,45 +63,50 @@ export function AgentsPage() {
           icon={Bot}
           title={t('Agents')}
           description={t('Each agent is a preset (runtime, model, instructions and a bundle of skills) shared by every workspace. Same model, different roles: developer, reviewer, tester. Every run starts in a clean chat.')}
-          actions={canCreate && <Button variant="primary" onClick={create}><Plus className="size-4" /> {t('New agent')}</Button>}
+          actions={<>
+            {(canCreate || canUpdate) && <Button onClick={checkAll} loading={checking}><Plug className="size-4" /> {checking ? t('Testing…') : t('Test all')}</Button>}
+            {canCreate && <Button variant="primary" onClick={create}><Plus className="size-4" /> {t('New agent')}</Button>}
+          </>}
         />
         {agents.length ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {agents.map((a) => {
               const pack = skills.filter((s) => s.always || a.skillIds.includes(s.id));
               const { option, warning } = modelStatus(catalog, a.runtime, a.model, a.effort);
+              const conn = testing[a.id] ? { state: 'checking' as const } : connectionOf(catalog, a.runtime, a.model);
               return (
-                <div key={a.id} className="surface surface-hover group relative flex flex-col p-4">
+                <div key={a.id} className="surface flex flex-col p-4">
                   <div className="flex items-start gap-3">
-                    <AgentIcon avatar={a.avatar} size={44} />
+                    <AgentIcon avatar={a.avatar} size={36} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold">{a.name}</div>
                       <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-mute">
-                        <span className={clsx('shrink-0', a.runtime === 'claude' ? 'text-[#e58f5c]' : 'text-emerald-400')}>{a.runtime === 'claude' ? t('Claude Code') : t('Codex')}</span>
+                        <span className={clsx('shrink-0', runtimeOf(a.runtime).color)}>{runtimeOf(a.runtime).label}</span>
                         <span>·</span><span className="truncate">{option?.label ?? (a.model || t('default model'))}</span>
                       </div>
                     </div>
-                    <div className="absolute right-3 top-3 flex gap-0.5 rounded-lg bg-panel/90 p-0.5 opacity-100 backdrop-blur transition sm:opacity-0 sm:group-hover:opacity-100">
-                      {canCreate && <button title={t('Duplicate')} onClick={() => setEditing({ ...a, id: undefined, name: t('{0} (copy)', a.name) })} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Copy className="size-4" /></button>}
-                      {canUpdate && <button title={t('Edit')} onClick={() => setEditing(a)} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Pencil className="size-4" /></button>}
-                      {canDelete && <button title={t('Remove')} onClick={() => remove(a)} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
+                    <div className="-mr-1.5 -mt-1 flex shrink-0 text-mute">
+                      {canCreate && <button title={t('Duplicate')} onClick={() => setEditing({ ...a, id: undefined, name: t('{0} (copy)', a.name) })} className="icon-btn"><Copy className="size-4" /></button>}
+                      {canUpdate && <button title={t('Edit')} onClick={() => setEditing(a)} className="icon-btn"><Pencil className="size-4" /></button>}
+                      {canDelete && <button title={t('Remove')} onClick={() => remove(a)} className="icon-btn icon-btn-danger"><Trash2 className="size-4" /></button>}
                     </div>
                   </div>
-                  {warning && (
-                    <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-2.5 py-2 text-xs text-amber-200">
+                  <ConnectionRow conn={conn} onTest={() => checkOne(a)} onPick={canUpdate ? () => setEditing(a) : undefined} />
+                  {warning && conn.state !== 'fail' && (
+                    <div className="callout mt-3">
                       <AlertTriangle className="mt-px size-3.5 shrink-0 text-amber-400" />
                       <span>{warning}. {canUpdate && <button onClick={() => setEditing(a)} className="font-medium underline-offset-2 hover:underline">{t('Pick another')}</button>}</span>
                     </div>
                   )}
-                  <p className="mt-3 line-clamp-2 min-h-[2.5em] text-[13px] text-dim">{a.instructions || <span className="text-mute">{t('No custom instructions.')}</span>}</p>
-                  <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-dim">
-                    {a.effort && <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5"><Gauge className="size-3" /> {a.effort}</span>}
-                    {a.maxBudgetUsd ? <span className="inline-flex items-center gap-1 rounded-md bg-white/5 px-1.5 py-0.5"><Wallet className="size-3" /> {t('up to $')}{a.maxBudgetUsd}</span> : null}
+                  <p className="mt-3 line-clamp-2 min-h-[2.75em] text-[13px] leading-snug text-dim">{a.instructions || <span className="text-mute">{t('No custom instructions.')}</span>}</p>
+                  <div className="mb-3 mt-3 flex flex-wrap gap-1.5 empty:hidden">
+                    {a.effort && <span className="badge"><Gauge className="size-3" /> {a.effort}</span>}
+                    {a.maxBudgetUsd ? <span className="badge"><Wallet className="size-3" /> {t('up to $')}{a.maxBudgetUsd}</span> : null}
                   </div>
-                  <div className="mt-3 border-t border-line/70 pt-3">
+                  <div className="mt-auto border-t border-line pt-3">
                     <div className="mb-1.5 flex items-center gap-1.5 text-[11px] text-mute"><Cpu className="size-3" /> {pack.length} {t('skill(s) in the bundle')}</div>
                     <div className="flex flex-wrap gap-1">
-                      {pack.map((s) => <span key={s.id} className="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[11px] text-fg/90">{s.name}</span>)}
+                      {pack.map((s) => <span key={s.id} className="badge">{s.name}</span>)}
                       {!pack.length && <span className="text-[11px] text-mute">{t('No skills indexed.')}</span>}
                     </div>
                   </div>
@@ -90,6 +121,35 @@ export function AgentsPage() {
         )}
       </div>
       {editing && <AgentModal agent={editing} onClose={() => setEditing(null)} />}
+    </div>
+  );
+}
+
+// The agent's connection, per the last real test: works, doesn't (and why), not tested yet.
+function ConnectionRow({ conn, onTest, onPick }: { conn: Connection; onTest: () => void; onPick?: () => void }) {
+  const tone = { ok: 'bg-emerald-400', fail: 'bg-red-400', busy: 'bg-amber-400', checking: 'bg-amber-400 animate-pulse-soft', untested: 'bg-mute' }[conn.state];
+  const label = {
+    ok: t('Connected · tested {0}', conn.at ? ago(conn.at) : ''),
+    fail: t('Not working with this account'),
+    busy: t('Model overloaded at the last test · try again later'),
+    checking: t('Testing the connection…'),
+    untested: t('Connection not tested yet')
+  }[conn.state];
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2 text-xs">
+        <span className={clsx('size-1.5 shrink-0 rounded-full', tone)} />
+        <span className={clsx('min-w-0 flex-1 truncate', conn.state === 'fail' ? 'text-red-400' : 'text-mute')}>{label}</span>
+        <button onClick={onTest} disabled={conn.state === 'checking'} className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-dim transition-colors hover:bg-hover hover:text-fg disabled:opacity-50">
+          <Plug className="size-3" /> {t('Test')}
+        </button>
+      </div>
+      {conn.state === 'fail' && conn.problem && (
+        <p className="mt-1.5 rounded-md bg-red-500/[0.07] px-2.5 py-1.5 text-[11px] leading-snug text-red-300 [overflow-wrap:anywhere]">
+          {conn.problem}
+          {onPick && <> <button onClick={onPick} className="font-medium underline-offset-2 hover:underline">{t('Pick another')}</button></>}
+        </p>
+      )}
     </div>
   );
 }
@@ -129,13 +189,15 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
             <span className="text-xs font-medium text-dim">{t('Icon')}</span>
             <IconPicker value={a.avatar} onChange={(avatar) => set({ avatar })} />
           </div>
-          <Field label={t('Name')} className="flex-1"><input autoFocus className="field-input" value={a.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('Claude Dev, Codex Reviewer…')} /></Field>
+          <Field label={t('Name')} className="flex-1"><input autoFocus className="field-input" value={a.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('Claude Dev, Codex Reviewer, Gemini Tester…')} /></Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={t('Runtime')}>
-            <select className="field-input" value={a.runtime} onChange={(e) => set({ runtime: e.target.value as Agent['runtime'], effort: '', model: e.target.value === 'claude' ? 'sonnet' : '' })}>
-              <option value="claude">{t('Claude Code')}</option>
-              <option value="codex">{t('Codex')}</option>
+            <select className="field-input" value={a.runtime} onChange={(e) => set({ runtime: e.target.value as Agent['runtime'], effort: '', model: runtimeOf(e.target.value).defaultModel })}>
+              {RUNTIMES.map((r) => {
+                const c = runtimeConnection(catalog, r.id);
+                return <option key={r.id} value={r.id}>{r.label}{c.state === 'fail' ? ` — ${t('no access')}` : ''}</option>;
+              })}
             </select>
           </Field>
           <div className="flex flex-col gap-1.5">
@@ -145,8 +207,8 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
               set({ model, effort: opt?.efforts && a.effort && !opt.efforts.includes(a.effort) ? '' : a.effort });
             }} />
           </div>
-          <Field label={t('Effort')} hint={option?.defaultEffort ? t('model default: {0}', option.defaultEffort) : undefined}>
-            <select className="field-input" value={a.effort ?? ''} onChange={(e) => set({ effort: e.target.value })}>
+          <Field label={t('Effort')} hint={a.runtime === 'gemini' ? t('not available on Gemini') : option?.defaultEffort ? t('model default: {0}', option.defaultEffort) : undefined}>
+            <select className="field-input" disabled={a.runtime === 'gemini'} value={a.effort ?? ''} onChange={(e) => set({ effort: e.target.value })}>
               <option value="">{t('default')}</option>
               {efforts.map((e) => <option key={e} value={e}>{e}</option>)}
               {a.effort && !efforts.includes(a.effort) && <option value={a.effort}>{a.effort} {t('(not supported)')}</option>}
@@ -166,7 +228,7 @@ function AgentModal({ agent, onClose }: { agent: Partial<Agent>; onClose: () => 
               return (
                 <button key={s.id} type="button" disabled={s.always} title={s.description}
                   onClick={() => set({ skillIds: on ? skillIds.filter((x) => x !== s.id) : [...skillIds, s.id] })}
-                  className={clsx('inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition', on ? 'border-accent/50 bg-accent/15 text-fg' : 'border-line text-dim hover:border-white/15 hover:bg-hover hover:text-fg', s.always && 'cursor-default')}>
+                  aria-pressed={on} className={clsx('pill', s.always && 'cursor-default')}>
                   {on ? <Check className="size-3 text-accent" /> : <Plus className="size-3" />}
                   {s.name}{s.always && <span className="text-mute">{t('· always')}</span>}
                 </button>
@@ -195,7 +257,7 @@ function IconPicker({ value, onChange }: { value?: string; onChange: (v: string)
     <Popover
       className="w-[272px] p-3"
       trigger={(open) => (
-        <button type="button" className={clsx('flex h-[38px] items-center gap-1.5 rounded-lg border bg-white/[0.02] pl-1.5 pr-2 transition', open ? 'border-accent/70 shadow-[0_0_0_3px_rgb(var(--accent)/0.15)]' : 'border-line hover:border-white/15')}>
+        <button type="button" className={clsx('flex h-[38px] items-center gap-1.5 rounded-lg border pl-1.5 pr-2 transition-colors', open ? 'border-accent' : 'border-line hover:border-white/20')}>
           <AgentIcon avatar={`${icon}:${color}`} size={26} />
           <ChevronDown className="size-3.5 text-mute" />
         </button>
@@ -207,7 +269,7 @@ function IconPicker({ value, onChange }: { value?: string; onChange: (v: string)
           <div className="grid grid-cols-7 gap-1">
             {Object.entries(AGENT_ICONS).map(([k, I]) => (
               <button key={k} type="button" title={k} onClick={() => onChange(`${k}:${color}`)}
-                className={clsx('grid size-8 place-items-center rounded-lg transition', k === icon ? 'bg-accent/20 text-fg ring-1 ring-accent/60' : 'text-dim hover:bg-white/[0.07] hover:text-fg')}>
+                className={clsx('grid size-8 place-items-center rounded-lg transition', k === icon ? 'bg-accent/20 text-fg ring-1 ring-accent/60' : 'text-dim hover:bg-hover hover:text-fg')}>
                 <I className="size-4" />
               </button>
             ))}
@@ -234,18 +296,25 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
   const rt = catalog?.find((c) => c.runtime === runtime);
   const models = rt?.models ?? [];
   const current = models.find((m) => m.id === value);
-  const known = !value || !!current;
+  const known = (!value || !!current) && current?.available !== false && rt?.connected !== false;
+  // Only what answered (or wasn't tested yet) is offered; what this account can't use
+  // goes to the end, greyed out, with the reason.
+  const unavailable = rt?.connected === false ? [] : models.filter((m) => m.available === false);
+  // Reads the CLIs' catalog again and tests every model again.
   const refresh = async () => {
     setRefreshing(true);
     try {
-      qc.setQueryData(['models'], await api.get<RuntimeModels[]>('/runtimes/models?refresh=1'));
+      await api.get<RuntimeModels[]>('/runtimes/models?refresh=1');
+      qc.setQueryData(['models'], await api.post<RuntimeModels[]>('/runtimes/check'));
     } finally {
       setRefreshing(false);
     }
   };
   const groups: [string, string][] = runtime === 'claude'
     ? [['alias', t('Always the newest version')], ['model', t('Pinned versions')], ['used', t('Pinned versions already used here')]]
-    : [['model', t('Codex models')]];
+    : runtime === 'gemini'
+      ? [['alias', t('Automatic')], ['model', t('Gemini models')]]
+      : [['model', t('Codex models')]];
 
   if (custom) {
     return (
@@ -261,8 +330,8 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
       align="right"
       className="w-[min(380px,calc(100vw-2rem))] p-1.5"
       trigger={(open) => (
-        <button type="button" className={clsx('field-input flex h-[38px] items-center gap-2 text-left', open && 'border-accent/70 shadow-[0_0_0_3px_rgb(var(--accent)/0.15)]')}>
-          {known ? <Cpu className="size-4 shrink-0 text-mute" /> : <AlertTriangle className="size-4 shrink-0 text-amber-400" />}
+        <button type="button" className={clsx('field-input flex h-[38px] items-center gap-2 text-left', open && 'border-accent')}>
+          {known ? <Cpu className="size-4 shrink-0 text-mute" /> : <AlertTriangle className={clsx('size-4 shrink-0', current?.available === false || rt?.connected === false ? 'text-red-400' : 'text-amber-400')} />}
           <span className="min-w-0 flex-1 truncate">
             {current ? current.label : value ? <span className="font-mono text-xs">{value}</span> : t('CLI default')}
             {current?.group === 'alias' && <span className="ml-1.5 text-xs text-mute">{t('latest')}</span>}
@@ -273,26 +342,41 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
     >
       {(close) => (
         <div>
-          <ModelRow selected={!value} title={t('CLI default')} desc={t('Whatever is configured in the server\'s claude/codex')} onClick={() => { onChange(''); close(); }} />
+          <ModelRow selected={!value} title={t('CLI default')} disabled={rt?.defaultOk === false && !!value}
+            desc={rt?.defaultOk === false ? t('Doesn\'t work with this account: {0}', rt.defaultError ?? '') : t('Whatever is configured in the server\'s CLI')} onClick={() => { onChange(''); close(); }} />
           {!rt?.installed && <div className="px-2.5 py-2 text-xs text-amber-300">{rt?.error ?? t('Loading catalog…')}</div>}
-          {groups.map(([g, title]) => {
-            const list = models.filter((m) => m.group === g);
+          {rt?.installed && rt.connected === false && (
+            <div className="m-1 rounded-lg bg-red-500/[0.08] px-2.5 py-2 text-xs leading-snug text-red-300 [overflow-wrap:anywhere]">
+              <div className="font-medium">{t('{0} isn\'t working with this server\'s account', runtimeOf(runtime).label)}</div>
+              {rt.checkError && <div className="mt-0.5 opacity-90">{rt.checkError}</div>}
+            </div>
+          )}
+          {rt?.checking && <div className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-mute"><RefreshCw className="size-3 animate-spin" /> {t('Testing which models this account can use…')}</div>}
+          {rt?.connected !== false && groups.map(([g, title]) => {
+            const list = models.filter((m) => m.group === g && m.available !== false);
             if (!list.length) return null;
             return (
-              <div key={g} className="mt-1 border-t border-white/[0.06] pt-1">
+              <div key={g} className="mt-1 border-t border-line pt-1">
                 <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-mute">{g === 'alias' && <Sparkles className="size-3 text-accent" />}{title}</div>
                 {list.map((m) => (
-                  <ModelRow key={m.id} selected={m.id === value} title={m.label} id={m.id !== m.label ? m.id : undefined} desc={m.description} onClick={() => { onChange(m.id); close(); }} />
+                  <ModelRow key={m.id} selected={m.id === value} title={m.label} id={m.id !== m.label ? m.id : undefined}
+                    desc={m.busy ? t('Overloaded at the last test (temporary)') : m.description} warn={m.busy} onClick={() => { onChange(m.id); close(); }} />
                 ))}
               </div>
             );
           })}
-          <div className="mt-1 flex items-center gap-2 border-t border-white/[0.06] px-2.5 pb-1 pt-2 text-[11px] text-mute">
+          {unavailable.length > 0 && (
+            <div className="mt-1 border-t border-line pt-1">
+              <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-mute">{t('Not available on this account ({0})', unavailable.length)}</div>
+              {unavailable.map((m) => <ModelRow key={m.id} disabled selected={m.id === value} title={m.label} id={m.id !== m.label ? m.id : undefined} desc={m.problem} onClick={() => {}} />)}
+            </div>
+          )}
+          <div className="mt-1 flex items-center gap-2 border-t border-line px-2.5 pb-1 pt-2 text-[11px] text-mute">
             <span className="min-w-0 flex-1 truncate" title={rt?.source}>{rt ? t('Read from {0} · {1}', rt.source, timeAgo(rt.fetchedAt)) : ''}</span>
-            <button type="button" onClick={refresh} disabled={refreshing} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-dim transition hover:bg-white/[0.06] hover:text-fg">
-              <RefreshCw className={clsx('size-3', refreshing && 'animate-spin')} /> {t('Refresh')}
+            <button type="button" onClick={refresh} disabled={refreshing} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-dim transition hover:bg-hover hover:text-fg">
+              <RefreshCw className={clsx('size-3', refreshing && 'animate-spin')} /> {t('Refresh and test')}
             </button>
-            <button type="button" onClick={() => { setCustom(true); close(); }} className="rounded-md px-1.5 py-1 text-dim transition hover:bg-white/[0.06] hover:text-fg">{t('Other…')}</button>
+            <button type="button" onClick={() => { setCustom(true); close(); }} className="rounded-md px-1.5 py-1 text-dim transition hover:bg-hover hover:text-fg">{t('Other…')}</button>
           </div>
         </div>
       )}
@@ -300,12 +384,12 @@ function ModelPicker({ catalog, runtime, value, onChange }: { catalog?: RuntimeM
   );
 }
 
-function ModelRow({ title, id, desc, selected, onClick }: { title: string; id?: string; desc?: string; selected: boolean; onClick: () => void }) {
+function ModelRow({ title, id, desc, selected, disabled, warn, onClick }: { title: string; id?: string; desc?: string; selected: boolean; disabled?: boolean; warn?: boolean; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className={clsx('flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors', selected ? 'bg-accent/[0.12]' : 'hover:bg-white/[0.05]')}>
+    <button type="button" disabled={disabled} onClick={onClick} className={clsx('flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50', selected ? 'bg-accent/[0.12]' : 'enabled:hover:bg-hover')}>
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2"><span className="font-medium">{title}</span>{id && <span className="truncate font-mono text-[11px] text-mute">{id}</span>}</span>
-        {desc && <span className="mt-0.5 block text-xs leading-snug text-mute">{desc}</span>}
+        {desc && <span className={clsx('mt-0.5 block text-xs leading-snug', warn ? 'text-amber-400' : 'text-mute')}>{desc}</span>}
       </span>
       {selected && <Check className="mt-0.5 size-4 shrink-0 text-accent" />}
     </button>

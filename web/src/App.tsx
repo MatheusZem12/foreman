@@ -1,25 +1,28 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { ConfirmProvider, ToastProvider, Spinner } from './components/ui';
+import { ConfirmProvider, PageLoader, ToastProvider } from './components/ui';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Board } from './pages/Board';
-import { IssuePage } from './pages/IssuePage';
-import { SettingsPage } from './pages/Settings';
-import { WorkflowPage } from './pages/Workflow';
-import { WorkspaceSettings } from './pages/WorkspaceSettings';
-import { LabelsPage } from './pages/Labels';
-import { AgentsPage } from './pages/Agents';
-import { SkillsPage } from './pages/Skills';
-import { Landing } from './pages/Landing';
 import { Onboarding } from './pages/Onboarding';
 import { SCREENS, can, useMe, useWorkspaces } from './lib/queries';
 import { LAST_WS } from './lib/constants';
 import { t } from './lib/i18n';
 
-// Analytics loads the charts (Recharts) only when the screen opens.
+// The board opens with the app. Every other screen is its own file, downloaded when it
+// is first opened: the first load brings only what the board needs (no charts, no
+// markdown, no workflow editor, no landing page).
+const issuePage = () => import('./pages/IssuePage');
+const IssuePage = lazy(() => issuePage().then((m) => ({ default: m.IssuePage })));
 const AnalyticsPage = lazy(() => import('./pages/Analytics').then((m) => ({ default: m.AnalyticsPage })));
+const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ default: m.SettingsPage })));
+const WorkflowPage = lazy(() => import('./pages/Workflow').then((m) => ({ default: m.WorkflowPage })));
+const WorkspaceSettings = lazy(() => import('./pages/WorkspaceSettings').then((m) => ({ default: m.WorkspaceSettings })));
+const LabelsPage = lazy(() => import('./pages/Labels').then((m) => ({ default: m.LabelsPage })));
+const AgentsPage = lazy(() => import('./pages/Agents').then((m) => ({ default: m.AgentsPage })));
+const SkillsPage = lazy(() => import('./pages/Skills').then((m) => ({ default: m.SkillsPage })));
+const Landing = lazy(() => import('./pages/Landing').then((m) => ({ default: m.Landing })));
 
 const qc = new QueryClient({
   defaultOptions: { queries: { staleTime: 15_000, refetchOnWindowFocus: true, retry: 1 } }
@@ -28,7 +31,7 @@ const qc = new QueryClient({
 function Home() {
   const { data: workspaces, isLoading } = useWorkspaces();
   const { data: me } = useMe();
-  if (isLoading) return <div className="grid h-full place-items-center"><Spinner /></div>;
+  if (isLoading) return <PageLoader />;
   if (!workspaces?.length) return can(me, 'workspace.create') ? <Navigate to="/new" replace /> : <NoWorkspace />;
   let last = '';
   try {
@@ -45,7 +48,7 @@ function NoWorkspace() {
   const { data: me } = useMe();
   return (
     <div className="grid min-h-full place-items-center p-4">
-      <div className="max-w-sm space-y-3 rounded-xl border border-line bg-panel p-6 text-center">
+      <div className="surface max-w-sm space-y-3 p-6 text-center">
         <img src="/icon.svg" className="mx-auto size-8" alt="" />
         <p className="font-medium">{t('Hi,')} {me?.name}!</p>
         <p className="text-dim">{t('You haven\'t been added to any workspace yet. Ask an administrator to add you.')}</p>
@@ -65,7 +68,15 @@ function Need({ perms, owner, children }: { perms?: string[]; owner?: boolean; c
 
 function Authed({ children }: { children: React.ReactNode }) {
   const { data: me, isLoading, error } = useMe();
-  if (isLoading) return <div className="grid h-full place-items-center"><Spinner /></div>;
+  // Signed in: while the browser is idle, fetch the issue page's code, so that opening
+  // a card from the board is instant.
+  useEffect(() => {
+    if (!me) return;
+    const idle = window.requestIdleCallback ?? ((fn: () => void) => window.setTimeout(fn, 1500));
+    const id = idle(() => { issuePage().catch(() => { /* offline: it loads when opened */ }); });
+    return () => (window.cancelIdleCallback ?? window.clearTimeout)(id);
+  }, [me]);
+  if (isLoading) return <PageLoader />;
   if (error || !me) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
@@ -73,7 +84,7 @@ function Authed({ children }: { children: React.ReactNode }) {
 // "/": whoever is signed in goes to the board; whoever isn't sees the landing page.
 function Root() {
   const { data: me, isPending, isError } = useMe();
-  if (isPending && !isError) return <div className="grid h-full place-items-center"><Spinner /></div>;
+  if (isPending && !isError) return <PageLoader />;
   return me ? <Home /> : <Landing />;
 }
 
@@ -83,6 +94,7 @@ export default function App() {
       <ToastProvider>
       <ConfirmProvider>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<Root />} />
@@ -91,8 +103,8 @@ export default function App() {
             <Route path="/w/:key" element={<Authed><Layout /></Authed>}>
               <Route index element={<Board />} />
               <Route path="issues/:ref" element={<IssuePage />} />
-              <Route path="analytics" element={<Need perms={[...SCREENS.analytics]}><Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage /></Suspense></Need>} />
-              <Route path="analytics-overall" element={<Need perms={[...SCREENS.analyticsGlobal]}><Suspense fallback={<div className="grid h-full place-items-center"><Spinner /></div>}><AnalyticsPage global /></Suspense></Need>} />
+              <Route path="analytics" element={<Need perms={[...SCREENS.analytics]}><AnalyticsPage /></Need>} />
+              <Route path="analytics-overall" element={<Need perms={[...SCREENS.analyticsGlobal]}><AnalyticsPage global /></Need>} />
               <Route path="config" element={<SettingsPage />} />
               <Route path="config/:tab" element={<SettingsPage />} />
               <Route path="workflow" element={<Need perms={[...SCREENS.workflow]}><WorkflowPage /></Need>} />
@@ -110,6 +122,7 @@ export default function App() {
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
       </ConfirmProvider>
       </ToastProvider>

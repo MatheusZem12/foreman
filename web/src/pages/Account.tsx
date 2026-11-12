@@ -1,17 +1,20 @@
 import { useState } from 'react';
+import clsx from 'clsx';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, CheckCircle2, IdCard, Mail, Pencil, Plus, Send, Server, Trash2, UserRound, Users, XCircle } from 'lucide-react';
-import { Avatar, Button, Field, Modal, PageHeader, Spinner, Toggle, useToast, useConfirm } from '../components/ui';
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ExternalLink, IdCard, Pencil, Plug, Plus, Send, Server, Trash2, UserRound, Users, XCircle } from 'lucide-react';
+import { Avatar, Button, Field, Modal, PageHeader, SectionHeader, Spinner, Toggle, useToast, useConfirm } from '../components/ui';
+import { WsBadge } from '../components/Layout';
 import { api } from '../lib/api';
-import { can, useCan, useMe, usePermissions, useRoles, useUsers, useWorkspaces } from '../lib/queries';
-import type { EmailSettings, GitInfo, Runtime, User } from '../lib/types';
+import { can, runtimeConnection, useCan, useMe, useModels, usePermissions, useRoles, useUsers, useWorkspaces } from '../lib/queries';
+import type { EmailSettings, GitInfo, Runtime, RuntimeModels, User } from '../lib/types';
 import { timeAgo } from '../lib/format';
+import { runtimeOf } from '../lib/constants';
 import { t } from '../lib/i18n';
 import { Appearance } from '../components/Prefs';
 
 export const Page = ({ children }: { children: React.ReactNode }) => (
   <div className="h-full overflow-y-auto">
-    <div className="page space-y-8">{children}</div>
+    <div className="page page-narrow space-y-10">{children}</div>
   </div>
 );
 
@@ -47,9 +50,8 @@ function GitSection() {
   const ok = !!(data.sshKey || data.credentialHelper || data.gh);
   return (
     <section>
-      <h2 className="mb-1 font-semibold">{t('Git access')}</h2>
-      <p className="mb-3 text-xs text-mute">{t('Foreman clones and pushes with the git credentials of the user running the server (')}{data.home}{t('). When a repository is saved, it tests access with')} <code>{t('git ls-remote')}</code>.</p>
-      <div className="space-y-3 surface p-4 text-sm">
+      <SectionHeader title={t('Git access')} description={<>{t('Foreman clones and pushes with the git credentials of the user running the server (')}{data.home}{t('). When a repository is saved, it tests access with')} <code>{t('git ls-remote')}</code>.</>} />
+      <div className="surface space-y-3 p-4 sm:p-5">
         <div className="flex items-center gap-2">{ok ? <CheckCircle2 className="size-4 text-emerald-400" /> : <XCircle className="size-4 text-amber-400" />}<span>{data.version}</span></div>
         <div className="grid gap-1 text-xs text-dim">
           <div>{t('SSH key:')} {data.sshKey ? <span className="text-emerald-400">{t('found')}</span> : <span className="text-mute">{t('none in ~/.ssh')}</span>}</div>
@@ -90,7 +92,7 @@ function Profile({ me }: { me: User }) {
   return (
     <section>
       <PageHeader icon={UserRound} title={t('My account')} description={t('Your name, password, context for the agents and notifications.')} />
-      <div className="space-y-4 surface p-4">
+      <div className="surface space-y-4 p-4 sm:p-5">
         <div className="flex items-center gap-3"><Avatar name={me.name} size={40} /><div><div className="font-medium">{me.name}</div><div className="text-xs text-mute">{me.email}</div></div></div>
         <Field label={t('Name')}><input className="field-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label={t('About you')} hint={t('sent along with every run you request')}>
@@ -130,20 +132,17 @@ function EmailToggle({ me }: { me: User }) {
 // "5 min" -> "5 min ago"; "now" and dates stay as they are.
 const since = (iso: string | null) => { const tt = timeAgo(iso); return /^\d+ /.test(tt) ? t('{0} ago', tt) : tt; };
 
-const EMAIL_PRESETS: Record<string, Partial<EmailSettings>> = {
-  Gmail: { host: 'smtp.gmail.com', port: 587, security: 'starttls' },
-  Outlook: { host: 'smtp.office365.com', port: 587, security: 'starttls' },
-  'Porta 465': { port: 465, security: 'tls' }
-};
-
 function EmailConfig() {
   const { data } = useEmailSettings();
   if (!data) return null;
   return <EmailForm key={String(data.hasPassword) + data.host} initial={data} />;
 }
 
+// Sending goes through one Gmail account with an app password; the server fills in the
+// rest (smtp.gmail.com, port, encryption). Each e-mail shows "Person via Foreman" and
+// replies go to that person.
 function EmailForm({ initial }: { initial: EmailSettings }) {
-  const [f, setF] = useState<EmailSettings>({ ...initial, password: '', appUrl: initial.appUrl || window.location.origin });
+  const [f, setF] = useState<EmailSettings>({ ...initial, password: '', fromName: initial.fromName || 'Foreman', appUrl: initial.appUrl || window.location.origin });
   const [busy, setBusy] = useState<'' | 'save' | 'test'>('');
   const qc = useQueryClient();
   const toast = useToast();
@@ -167,16 +166,14 @@ function EmailForm({ initial }: { initial: EmailSettings }) {
     }
   };
   const st = initial.status;
+  const ready = !!f.from.trim() && (!!f.password?.trim() || !!initial.hasPassword);
   return (
     <section>
-      <h2 className="mb-1 flex items-center gap-2 font-semibold"><Mail className="size-4" /> {t('Notification email')}</h2>
-      <p className="mb-3 text-xs text-mute">
-        {t('When someone creates an issue, everyone in the workspace gets an email (except whoever turned it off in their profile and the creator). The subject is always')} <span className="font-mono">{t('[Foreman] workspace name')}</span>{t(', so each workspace becomes a single thread in the inbox.')}
-      </p>
-      <div className="space-y-4 surface p-4">
+      <SectionHeader title={t('Notification email')} description={t('Foreman sends the notifications from one Gmail account. Each email shows who caused it (“Ana via Foreman”) and replies go straight to that person.')} />
+      <div className="surface space-y-5 p-4 sm:p-5">
         <Toggle checked={f.enabled} onChange={(enabled) => up({ enabled })} label={f.enabled ? t('On: notifies everyone') : t('Off: nobody receives it')} />
         {!f.enabled && (initial.notifyRules ?? 0) > 0 && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2 text-xs text-amber-200">
+          <div className="callout">
             <AlertTriangle className="mt-px size-3.5 shrink-0 text-amber-400" />
             {t('There are')} {initial.notifyRules} {t('email rule(s) in workflows that send nothing while sending is off. Turn it on and configure it below.')}
           </div>
@@ -184,65 +181,96 @@ function EmailForm({ initial }: { initial: EmailSettings }) {
         {!f.enabled ? (
           initial.enabled && <div className="flex justify-end"><Button variant="primary" loading={busy === 'save'} onClick={() => run('save', f)}>{t('Save (turn off)')}</Button></div>
         ) : <>
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-mute">{t('Fill in:')}</span>
-          {Object.entries(EMAIL_PRESETS).map(([name, p]) => (
-            <button key={name} type="button" onClick={() => up(p)} className="rounded-full border border-line px-2.5 py-0.5 text-dim hover:bg-hover">{name}</button>
-          ))}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-[1fr_6rem_9rem]">
-          <Field label={t('SMTP server')}><input className="field-input" value={f.host} onChange={(e) => up({ host: e.target.value })} placeholder={t('smtp.gmail.com')} /></Field>
-          <Field label={t('Port')}><input className="field-input" type="number" value={f.port || ''} onChange={(e) => up({ port: Number(e.target.value) })} /></Field>
-          <Field label={t('Security')}>
-            <select className="field-input" value={f.security} onChange={(e) => up({ security: e.target.value as EmailSettings['security'] })}>
-              <option value="starttls">{t('STARTTLS')}</option>
-              <option value="tls">{t('TLS')}</option>
-              <option value="none">{t('None')}</option>
-            </select>
-          </Field>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t('User')} hint={t('empty if no login is required')}><input className="field-input" autoComplete="off" value={f.username} onChange={(e) => up({ username: e.target.value })} /></Field>
-          <Field label={t('Password')} hint={initial.hasPassword ? t('saved; empty keeps it') : t('on Gmail, use an app password')}>
-            <input className="field-input" type="password" autoComplete="new-password" value={f.password} onChange={(e) => up({ password: e.target.value })} placeholder={initial.hasPassword ? '••••••••' : ''} />
-          </Field>
-          <Field label={t('Sender email')}><input className="field-input" type="email" value={f.from} onChange={(e) => up({ from: e.target.value })} placeholder={t('foreman@company.com')} /></Field>
-          <Field label={t('Sender name')}><input className="field-input" value={f.fromName} onChange={(e) => up({ fromName: e.target.value })} /></Field>
-        </div>
-        <Field label={t('Foreman address')} hint={t('used in email links')}><input className="field-input" value={f.appUrl} onChange={(e) => up({ appUrl: e.target.value })} /></Field>
-        {st && (st.lastError || st.lastSentAt) && (
-          <div className="text-xs">
-            {st.lastSentAt && <div className="text-emerald-400">{t('Last sent:')} {since(st.lastSentAt)}</div>}
-            {st.lastError && (!st.lastSentAt || (st.lastErrorAt ?? '') > st.lastSentAt) && <div className="text-red-400">{t('Last failure (')}{since(st.lastErrorAt)}): {st.lastError}</div>}
+          <ol className="space-y-1.5 rounded-lg bg-white/[0.03] p-3 text-xs leading-relaxed text-dim">
+            <li><span className="mr-1.5 text-mute">1.</span>{t('On the Gmail account that will send, turn on two-step verification.')}</li>
+            <li><span className="mr-1.5 text-mute">2.</span>{t('Create an app password at')} <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 font-medium text-accent hover:underline">myaccount.google.com/apppasswords <ExternalLink className="size-3" /></a> {t('(any name, e.g. “Foreman”).')}</li>
+            <li><span className="mr-1.5 text-mute">3.</span>{t('Paste the 16-character password below. It isn\'t your Gmail password and you can revoke it at any time.')}</li>
+          </ol>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={t('Gmail address')}>
+              <input className="field-input" type="email" inputMode="email" autoComplete="off" value={f.from} onChange={(e) => up({ from: e.target.value })} placeholder={t('team@gmail.com')} />
+            </Field>
+            <Field label={t('App password')} hint={initial.hasPassword ? t('saved; empty keeps it') : undefined}>
+              <input className="field-input font-mono" type="password" autoComplete="new-password" value={f.password} onChange={(e) => up({ password: e.target.value })} placeholder={initial.hasPassword ? '••••••••••••••••' : 'abcd efgh ijkl mnop'} />
+            </Field>
           </div>
-        )}
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button loading={busy === 'test'} onClick={() => run('test', f)}><Send className="size-3.5" /> {t('Send me a test')}</Button>
-          <Button variant="primary" loading={busy === 'save'} onClick={() => run('save', f)}>{t('Save')}</Button>
-        </div>
+          <Field label={t('Sender name')} hint={t('shows as “Ana via {0}”', f.fromName || 'Foreman')}>
+            <input className="field-input" value={f.fromName} onChange={(e) => up({ fromName: e.target.value })} placeholder="Foreman" />
+          </Field>
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs text-mute hover:text-dim">
+              <ChevronDown className="size-3.5 -rotate-90 transition group-open:rotate-0" /> {t('Advanced')}
+            </summary>
+            <Field label={t('Foreman address')} hint={t('used in email links')} className="mt-3">
+              <input className="field-input" value={f.appUrl} onChange={(e) => up({ appUrl: e.target.value })} />
+            </Field>
+          </details>
+          {st && (st.lastError || st.lastSentAt) && (
+            <div className="text-xs">
+              {st.lastSentAt && <div className="text-emerald-400">{t('Last sent:')} {since(st.lastSentAt)}</div>}
+              {st.lastError && (!st.lastSentAt || (st.lastErrorAt ?? '') > st.lastSentAt) && <div className="text-red-400">{t('Last failure (')}{since(st.lastErrorAt)}): {st.lastError}</div>}
+            </div>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button disabled={!ready} loading={busy === 'test'} onClick={() => run('test', f)}><Send className="size-3.5" /> {t('Send me a test')}</Button>
+            <Button variant="primary" disabled={!ready} loading={busy === 'save'} onClick={() => run('save', f)}>{t('Save')}</Button>
+          </div>
         </>}
       </div>
     </section>
   );
 }
 
+// Installed is not the same as working: each runtime shows the last real test with this
+// server's account (a "reply OK" call) and how many of its models answered.
 function Runtimes() {
   const { data, isLoading } = useQuery({ queryKey: ['runtimes'], queryFn: () => api.get<Runtime[]>('/runtimes'), staleTime: 60_000 });
+  const { data: catalog } = useModels();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const canTest = useCan('agent.create', 'agent.update', 'settings.manage');
+  const checking = !!catalog?.some((r) => r.checking);
+  const test = async () => {
+    try {
+      qc.setQueryData(['models'], await api.post<RuntimeModels[]>('/runtimes/check'));
+    } catch (err) {
+      toast('error', (err as Error).message);
+    }
+  };
   return (
     <section>
-      <h2 className="mb-1 font-semibold">{t('Runtimes on the server')}</h2>
-      <p className="mb-3 text-xs text-mute">{t('Agents run the Claude Code and Codex installed on the server, logged in there (see the README).')}</p>
+      <SectionHeader title={t('Runtimes on the server')}
+        description={t('Agents run the Claude Code, Codex and Gemini CLI installed on the server, signed in there (see the README). Each one is tested with a real call, so a plan that ended shows here.')}
+        actions={canTest && <Button size="sm" loading={checking} onClick={test}><Plug className="size-3.5" /> {checking ? t('Testing…') : t('Test again')}</Button>} />
       <div className="divide-y divide-line surface">
         {isLoading && <div className="p-4 text-mute">{t('Checking…')}</div>}
-        {data?.map((r) => (
-          <div key={r.runtime} className="flex items-center gap-3 p-3">
-            {r.installed ? <CheckCircle2 className="size-4 text-emerald-400" /> : <XCircle className="size-4 text-red-400" />}
-            <div className="flex-1">
-              <div className="font-medium">{r.runtime === 'claude' ? t('Claude Code') : t('Codex')}</div>
-              <div className="font-mono text-xs text-mute">{r.installed ? r.version : t('{0} not found in PATH', r.bin)}</div>
+        {data?.map((r) => {
+          const rt = catalog?.find((c) => c.runtime === r.runtime);
+          const conn = runtimeConnection(catalog, r.runtime);
+          const tested = rt?.models.filter((m) => m.available !== undefined) ?? [];
+          const ok = tested.filter((m) => m.available).length;
+          return (
+            <div key={r.runtime} className="flex items-start gap-3 px-4 py-3">
+              {!r.installed || conn.state === 'fail' ? <XCircle className="mt-0.5 size-4 shrink-0 text-red-400" />
+                : conn.state === 'ok' ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+                : <span className={clsx('mt-[5px] ml-[5px] mr-[3px] size-1.5 shrink-0 rounded-full', conn.state === 'checking' ? 'animate-pulse-soft bg-amber-400' : 'bg-mute')} />}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-medium">{runtimeOf(r.runtime).label}</span>
+                  <span className="font-mono text-xs text-mute">{r.installed ? r.version : t('{0} not found in PATH', r.bin)}</span>
+                </div>
+                {r.installed && (
+                  <div className={clsx('mt-0.5 text-xs [overflow-wrap:anywhere]', conn.state === 'fail' ? 'text-red-400' : 'text-mute')}>
+                    {conn.state === 'ok' && <>{t('Working')}{tested.length > 0 && ` · ${t('{0} of {1} models available', ok, tested.length)}`} · {t('tested {0}', conn.at ? since(conn.at) : '')}</>}
+                    {conn.state === 'fail' && (conn.problem || t('Not working with this account'))}
+                    {conn.state === 'checking' && t('Testing the connection…')}
+                    {conn.state === 'untested' && t('Connection not tested yet')}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -265,22 +293,22 @@ function Members({ me }: { me: User }) {
         actions={canCreate && <Button variant="primary" onClick={() => setEditing({ workspaceIds: [] })}><Plus className="size-4" /> {t('New user')}</Button>} />
       <div className="divide-y divide-line surface">
         {users.map((u) => (
-          <div key={u.id} className="flex items-center gap-3 p-3">
+          <div key={u.id} className="flex items-center gap-3 px-4 py-3">
             <Avatar name={u.name} size={28} />
             <div className="min-w-0 flex-1">
               <div className="font-medium">{u.name} {u.id === me.id && <span className="text-xs text-mute">{t('· you')}</span>}</div>
               <div className="truncate text-xs text-mute">{u.email}</div>
               <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
-                <span className="rounded bg-accent/15 px-1.5 py-0.5 text-accent">{u.isOwner ? t('owner · can do everything') : u.roleName || t('no role')}</span>
-                {can(u, 'workspace.all') ? <span className="rounded bg-hover px-1.5 py-0.5 text-dim">{t('every workspace')}</span>
-                  : u.workspaceIds?.length ? u.workspaceIds.map((id) => <span key={id} className="rounded bg-hover px-1.5 py-0.5 text-dim">{wsName(id)}</span>)
+                <span className="badge bg-accent/15 text-accent">{u.isOwner ? t('owner · can do everything') : u.roleName || t('no role')}</span>
+                {can(u, 'workspace.all') ? <span className="badge">{t('every workspace')}</span>
+                  : u.workspaceIds?.length ? u.workspaceIds.map((id) => <span key={id} className="badge">{wsName(id)}</span>)
                   : <span className="text-amber-400">{t('no workspace')}</span>}
               </div>
             </div>
             <Button size="sm" variant="ghost" onClick={() => setViewing(u)}><IdCard className="size-3.5" /> <span className="hidden sm:inline">{t('View profile')}</span></Button>
-            {canUpdate && (!u.isOwner || me.isOwner) && <button onClick={() => setEditing(u)} className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><Pencil className="size-4" /></button>}
+            {canUpdate && (!u.isOwner || me.isOwner) && <button onClick={() => setEditing(u)} className="icon-btn"><Pencil className="size-4" /></button>}
             {canDelete && u.id !== me.id && !u.isOwner && (
-              <button onClick={async () => { if (await ask({ title: t('Remove {0}?', u.name), message: t('The person loses access; what they did stays in the history.'), danger: true })) { await api.del(`/users/${u.id}`); qc.invalidateQueries({ queryKey: ['users'] }); } }} className="rounded p-1.5 text-mute hover:bg-hover hover:text-red-400"><Trash2 className="size-4" /></button>
+              <button onClick={async () => { if (await ask({ title: t('Remove {0}?', u.name), message: t('The person loses access; what they did stays in the history.'), danger: true })) { await api.del(`/users/${u.id}`); qc.invalidateQueries({ queryKey: ['users'] }); } }} className="icon-btn icon-btn-danger"><Trash2 className="size-4" /></button>
             )}
           </div>
         ))}
@@ -320,16 +348,16 @@ function ProfileModal({ user, onClose }: { user: User; onClose: () => void }) {
             </div>
           </div>
         </div>
-        {u.about?.trim() && <p className="whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-[13px] text-dim">{u.about}</p>}
+        {u.about?.trim() && <p className="whitespace-pre-wrap rounded-xl border border-line bg-white/[0.02] p-3 text-[13px] text-dim">{u.about}</p>}
 
         <div>
           <div className="mb-2 text-xs font-medium text-dim">{t('Where they work')}</div>
           {!data ? <Spinner /> : data.workspaces.length ? (
             <div className="grid gap-2 sm:grid-cols-2">
               {data.workspaces.map((w) => (
-                <div key={w.id} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+                <div key={w.id} className="rounded-xl border border-line bg-white/[0.02] p-3">
                   <div className="flex items-center gap-2">
-                    <span className="grid size-6 place-items-center rounded-lg bg-gradient-to-br from-accent to-accent/60 text-[11px] font-bold text-snow">{w.name[0]}</span>
+                    <WsBadge name={w.name} />
                     <span className="font-medium">{w.name}</span>
                     <span className="font-mono text-[10px] text-mute">{w.key}</span>
                   </div>
@@ -419,7 +447,7 @@ function UserModal({ user, isSelf, onClose }: { user: Partial<User>; isSelf: boo
             <div className="flex flex-wrap gap-1.5">
               {workspaces.map((w) => (
                 <button key={w.id} type="button" onClick={() => toggleWs(w.id)}
-                  className={`rounded-full border px-2.5 py-0.5 text-xs ${u.workspaceIds.includes(w.id) ? 'border-accent/50 bg-accent/15 text-fg' : 'border-line text-dim hover:bg-hover'}`}>
+                  aria-pressed={u.workspaceIds.includes(w.id)} className="pill">
                   {w.name}
                 </button>
               ))}

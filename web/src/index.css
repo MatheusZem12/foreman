@@ -2,16 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------- tokens ----------
+   Neutral surfaces, hairline borders and a single accent. Everything in the app reads
+   these variables (see tailwind.config.js); the light theme only swaps the values. */
 :root {
-  --bg: 11 11 13;
-  --panel: 18 18 21;
-  --card: 24 24 28;
-  --hover: 33 33 38;
-  --line: 39 39 45;
-  --fg: 237 237 241;
-  --dim: 163 163 173;
-  --mute: 110 110 120;
-  --accent: 124 108 255;
+  --bg: 10 10 11;
+  --panel: 16 16 18;
+  --card: 22 22 25;
+  --hover: 30 30 34;
+  --line: 37 37 42;
+  --fg: 236 236 239;
+  --dim: 161 161 170;
+  --mute: 113 113 122;
+  --accent: 124 110 255;
   --chart-1: #3987e5;
   --chart-2: #d95926;
   --chart-3: #199e70;
@@ -19,24 +22,23 @@
   --chart-5: #d55181;
   --chart-grid: rgb(var(--ink) / 0.06);
   --ink: 255 255 255;   /* overlays (white/x in Tailwind) */
-  --shadow: 0.6;
+  --shadow: 0.5;
   color-scheme: dark;
 }
 
-/* Light theme: the same variables, other values. data-theme is set before React
-   loads (index.html), so it doesn't flicker. */
+/* data-theme is set before React loads (index.html), so it doesn't flicker. */
 :root[data-theme='light'] {
-  --bg: 246 246 248;
+  --bg: 250 250 251;
   --panel: 255 255 255;
-  --card: 251 251 252;
-  --hover: 239 239 243;
-  --line: 226 226 232;
-  --fg: 24 24 28;
-  --dim: 78 78 88;
-  --mute: 124 124 134;
-  --accent: 104 86 240;
+  --card: 246 246 248;
+  --hover: 240 240 243;
+  --line: 228 228 233;
+  --fg: 23 23 26;
+  --dim: 82 82 91;
+  --mute: 120 120 130;
+  --accent: 98 80 235;
   --ink: 0 0 0;
-  --shadow: 0.12;
+  --shadow: 0.1;
   --chart-grid: rgb(0 0 0 / 0.07);
   color-scheme: light;
 }
@@ -47,18 +49,24 @@
 :root[data-theme='light'] .text-amber-400 { color: #b45309; }
 :root[data-theme='light'] :is(.text-sky-300, .text-sky-400, .text-sky-400\/80) { color: #0369a1; }
 :root[data-theme='light'] :is(.text-orange-200, .text-orange-400) { color: #c2410c; }
-/* Darkened strips (dialog footer, code blocks) stay subtle. */
+/* Darkened strips (code blocks, backdrops) stay subtle. */
 :root[data-theme='light'] :is(.bg-black\/10, .bg-black\/20, .bg-black\/30) { background-color: rgb(0 0 0 / 0.03); }
-:root[data-theme='light'] :is(.bg-black\/50, .bg-black\/60, .bg-black\/70) { background-color: rgb(20 20 30 / 0.35); }
+:root[data-theme='light'] :is(.bg-black\/40, .bg-black\/50, .bg-black\/60, .bg-black\/70) { background-color: rgb(20 20 30 / 0.3); }
 
+/* ---------- base ---------- */
 html, body, #root { height: 100%; }
+/* Phones: the address bar comes and goes; dvh follows what is really visible. */
+@supports (height: 100dvh) { #root { height: 100dvh; } }
 body {
   @apply bg-bg text-fg font-sans antialiased text-[13px];
   font-feature-settings: 'cv11', 'ss01', 'ss03';
   -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  text-rendering: optimizeLegibility;
 }
-* { scrollbar-width: thin; scrollbar-color: rgb(var(--line)) transparent; }
-::selection { background: rgb(var(--accent) / 0.35); }
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--ink) / 0.14) transparent; }
+::selection { background: rgb(var(--accent) / 0.3); }
+h1, h2, h3 { letter-spacing: -0.011em; }
 
 /* Thinner, consistent lucide icons. */
 .lucide { stroke-width: 1.75; }
@@ -66,31 +74,85 @@ body {
 /* No browser outline: "loose" fields (title, description) get no border on focus;
    keyboard focus on buttons and links uses a discreet ring. */
 input, textarea, select { @apply bg-transparent; outline: none !important; }
+/* The option list of a native <select> is drawn by the browser; on some systems (Chrome on
+   Linux) it ignores the theme and shows light text on a white list. Colors made explicit. */
+select option, select optgroup { background-color: rgb(var(--panel)); color: rgb(var(--fg)); }
+select option:disabled { color: rgb(var(--mute)); }
+/* The number arrows, the date picker and other native bits follow the theme. */
+:root[data-theme='dark'] { color-scheme: dark; }
 :focus { outline: none; }
 button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid rgb(var(--accent) / 0.6) !important;
+  outline: 2px solid rgb(var(--accent) / 0.7) !important;
   outline-offset: 2px;
   border-radius: 6px;
 }
 
+/* Touch screens: iOS zooms the page into any field under 16px, and a finger needs a
+   bigger target than a mouse. .keep-size is for the big "loose" titles. */
+@media (pointer: coarse) {
+  input:not(.keep-size), textarea:not(.keep-size), select { font-size: 16px !important; }
+  .icon-btn { width: 2.25rem; height: 2.25rem; }
+}
+
 @layer components {
+/* Fields */
 .field-input {
-  @apply w-full rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-fg placeholder:text-mute transition
-    hover:border-white/15 focus:border-accent/70 focus:bg-white/[0.03] focus:shadow-[0_0_0_3px_rgb(var(--accent)/0.15)];
+  @apply w-full rounded-lg border border-line bg-transparent px-3 py-2 text-fg placeholder:text-mute transition-colors
+    hover:border-white/20 focus:border-accent focus:shadow-[0_0_0_3px_rgb(var(--accent)/0.14)]
+    disabled:cursor-not-allowed disabled:opacity-60;
 }
 textarea.field-input { @apply resize-y leading-relaxed; }
 select.field-input { @apply cursor-pointer pr-8; }
 
-/* Surfaces */
-/* Page: always the full width of the content area, with the same side padding on
-   every screen (board, workflow, analytics, settings…). */
-.page { @apply w-full px-4 pb-24 pt-4 md:px-8 md:pt-8; }
-.surface { @apply rounded-xl border border-line bg-panel; box-shadow: 0 1px 0 0 rgb(var(--ink) / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / var(--shadow)); }
-.surface-hover { @apply transition hover:border-white/15 hover:bg-card; }
-.glow { background: radial-gradient(600px circle at 50% -20%, rgb(var(--accent) / 0.12), transparent 60%); }
+/* Page: one content width and the same side padding on every screen. Wide enough for
+   the board-like screens; .page-narrow is for forms and settings, where long lines of
+   fields are harder to read. */
+.page { @apply mx-auto w-full max-w-[88rem] px-4 pb-24 pt-5 md:px-8 md:pt-8; }
+.page-narrow { @apply max-w-[56rem]; }
+
+/* Surfaces: flat, one hairline. */
+.surface { @apply rounded-xl border border-line bg-panel; }
+.surface-hover { @apply transition-colors hover:border-white/20; }
+
+/* The bar on top of a screen (board, issue). */
+.toolbar { @apply flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2 md:px-5; }
+
+/* Icon-only button. */
+.icon-btn { @apply grid size-8 shrink-0 place-items-center rounded-lg text-mute transition-colors hover:bg-hover hover:text-fg disabled:opacity-50; }
+.icon-btn-danger { @apply hover:text-red-400; }
+
+/* Underlined tabs; scroll sideways on phones. */
+.tabs { @apply flex gap-5 overflow-x-auto border-b border-line; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { @apply -mb-px flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent py-2.5 text-[13px] text-mute transition-colors hover:text-fg; }
+.tab[aria-current='true'] { @apply border-fg font-medium text-fg; }
+
+/* Segmented control. */
+.seg { @apply inline-flex shrink-0 items-center rounded-lg border border-line p-0.5; }
+.seg-item { @apply inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs text-mute transition-colors hover:text-fg; }
+.seg-item[aria-pressed='true'] { @apply bg-hover text-fg; }
+
+/* Small things. */
+.badge { @apply inline-flex items-center gap-1 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[11px] text-dim; }
+.pill { @apply inline-flex h-7 items-center gap-1.5 rounded-full border border-line px-3 text-xs text-dim transition-colors hover:border-white/20 hover:text-fg; }
+.pill[aria-pressed='true'], .pill-on { @apply border-accent/50 bg-accent/10 text-fg; }
+.kbd { @apply rounded border border-line px-1 font-sans text-[10px] font-medium text-mute; }
+.callout { @apply flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-xs text-amber-200; }
+.section-title { @apply text-sm font-semibold; }
+.section-desc { @apply mb-3 mt-1 max-w-3xl text-xs leading-relaxed text-mute; }
+.label-caps { @apply text-[11px] font-medium text-mute; }
+
+.glow { background: radial-gradient(600px circle at 50% -20%, rgb(var(--accent) / 0.1), transparent 60%); }
 }
 
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+/* Long lists (diffs, logs): the browser skips layout and paint of what is off screen. */
+.cv-auto { content-visibility: auto; contain-intrinsic-size: auto 400px; }
+
 .markdown { @apply leading-relaxed break-words; }
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
 .markdown p { @apply my-1.5; }
 .markdown ul { @apply list-disc pl-5 my-1.5; }
 .markdown ol { @apply list-decimal pl-5 my-1.5; }
@@ -99,70 +161,41 @@ select.field-input { @apply cursor-pointer pr-8; }
 .markdown h2 { @apply text-[14px]; }
 code, kbd, pre { font-variant-ligatures: none; }
 .markdown code { @apply font-mono text-[12px] bg-hover rounded px-1 py-px; }
-.markdown pre { @apply bg-bg border border-line rounded-md p-2.5 my-2 overflow-x-auto; }
+.markdown pre { @apply bg-bg border border-line rounded-lg p-3 my-2 overflow-x-auto; }
 .markdown pre code { @apply bg-transparent p-0; }
 .markdown a { @apply text-accent underline-offset-2 hover:underline; }
 .markdown blockquote { @apply border-l-2 border-line pl-3 text-dim; }
-.markdown table { @apply border-collapse my-2; }
+.markdown table { @apply border-collapse my-2 block max-w-full overflow-x-auto; }
 .markdown td, .markdown th { @apply border border-line px-2 py-1; }
+.markdown img { @apply max-w-full rounded-lg; }
+.markdown hr { @apply my-3 border-line; }
 
 @keyframes pulse-soft { 50% { opacity: .45; } }
 .animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
 
 @keyframes fade { from { opacity: 0; } }
-@keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.98); } }
+@keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.985); } }
+@keyframes sheet { from { transform: translateY(16px); opacity: 0; } }
 
 /* ---------- Landing ---------- */
 [data-reveal] {
   opacity: 0;
-  transform: translateY(18px);
-  filter: blur(4px);
-  transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1), filter .8s ease;
+  transform: translateY(14px);
+  transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1);
   transition-delay: var(--d, 0ms);
 }
-[data-reveal].in { opacity: 1; transform: none; filter: none; }
+[data-reveal].in { opacity: 1; transform: none; }
 
-.text-gradient {
-  background: linear-gradient(100deg, rgb(var(--accent)) 0%, #c084fc 30%, #60a5fa 60%, rgb(var(--accent)) 100%);
-  background-size: 220% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: gradient-pan 8s linear infinite;
-}
-@keyframes gradient-pan { to { background-position: -220% center; } }
+.text-gradient { color: rgb(var(--accent)); }
 
 .hero-grid {
   background-image:
-    linear-gradient(rgb(var(--ink) / .045) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(var(--ink) / .045) 1px, transparent 1px);
+    linear-gradient(rgb(var(--ink) / .04) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--ink) / .04) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
   -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
 }
-.blob { animation: float 14s ease-in-out infinite; }
-.blob-2 { animation-duration: 18s; animation-direction: reverse; }
-@keyframes float {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 40px 24px; }
-}
-
-/* A shine that crosses the button on hover. */
-.btn-shine { position: relative; overflow: hidden; }
-.btn-shine::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / .28) 50%, transparent 70%);
-  transform: translateX(-120%);
-}
-.btn-shine:hover::after { transition: transform .7s ease; transform: translateX(120%); }
-
-/* A light that follows the mouse. */
-.spot::before {
-  content: ''; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
-  opacity: 0; transition: opacity .3s;
-  background: radial-gradient(360px circle at var(--x, 50%) var(--y, 50%), rgb(var(--accent) / .12), transparent 45%);
-}
-.spot:hover::before { opacity: 1; }
 
 .marquee {
   overflow: hidden;
@@ -173,18 +206,16 @@ code, kbd, pre { font-variant-ligatures: none; }
 .marquee:hover .marquee-track { animation-play-state: paused; }
 @keyframes marquee { to { transform: translateX(-50%); } }
 
-.demo-card { animation: demo-in .5s cubic-bezier(.2,.8,.2,1.1); }
-@keyframes demo-in { from { opacity: 0; transform: translateY(-8px) scale(.94); } }
-.demo-line { animation: line-in .35s ease-out; }
+.demo-card { animation: demo-in .45s cubic-bezier(.2,.8,.2,1); }
+@keyframes demo-in { from { opacity: 0; transform: translateY(-6px); } }
+.demo-line { animation: line-in .3s ease-out; }
 @keyframes line-in { from { opacity: 0; transform: translateX(-6px); } }
 
 .tab-progress { animation: tab-progress 5s linear forwards; }
 @keyframes tab-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
-.tilt { transform: perspective(1400px) rotateY(6deg) rotateX(2deg); transition: transform .7s cubic-bezier(.2,.7,.2,1); }
-.tilt:hover { transform: perspective(1400px) rotateY(0) rotateX(0); }
-
 @media (prefers-reduced-motion: reduce) {
-  .text-gradient, .blob, .marquee-track, .demo-card, .demo-line, .tab-progress { animation: none !important; }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .marquee-track, .tab-progress { animation: none !important; }
   .landing { scroll-behavior: auto; }
 }

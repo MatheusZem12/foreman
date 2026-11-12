@@ -10,6 +10,14 @@ import { t } from '../lib/i18n';
 
 type BtnVariant = 'primary' | 'ghost' | 'outline' | 'danger' | 'success';
 
+const BTN: Record<BtnVariant, string> = {
+  primary: 'bg-accent text-snow hover:bg-accent/90',
+  ghost: 'text-dim hover:bg-hover hover:text-fg',
+  outline: 'border border-line text-fg hover:border-white/20 hover:bg-hover',
+  danger: 'border border-red-500/30 bg-red-500/[0.06] text-red-400 hover:bg-red-500/[0.14]',
+  success: 'border border-emerald-500/30 bg-emerald-500/[0.08] text-emerald-400 hover:bg-emerald-500/[0.16]'
+};
+
 export function Button({
   variant = 'outline', size = 'md', className, loading, children, ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BtnVariant; size?: 'sm' | 'md'; loading?: boolean }) {
@@ -18,13 +26,9 @@ export function Button({
       {...props}
       disabled={props.disabled || loading}
       className={clsx(
-        'relative inline-flex select-none items-center justify-center gap-2 rounded-[10px] font-medium whitespace-nowrap transition-all duration-150 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
-        size === 'sm' ? 'h-7 rounded-lg px-2.5 text-xs' : 'h-9 px-4 text-[13px]',
-        variant === 'primary' && 'bg-gradient-to-b from-[#8f80ff] to-accent text-snow shadow-[inset_0_1px_0_0_rgb(255_255_255/0.25),0_0_0_1px_rgb(var(--accent)/0.6),0_6px_16px_-6px_rgb(var(--accent)/0.7)] hover:brightness-110 hover:shadow-[inset_0_1px_0_0_rgb(255_255_255/0.3),0_0_0_1px_rgb(var(--accent)/0.8),0_8px_22px_-6px_rgb(var(--accent)/0.85)]',
-        variant === 'ghost' && 'text-dim hover:bg-white/[0.06] hover:text-fg',
-        variant === 'outline' && 'bg-white/[0.04] text-fg shadow-[inset_0_1px_0_0_rgb(var(--ink)/0.05),0_0_0_1px_rgb(var(--ink)/0.09)] hover:bg-white/[0.07] hover:shadow-[inset_0_1px_0_0_rgb(var(--ink)/0.06),0_0_0_1px_rgb(var(--ink)/0.16)]',
-        variant === 'danger' && 'bg-red-500/10 text-red-300 shadow-[0_0_0_1px_rgb(239_68_68/0.3)] hover:bg-red-500/[0.18] hover:text-red-200',
-        variant === 'success' && 'bg-emerald-500/10 text-emerald-300 shadow-[0_0_0_1px_rgb(16_185_129/0.3)] hover:bg-emerald-500/[0.18]',
+        'inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
+        size === 'sm' ? 'h-7 px-2.5 text-xs coarse:h-8' : 'h-8 px-3 text-[13px] coarse:h-10 coarse:px-4',
+        BTN[variant],
         className
       )}
     >
@@ -47,9 +51,9 @@ export function Field({ label, hint, children, className }: { label: string; hin
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
-    <button type="button" onClick={() => onChange(!checked)} className="inline-flex items-center gap-2 text-left text-dim">
-      <span className={clsx('relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200', checked ? 'bg-accent shadow-[0_0_12px_-2px_rgb(var(--accent)/0.7)]' : 'bg-white/10 shadow-[inset_0_0_0_1px_rgb(var(--ink)/0.08)]')}>
-        <span className={clsx('absolute top-0.5 size-4 rounded-full bg-snow shadow-[0_1px_3px_rgb(0_0_0/0.4)] transition-all duration-200', checked ? 'left-[18px]' : 'left-0.5')} />
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="inline-flex items-center gap-2 text-left text-dim">
+      <span className={clsx('relative h-[18px] w-8 shrink-0 rounded-full transition-colors duration-200', checked ? 'bg-accent' : 'bg-white/[0.14]')}>
+        <span className={clsx('absolute left-0.5 top-0.5 size-3.5 rounded-full bg-snow shadow-sm transition-transform duration-200', checked && 'translate-x-3.5')} />
       </span>
       {label}
     </button>
@@ -57,6 +61,9 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
 }
 
 export const Spinner = ({ className }: { className?: string }) => <Loader2 className={clsx('size-4 animate-spin text-mute', className)} />;
+
+// The placeholder of a screen that is still loading (data or the screen's own code).
+export const PageLoader = () => <div className="grid h-full min-h-40 place-items-center"><Spinner /></div>;
 
 export function Empty({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={clsx('py-10 text-center text-mute', className)}>{children}</div>;
@@ -67,36 +74,74 @@ export function EmptyState({ icon: Icon, title, children, action, className }: {
   icon: React.ComponentType<{ className?: string }>; title: string; children?: ReactNode; action?: ReactNode; className?: string;
 }) {
   return (
-    <div className={clsx('flex flex-col items-center rounded-2xl border border-dashed border-line px-6 py-14 text-center', className)}>
-      <div className="relative mb-4">
-        <div className="absolute inset-0 rounded-2xl bg-accent/30 blur-xl" />
-        <div className="relative grid size-12 place-items-center rounded-2xl border border-white/10 bg-gradient-to-b from-card to-panel">
-          <Icon className="size-5 text-accent" />
-        </div>
+    <div className={clsx('flex flex-col items-center rounded-xl border border-dashed border-line px-6 py-14 text-center', className)}>
+      <div className="mb-4 grid size-10 place-items-center rounded-xl border border-line bg-panel">
+        <Icon className="size-[18px] text-dim" />
       </div>
       <div className="font-medium text-fg">{title}</div>
-      {children && <p className="mt-1 max-w-sm text-sm text-mute">{children}</p>}
+      {children && <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-mute">{children}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }
 
-// The pages' standard header.
-export function PageHeader({ icon: Icon, title, description, actions }: {
+// The pages' standard header: title, one line of context and the screen's actions.
+// (icon is accepted for the callers' sake; the header itself is text only.)
+export function PageHeader({ title, description, actions }: {
   icon?: React.ComponentType<{ className?: string }>; title: string; description?: ReactNode; actions?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start gap-3">
-      {Icon && (
-        <div className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-gradient-to-b from-card to-panel">
-          <Icon className="size-[18px] text-accent" />
-        </div>
-      )}
-      <div className="min-w-0 flex-1">
+    <div className="mb-6 flex flex-wrap items-start gap-x-4 gap-y-3">
+      <div className="min-w-0 flex-1 basis-64">
         <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-0.5 max-w-2xl text-[13px] leading-relaxed text-mute">{description}</p>}
+        {description && <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-mute">{description}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+// A section inside a settings-like page.
+export function SectionHeader({ title, description, actions }: { title: ReactNode; description?: ReactNode; actions?: ReactNode }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-start gap-x-4 gap-y-2">
+      <div className="min-w-0 flex-1 basis-64">
+        <h2 className="section-title">{title}</h2>
+        {description && <p className="mt-1 max-w-3xl text-xs leading-relaxed text-mute">{description}</p>}
+      </div>
+      {actions}
+    </div>
+  );
+}
+
+type Item<T extends string> = { id: T; label: ReactNode; icon?: React.ComponentType<{ className?: string }>; hint?: string };
+
+// A segmented control: a few exclusive options side by side.
+export function Segmented<T extends string>({ items, value, onChange, className }: { items: Item<T>[]; value: T; onChange: (v: T) => void; className?: string }) {
+  return (
+    <div className={clsx('seg', className)}>
+      {items.map((i) => (
+        <button key={i.id} type="button" title={i.hint} aria-pressed={value === i.id} onClick={() => onChange(i.id)} className="seg-item">
+          {i.icon && <i.icon className="size-3.5" />}{i.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Underlined tabs. On a narrow screen the bar scrolls sideways and keeps the current tab in view.
+export function Tabs<T extends string>({ items, value, onChange, className }: { items: Item<T>[]; value: T; onChange: (v: T) => void; className?: string }) {
+  const bar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bar.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }, [value]);
+  return (
+    <div ref={bar} className={clsx('tabs', className)}>
+      {items.map((i) => (
+        <button key={i.id} type="button" title={i.hint} aria-current={value === i.id} onClick={() => onChange(i.id)} className="tab">
+          {i.icon && <i.icon className="size-3.5" />}{i.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -113,17 +158,19 @@ export function Modal({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
   if (!open) return null;
+  // A dialog on a desktop; a sheet stuck to the bottom on a phone.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex animate-[fade_.15s_ease-out] items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={clsx('flex max-h-[92dvh] w-full animate-[pop_.18s_ease-out] flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-panel shadow-pop sm:rounded-2xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
+    <div className="fixed inset-0 z-50 flex animate-[fade_.15s_ease-out] items-end justify-center bg-black/60 sm:items-center sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" className={clsx('flex max-h-[92dvh] w-full animate-[sheet_.2s_ease-out] flex-col overflow-hidden rounded-t-2xl border border-line bg-panel shadow-pop sm:animate-[pop_.16s_ease-out] sm:rounded-xl', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
+        <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-white/15 sm:hidden" />
         {title && (
-          <div className="flex items-center justify-between gap-3 px-6 pb-3 pt-5">
-            <div className="text-base font-semibold tracking-tight">{title}</div>
-            <button onClick={onClose} aria-label={t('Close')} className="-mr-1.5 grid size-8 place-items-center rounded-lg text-mute transition hover:bg-white/[0.06] hover:text-fg"><X className="size-4" /></button>
+          <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-3 sm:px-6 sm:pt-5">
+            <div className="min-w-0 truncate text-[15px] font-semibold tracking-tight">{title}</div>
+            <button onClick={onClose} aria-label={t('Close')} className="icon-btn -mr-1.5"><X className="size-4" /></button>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-2">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-2.5 border-t border-white/[0.06] bg-black/20 px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">{footer}</div>}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-2 sm:px-6 sm:pb-6">{children}</div>
+        {footer && <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">{footer}</div>}
       </div>
     </div>,
     document.body
@@ -197,18 +244,22 @@ export function Popover({
     <div ref={ref} className={clsx('relative', block ? 'flex w-full' : 'inline-flex')}>
       <div onClick={() => setOpen((o) => !o)} className={block ? 'flex w-full' : 'inline-flex'}>{trigger(open)}</div>
       {open && createPortal(
-        <div
-          ref={pop}
-          style={style}
-          className={clsx(
-            'z-[70] min-w-[210px] animate-[pop_.12s_ease-out] overflow-y-auto rounded-xl border border-white/10 bg-panel/95 p-1 shadow-pop backdrop-blur-xl',
-            'max-sm:fixed max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[60dvh]',
-            'sm:fixed',
-            className
-          )}
-        >
-          {children(() => setOpen(false))}
-        </div>,
+        <>
+          {/* On a phone the list is a sheet: the dimmed background says so, and a tap on it closes. */}
+          <div className="fixed inset-0 z-[69] bg-black/40 sm:hidden" />
+          <div
+            ref={pop}
+            style={style}
+            className={clsx(
+              'z-[70] min-w-[210px] animate-[pop_.12s_ease-out] overflow-y-auto overscroll-contain rounded-xl border border-line bg-panel p-1 shadow-pop',
+              'max-sm:fixed max-sm:inset-x-2 max-sm:bottom-[max(0.5rem,env(safe-area-inset-bottom))] max-sm:max-h-[60dvh]',
+              'sm:fixed',
+              className
+            )}
+          >
+            {children(() => setOpen(false))}
+          </div>
+        </>,
         document.body
       )}
     </div>
@@ -220,7 +271,7 @@ export function MenuItem({ children, onClick, selected, danger }: { children: Re
     <button
       type="button"
       onClick={onClick}
-      className={clsx('flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-white/[0.06]', danger && 'text-red-400')}
+      className={clsx('flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-hover coarse:min-h-10', danger && 'text-red-400')}
     >
       <span className="flex min-w-0 flex-1 items-center gap-2">{children}</span>
       {selected && <Check className="size-3.5 text-accent" />}
@@ -233,7 +284,7 @@ export function Chip({ children, className, ...props }: React.ButtonHTMLAttribut
     <button
       type="button"
       {...props}
-      className={clsx('inline-flex h-7 items-center gap-1.5 rounded-full border border-line bg-white/[0.02] px-2.5 text-xs text-dim transition hover:border-white/15 hover:bg-hover hover:text-fg', className)}
+      className={clsx('inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs text-dim transition-colors hover:border-white/20 hover:bg-hover hover:text-fg coarse:h-8', className)}
     >
       {children}
     </button>
@@ -257,9 +308,9 @@ export function StatusIcon({ status, className }: { status: Status; className?: 
     case 'blocked':
       return <svg {...common}><circle cx="7" cy="7" r="5.5" fill="none" stroke={color} strokeWidth="1.5" /><path d="M3.2 10.8l7.6-7.6" stroke={color} strokeWidth="1.5" /></svg>;
     case 'done':
-      return <svg {...common}><circle cx="7" cy="7" r="6.25" fill={color} /><path d="M4.3 7.2l1.8 1.8 3.6-3.8" fill="none" stroke="#111" strokeWidth="1.6" /></svg>;
+      return <svg {...common}><circle cx="7" cy="7" r="6.25" fill={color} /><path d="M4.3 7.2l1.8 1.8 3.6-3.8" fill="none" stroke="rgb(var(--panel))" strokeWidth="1.6" /></svg>;
     case 'cancelled':
-      return <svg {...common}><circle cx="7" cy="7" r="6.25" fill={color} /><path d="M5 5l4 4M9 5l-4 4" stroke="#111" strokeWidth="1.5" /></svg>;
+      return <svg {...common}><circle cx="7" cy="7" r="6.25" fill={color} /><path d="M5 5l4 4M9 5l-4 4" stroke="rgb(var(--panel))" strokeWidth="1.5" /></svg>;
     case 'waiting':
       return <svg {...common}><circle cx="7" cy="7" r="5.5" fill="none" stroke={color} strokeWidth="1.5" /><path d="M5.6 4.8v4.4M8.4 4.8v4.4" stroke={color} strokeWidth="1.5" strokeLinecap="round" /></svg>;
     default:
@@ -292,7 +343,7 @@ export function PriorityIcon({ priority, className }: { priority: number; classN
 export function Avatar({ name, emoji, size = 18 }: { name?: string; emoji?: string; size?: number }) {
   return (
     <span
-      className="inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-white/15 to-white/5 text-[10px] font-semibold uppercase text-fg ring-1 ring-white/10"
+      className="inline-flex shrink-0 items-center justify-center rounded-full bg-white/[0.1] text-[10px] font-semibold uppercase text-dim"
       style={{ width: size, height: size, fontSize: emoji ? size * 0.62 : size * 0.48 }}
     >
       {emoji || (name || '?').slice(0, 1)}
@@ -316,15 +367,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div className="pointer-events-none fixed inset-x-3 bottom-3 z-[60] flex flex-col items-center gap-2 sm:inset-x-auto sm:right-4 sm:items-end">
+      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-[80] flex flex-col items-center gap-2 sm:inset-x-auto sm:right-4 sm:items-end">
         {toasts.map((tt) => (
           <div
             key={tt.id}
             className={clsx(
-              'pointer-events-auto flex max-w-sm animate-[pop_.18s_ease-out] items-start gap-2.5 rounded-xl border border-white/10 bg-panel/95 px-3.5 py-2.5 shadow-pop backdrop-blur-xl'
+              'pointer-events-auto flex max-w-sm animate-[pop_.18s_ease-out] items-start gap-2.5 rounded-lg border border-line bg-card px-3.5 py-2.5 shadow-pop'
             )}
           >
-            <span className={clsx('mt-1 size-2 shrink-0 rounded-full', tt.kind === 'error' ? 'bg-red-400' : tt.kind === 'success' ? 'bg-emerald-400' : 'bg-accent')} />
+            <span className={clsx('mt-[5px] size-1.5 shrink-0 rounded-full', tt.kind === 'error' ? 'bg-red-400' : tt.kind === 'success' ? 'bg-emerald-400' : 'bg-accent')} />
             <span className={tt.kind === 'error' ? 'text-red-200' : ''}>{tt.text}</span>
           </div>
         ))}

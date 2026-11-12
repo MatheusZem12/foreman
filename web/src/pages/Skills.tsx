@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { BookOpen, Check, CheckCircle2, Circle, FileCode2, Plus, Trash2 } from 'lucide-react';
@@ -9,29 +9,34 @@ import { AgentIcon } from '../components/AgentIcon';
 import type { FileEntry, Skill } from '../lib/types';
 import { t } from '../lib/i18n';
 
-const TEMPLATE = t('Quando usar: …\n\nPassos:\n1. …\n');
+const TEMPLATE = t('When to use: …\n\nSteps:\n1. …\n');
 
 export function SkillsPage() {
   const { data: skills = [] } = useSkills();
   const canCreate = useCan('skill.create');
   const [selected, setSelected] = useState<string | 'new' | null>(null);
   const current = selected === 'new' ? null : skills.find((s) => s.id === selected) ?? null;
+  // On a desktop (list and editor side by side) the first skill opens by itself, once.
+  // On a phone the list is the first screen, and "back" returns to it.
+  const auto = useRef(false);
   useEffect(() => {
-    if (selected === null && skills.length) setSelected(skills[0].id);
+    if (auto.current || !skills.length) return;
+    auto.current = true;
+    if (selected === null && window.matchMedia('(min-width: 768px)').matches) setSelected(skills[0].id);
   }, [skills, selected]);
 
   return (
     <div className="flex h-full flex-col md:flex-row">
-      <aside className={clsx('shrink-0 border-line md:w-72 md:border-r', selected && 'hidden md:block')}>
-        <div className="flex items-center gap-2 p-4 pb-2">
-          <h1 className="text-lg font-semibold">{t('Skills')}</h1>
+      <aside className={clsx('min-h-0 overflow-y-auto border-line max-md:flex-1 md:w-72 md:shrink-0 md:border-r', selected && 'hidden md:block')}>
+        <div className="flex items-center gap-2 px-4 pb-2 pt-5 md:pt-8">
+          <h1 className="text-lg font-semibold tracking-tight">{t('Skills')}</h1>
           {canCreate && <Button size="sm" variant="primary" className="ml-auto" onClick={() => setSelected('new')}><Plus className="size-3.5" /> {t('New')}</Button>}
         </div>
-        <p className="px-4 pb-3 text-xs text-mute">{t('Reusable instructions and scripts. Index skills on agents: every agent ships with its bundle of skills. Edit here and it applies everywhere.')}</p>
+        <p className="px-4 pb-3 text-xs leading-relaxed text-mute">{t('Reusable instructions and scripts. Index skills on agents: every agent ships with its bundle of skills. Edit here and it applies everywhere.')}</p>
         <div className="space-y-0.5 px-2 pb-4">
           {skills.map((s) => (
-            <button key={s.id} onClick={() => setSelected(s.id)} className={clsx('w-full rounded-md px-2.5 py-2 text-left hover:bg-hover', selected === s.id && 'bg-hover')}>
-              <div className="flex items-center gap-2 font-medium">{s.name} {s.always && <span className="rounded bg-accent/15 px-1.5 text-[10px] text-accent">{t('always')}</span>}</div>
+            <button key={s.id} onClick={() => setSelected(s.id)} className={clsx('w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-hover', selected === s.id && 'bg-hover')}>
+              <div className="flex items-center gap-2 font-medium"><span className="truncate">{s.name}</span> {s.always && <span className="badge shrink-0 bg-accent/15 py-0 text-[10px] text-accent">{t('always')}</span>}</div>
               <div className="line-clamp-2 text-xs text-mute">{s.description}</div>
             </button>
           ))}
@@ -92,10 +97,10 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
   };
 
   return (
-    <div className="page space-y-4">
-      <div className="flex items-center gap-2">
-        <button onClick={onBack} className="text-xs text-mute md:hidden">{t('← Skills')}</button>
-        <span className="font-mono text-xs text-mute">{s.slug ? `skills/${s.slug}/SKILL.md` : t('new skill')}</span>
+    <div className="page page-narrow space-y-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={onBack} className="-ml-1 inline-flex h-8 items-center rounded-lg px-2 text-xs text-dim hover:bg-hover md:hidden">{t('← Skills')}</button>
+        <span className="min-w-0 truncate font-mono text-xs text-mute">{s.slug ? `skills/${s.slug}/SKILL.md` : t('new skill')}</span>
         <div className="ml-auto flex gap-2">
           {s.id && canDelete && <Button size="sm" variant="ghost" onClick={remove}><Trash2 className="size-3.5" /> {t('Delete')}</Button>}
           {canSave && <Button size="sm" variant="primary" loading={busy} onClick={save}>{t('Save')}</Button>}
@@ -109,7 +114,7 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
         <div className="grid gap-2 sm:grid-cols-3">
           {([['all', t('Every issue'), t('Any agent, on any issue')], ['agents', t('Chosen agents'), t('Only when these agents run')], ['none', t('None for now'), t('Kept to link later')]] as const).map(([id, title, desc]) => (
             <button key={id} type="button" onClick={() => setScope(id)}
-              className={clsx('rounded-xl border p-3 text-left transition', scope === id ? 'border-accent/60 bg-accent/10' : 'border-line bg-white/[0.02] hover:border-white/15')}>
+              className={clsx('rounded-lg border p-3 text-left transition-colors', scope === id ? 'border-accent/60 bg-accent/[0.08]' : 'border-line hover:border-white/20')}>
               <div className="flex items-center gap-1.5 text-[13px] font-medium">{scope === id ? <CheckCircle2 className="size-3.5 text-accent" /> : <Circle className="size-3.5 text-mute" />} {title}</div>
               <div className="mt-0.5 text-[11px] text-mute">{desc}</div>
             </button>
@@ -121,7 +126,7 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
               const on = chosen.includes(a.id);
               return (
                 <button key={a.id} type="button" onClick={() => setAgentIds(on ? chosen.filter((x) => x !== a.id) : [...chosen, a.id])}
-                  className={clsx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition', on ? 'border-accent/50 bg-accent/15 text-fg' : 'border-line text-dim hover:bg-hover')}>
+                  aria-pressed={on} className="pill">
                   <AgentIcon avatar={a.avatar} size={14} /> {a.name} {on && <Check className="size-3 text-accent" />}
                 </button>
               );
@@ -139,14 +144,14 @@ function SkillEditor({ skill, onDone, onBack }: { skill: Skill | null; onDone: (
       <div>
         <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-dim">
           {t('Skill files')} <span className="font-normal text-mute">{t('· scripts sit next to SKILL.md; start with #! to make them executable')}</span>
-          <button onClick={() => { set({ files: [...files, { path: `script${files.length + 1}.sh`, content: '#!/usr/bin/env bash\nset -euo pipefail\n' }] }); setFileIdx(files.length); }} className="ml-auto rounded p-1 text-mute hover:bg-hover hover:text-fg"><Plus className="size-3.5" /></button>
+          <button onClick={() => { set({ files: [...files, { path: `script${files.length + 1}.sh`, content: '#!/usr/bin/env bash\nset -euo pipefail\n' }] }); setFileIdx(files.length); }} aria-label={t('Add')} className="icon-btn ml-auto size-7"><Plus className="size-3.5" /></button>
         </div>
         <div className="space-y-1">
           {files.map((f, i) => (
-            <div key={i} className="rounded-md border border-line">
-              <div className="flex items-center gap-2 px-2 py-1">
+            <div key={i} className="overflow-hidden rounded-lg border border-line">
+              <div className="flex items-center gap-2 px-2.5 py-1.5">
                 <FileCode2 className="size-3.5 text-mute" />
-                <input value={f.path} onChange={(e) => setFile(i, { path: e.target.value })} className="flex-1 font-mono text-xs" />
+                <input value={f.path} onChange={(e) => setFile(i, { path: e.target.value })} className="min-w-0 flex-1 font-mono text-xs" />
                 <button onClick={() => setFileIdx(fileIdx === i ? null : i)} className="text-xs text-mute hover:text-fg">{fileIdx === i ? t('close') : t('edit')}</button>
                 <button onClick={() => set({ files: files.filter((_, j) => j !== i) })} className="text-mute hover:text-red-400"><Trash2 className="size-3.5" /></button>
               </div>

@@ -10,11 +10,7 @@ export type Theme = 'system' | 'light' | 'dark';
 
 function read(key: string) {
   try {
-    // Preferences saved before the rename used the `foreman.` prefix: read them once.
-    const legacy = key.replace(/^foreman\./, 'foreman.');
-    const value = localStorage.getItem(key) ?? localStorage.getItem(legacy);
-    if (value !== null && localStorage.getItem(key) === null) localStorage.setItem(key, value);
-    return value;
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
@@ -55,7 +51,7 @@ export const theme = (): Theme => (read('foreman.theme') as Theme) || 'system';
 export function applyTheme(t: Theme = theme()) {
   const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#111113' : '#f6f6f8');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0a0a0b' : '#fafafb');
 }
 export function setTheme(t: Theme) {
   write('foreman.theme', t);

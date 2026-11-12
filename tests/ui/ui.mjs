@@ -67,7 +67,9 @@ const signIn = async (page, email) => {
 // ---------- first access ----------
 const owner = await newPage();
 await owner.goto(`${BASE}/`);
-check((await owner.title()) !== '' && (await owner.locator('body').innerText()).length > 50, 'signed out, the home shows the landing page');
+// The landing page is its own file, fetched after the session check: wait for it.
+const landed = await owner.waitForFunction(() => document.body.innerText.length > 50, null, { timeout: 10000 }).then(() => true, () => false);
+check((await owner.title()) !== '' && landed, 'signed out, the home shows the landing page');
 await owner.goto(`${BASE}/login`);
 await owner.getByLabel('Name').fill('Owner');
 await owner.getByLabel('Email').fill('owner@x.com');

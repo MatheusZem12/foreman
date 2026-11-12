@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  ArrowLeft, Check, ChevronDown, ChevronRight, CircleStop, GitMerge, Hand, Lock, MoreHorizontal, Play, Send, Swords, Trash2, Undo2, Wand2
+  ArrowLeft, Check, ChevronDown, ChevronRight, CircleStop, GitMerge, Hand, Lock, MoreHorizontal, Play, Send, SlidersHorizontal, Swords, Trash2, Undo2
 } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Avatar, Button, Empty, MenuItem, Modal, Popover, Spinner, StatusIcon, Toggle, useToast, useConfirm } from '../components/ui';
+import { Avatar, Button, Empty, MenuItem, Modal, PageLoader, Popover, Spinner, StatusIcon, Tabs, Toggle, useToast, useConfirm } from '../components/ui';
 import { AgentPicker, AssigneePicker, BranchPicker, LabelPicker, PriorityPicker, RepoScopePicker, StatusPicker } from '../components/pickers';
 import { api } from '../lib/api';
-import { renderMarkdown } from '../lib/markdown';
+import { Markdown } from '../components/Markdown';
 import { compact, duration, money, runSeconds, timeAgo } from '../lib/format';
 import { useAgents, useCan, useUsers } from '../lib/queries';
+import { statusOf } from '../lib/constants';
 import type { Comment, Issue, IssueDetail, IssueRepo, RepoDiff, RepoMerge, Run, RunEvent } from '../lib/types';
 import { AgentIcon } from '../components/AgentIcon';
 import { locale, t } from '../lib/i18n';
@@ -33,7 +34,7 @@ export function IssuePage() {
     initialDataUpdatedAt: () => Date.now()
   });
 
-  if (isLoading) return <div className="grid h-full place-items-center"><Spinner /></div>;
+  if (isLoading) return <PageLoader />;
   if (error || !detail.data) return <Empty>{t('Issue not found.')} <Link className="text-accent" to={`/w/${ws.key}`}>{t('Back')}</Link></Empty>;
   return <IssueView detail={detail.data} />;
 }
@@ -103,7 +104,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 
   const properties = (
     <div className="space-y-0.5">
-      {caps.reason && <div className="mb-2 flex items-start gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1.5 text-[11px] text-mute"><Lock className="mt-px size-3 shrink-0" /> {caps.reason}</div>}
+      {caps.reason && <div className="mb-2 flex items-start gap-1.5 rounded-lg bg-white/[0.05] px-2.5 py-2 text-[11px] leading-snug text-mute"><Lock className="mt-px size-3 shrink-0" /> {caps.reason}</div>}
       <PropRow label={t('Status')}><Gate on={caps.move}><StatusPicker variant="row" value={issue.status} onChange={(status) => patch({ status })} /></Gate></PropRow>
       <PropRow label={t('Assignee')}><Gate on={caps.assign}><AssigneePicker variant="row" ws={ws.id} value={issue.assigneeId} onChange={(assigneeId) => patch({ assigneeId })} /></Gate></PropRow>
       <PropRow label={t('Priority')}><Gate on={caps.priority}><PriorityPicker variant="row" value={issue.priority} onChange={(priority) => patch({ priority })} /></Gate></PropRow>
@@ -114,8 +115,8 @@ function IssueView({ detail }: { detail: IssueDetail }) {
           onChange={(ids) => saveRepos(!ids.length, ids.map((repoId) => ({ repoId, ...pick(issue.repos.find((r) => r.repoId === repoId)) })))} /></Gate>
       </PropRow>
       {issue.repos.map((r) => <IssueRepoRow key={r.repoId} r={r} locked={!canEdit || closed} onChange={(b) => setBranch(r.repoId, b)} />)}
-      <div className="space-y-1 px-2 pt-3 text-xs text-mute">
-        {issue.branch && <div className="truncate font-mono" title={issue.branch}>{issue.branch}</div>}
+      <div className="mt-3 space-y-1 border-t border-line px-2 pt-3 text-xs text-mute">
+        {issue.branch && <div className="truncate font-mono text-[11px]" title={issue.branch}>{issue.branch}</div>}
         <div>{t('Total cost:')} <span className="text-dim">{money(issue.costUsd)}</span> · {runs.length} {t('run(s)')}</div>
         <div>{t('Created')} {timeAgo(issue.createdAt)} {t('· updated')} {timeAgo(issue.updatedAt)}</div>
       </div>
@@ -124,12 +125,13 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-line/70 bg-panel/40 px-3 py-2.5 backdrop-blur md:px-5">
-        <button onClick={() => nav(`/w/${ws.key}`)} className="rounded p-1 text-mute hover:bg-hover hover:text-fg"><ArrowLeft className="size-4" /></button>
-        <span className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-xs text-dim">{ws.key}-{issue.number}</span>
-        <StatusIcon status={issue.status} />
+      <div className="toolbar">
+        <button onClick={() => nav(`/w/${ws.key}`)} aria-label={t('Back')} className="icon-btn -ml-1"><ArrowLeft className="size-4" /></button>
+        <span className="font-mono text-xs text-dim">{ws.key}-{issue.number}</span>
+        <span className="hidden items-center gap-1.5 text-xs text-dim sm:flex"><StatusIcon status={issue.status} /> {statusOf(issue.status).label}</span>
+        <span className="sm:hidden"><StatusIcon status={issue.status} /></span>
         {active && <span className="flex items-center gap-1 text-xs text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {t('working')}</span>}
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
           {active && canRun && <Button size="sm" variant="danger" onClick={() => act(() => api.post(`/issues/${issue.id}/cancel`))}><CircleStop className="size-3.5" /> {t('Stop')}</Button>}
           {canRun && !active && !closed && !runs.length && issue.agentId && (
             <Button size="sm" variant="primary" onClick={() => act(() => api.post(`/issues/${issue.id}/run`, { kind: 'initial' }), t('Queued for the agent'))}><Play className="size-3.5" /> {t('Run')}</Button>
@@ -152,7 +154,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
               <GitMerge className="size-3.5" /> {t('Merge')}{pendingRepos.length > 1 ? t(' ({0} repos)', pendingRepos.length) : <span className="hidden sm:inline"> {t('into')} {pendingRepos[0].targetBranch}</span>}
             </Button>
           )}
-          <Popover align="right" trigger={() => <button className="rounded p-1.5 text-mute hover:bg-hover hover:text-fg"><MoreHorizontal className="size-4" /></button>}>
+          <Popover align="right" trigger={() => <button aria-label={t('More actions')} className="icon-btn"><MoreHorizontal className="size-4" /></button>}>
             {(close) => (
               <>
                 {canMerge && !active && caps.approvals > 0 && hasCommits && !conflict && (
@@ -176,28 +178,31 @@ function IssueView({ detail }: { detail: IssueDetail }) {
 
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="page pb-10">
+          <div className="mx-auto w-full max-w-4xl px-4 pb-16 pt-5 md:px-8 md:pt-8">
             <Gate on={caps.edit} block><TitleEditor issue={issue} onSave={(title) => patch({ title })} /></Gate>
             <Gate on={caps.edit} block><DescriptionEditor issue={issue} onSave={(description) => patch({ description })} /></Gate>
 
-            <button onClick={() => setShowProps(!showProps)} className="mt-4 flex w-full items-center gap-1 rounded-md border border-line px-2 py-1.5 text-xs text-dim lg:hidden">
-              {showProps ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />} {t('Properties')}
-            </button>
-            {showProps && <div className="mt-2 rounded-lg border border-line p-1 lg:hidden">{properties}</div>}
+            {/* Below a large screen the properties fold into the page. */}
+            <div className="mt-4 rounded-xl border border-line lg:hidden">
+              <button onClick={() => setShowProps(!showProps)} aria-expanded={showProps} className="flex h-10 w-full items-center gap-2 px-3 text-xs text-dim">
+                <SlidersHorizontal className="size-3.5 text-mute" /> {t('Properties')}
+                <span className="ml-auto flex min-w-0 items-center gap-1.5 text-mute">
+                  {!showProps && <span className="truncate">{statusOf(issue.status).label}</span>}
+                  {showProps ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
+                </span>
+              </button>
+              {showProps && <div className="border-t border-line p-1.5">{properties}</div>}
+            </div>
 
             {needsYou && <WaitingCard issue={issue} lastRun={lastRun} />}
 
-            <div className="mt-6 flex gap-1 border-b border-line">
-              {([
-                ['activity', t('Activity')],
-                ['summary', 'README'],
-                ['diff', t('Diff')],
-                ['runs', t('Runs')]
-              ] as [Tab, string][]).map(([id, label]) => (
-                <button key={id} onClick={() => setTab(id)} className={clsx('-mb-px border-b-2 px-3 py-2 transition-colors', tab === id ? 'border-accent font-medium text-fg' : 'border-transparent text-mute hover:text-fg')}>{label}</button>
-              ))}
-            </div>
-            <div className="pt-4">
+            <Tabs<Tab>
+              className="mt-6"
+              items={[{ id: 'activity', label: t('Activity') }, { id: 'summary', label: 'README' }, { id: 'diff', label: t('Diff') }, { id: 'runs', label: t('Runs') }]}
+              value={tab}
+              onChange={setTab}
+            />
+            <div className="pt-5">
               {tab === 'activity' && <Activity issue={issue} runs={runs} comments={comments} canComment={caps.comment} />}
               {tab === 'summary' && <SummaryTab issue={issue} runs={runs} onSave={(summary) => patch({ summary })} />}
               {tab === 'diff' && <DiffTab issue={issue} />}
@@ -205,7 +210,7 @@ function IssueView({ detail }: { detail: IssueDetail }) {
             </div>
           </div>
         </div>
-        <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-line p-2 lg:block">{properties}</aside>
+        <aside className="hidden w-[19rem] shrink-0 overflow-y-auto border-l border-line p-3 lg:block">{properties}</aside>
       </div>
 
       {merging && <MergeModal issue={issue} onClose={() => setMerging(false)} />}
@@ -219,7 +224,7 @@ const pick = (r?: IssueRepo) => (r ? { baseBranch: r.baseBranch, targetBranch: r
 function IssueRepoRow({ r, locked, onChange }: { r: IssueRepo; locked: boolean; onChange: (b: { baseBranch?: string; targetBranch?: string }) => void }) {
   const state = r.mergedInto ? [t('merged'), 'text-sky-400'] : r.conflict ? [t('conflict'), 'text-red-400'] : r.changed ? [t('changed'), 'text-emerald-400'] : null;
   return (
-    <div className="ml-24 rounded-md border border-line/70 px-2 py-1.5">
+    <div className="ml-2 rounded-lg border border-line px-2.5 py-2 sm:ml-24">
       <div className="flex items-center gap-2 text-xs">
         <span className="truncate font-medium">{r.name}</span>
         {state && <span className={clsx('ml-auto text-[11px]', state[1])}>{state[0]}</span>}
@@ -237,7 +242,7 @@ function IssueRepoRow({ r, locked, onChange }: { r: IssueRepo; locked: boolean; 
 
 function PropRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex min-h-8 items-center gap-1">
       <span className="w-24 shrink-0 px-2 text-xs text-mute">{label}</span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
@@ -254,7 +259,8 @@ function TitleEditor({ issue, onSave }: { issue: Issue; onSave: (tt: string) => 
       onChange={(e) => setValue(e.target.value.replace(/\n/g, ''))}
       onBlur={() => value.trim() && value !== issue.title && onSave(value.trim())}
       onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), (e.target as HTMLTextAreaElement).blur())}
-      className="w-full resize-none overflow-hidden text-xl font-semibold leading-snug [field-sizing:content]"
+      aria-label={t('Issue title')}
+      className="keep-size w-full resize-none overflow-hidden text-[22px] font-semibold leading-snug tracking-tight [field-sizing:content] md:text-2xl"
     />
   );
 }
@@ -277,7 +283,7 @@ function DescriptionEditor({ issue, onSave }: { issue: Issue; onSave: (d: string
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { onSave(value); setEditing(false); }
           }}
           rows={10}
-          className="field-input"
+          className="field-input min-h-40"
         />
         <div className="mt-2 flex justify-end gap-2">
           <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>{t('Cancel')}</Button>
@@ -287,8 +293,8 @@ function DescriptionEditor({ issue, onSave }: { issue: Issue; onSave: (d: string
     );
   }
   return (
-    <div onClick={() => setEditing(true)} className="mt-3 min-h-[40px] cursor-text rounded-md px-1 py-1 hover:bg-hover/40">
-      {issue.description ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.description) }} /> : <span className="text-mute">{t('Add a description…')}</span>}
+    <div onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) setEditing(true); }} className="-mx-2 mt-2 min-h-10 cursor-text rounded-lg px-2 py-1.5 text-[14px] transition-colors hover:bg-white/[0.03]">
+      {issue.description ? <Markdown text={issue.description} /> : <span className="text-mute">{t('Add a description…')}</span>}
     </div>
   );
 }
@@ -315,62 +321,68 @@ function Activity({ issue, runs, comments, canComment }: { issue: Issue; runs: R
   );
 }
 
-function CommentItem({ comment }: { comment: Comment }) {
+const CommentItem = memo(function CommentItem({ comment }: { comment: Comment }) {
   const { data: users = [] } = useUsers();
   const { data: agents = [] } = useAgents();
   if (comment.kind === 'system') {
-    return <div className="flex gap-2 px-1 text-xs text-mute"><span>•</span><div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(comment.body) }} /> <span className="ml-auto shrink-0">{timeAgo(comment.createdAt)}</span></div>;
+    return (
+      <div className="flex items-start gap-2.5 px-1 text-xs text-mute">
+        <span className="mt-[7px] size-1 shrink-0 rounded-full bg-mute/70" />
+        <Markdown text={comment.body} className="min-w-0 flex-1" />
+        <span className="shrink-0">{timeAgo(comment.createdAt)}</span>
+      </div>
+    );
   }
   const user = users.find((u) => u.id === comment.userId);
   const agent = agents.find((a) => a.id === comment.agentId);
   return (
-    <div className={clsx('rounded-xl border p-3.5', comment.kind === 'agent' ? 'border-accent/25 bg-gradient-to-b from-accent/[0.08] to-accent/[0.02]' : 'border-white/[0.07] bg-card/60')}>
-      <div className="mb-1.5 flex items-center gap-2 text-xs">
+    <div className={clsx('rounded-xl border p-3.5', comment.kind === 'agent' ? 'border-accent/25 bg-accent/[0.04]' : 'border-line bg-panel')}>
+      <div className="mb-2 flex items-center gap-2 text-xs">
         {agent ? <AgentIcon avatar={agent.avatar} /> : <Avatar name={user?.name} />}
         <span className="font-medium">{agent?.name ?? user?.name ?? t('someone')}</span>
         <span className="text-mute">{timeAgo(comment.createdAt)}</span>
       </div>
-      <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(comment.body) }} />
+      <Markdown text={comment.body} />
     </div>
   );
-}
+});
 
 const RUN_LABEL: Record<Run['kind'], string> = { initial: t('Run'), followup: t('Adjustment'), conflict: t('Conflict resolution') };
 const RUN_STATUS: Record<Run['status'], [string, string]> = {
   queued: [t('queued'), 'text-sky-400'],
-  running: ['rodando', 'text-amber-400'],
+  running: [t('running'), 'text-amber-400'],
   succeeded: [t('done'), 'text-emerald-400'],
-  failed: ['falhou', 'text-red-400'],
-  cancelled: ['cancelada', 'text-mute']
+  failed: [t('failed'), 'text-red-400'],
+  cancelled: [t('stopped'), 'text-mute']
 };
 
-function RunCard({ run, defaultOpen }: { run: Run; defaultOpen: boolean }) {
+const RunCard = memo(function RunCard({ run, defaultOpen }: { run: Run; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { if (defaultOpen) setOpen(true); }, [defaultOpen]);
   const [label, color] = RUN_STATUS[run.status];
+  const live = run.status === 'running' || run.status === 'queued';
   const secs = runSeconds(run);
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-panel">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-xs transition-colors hover:bg-white/[0.03]">
-        {open ? <ChevronDown className="size-3.5 text-mute" /> : <ChevronRight className="size-3.5 text-mute" />}
-        <span className="grid size-5 place-items-center rounded-md bg-accent/15"><Wand2 className="size-3 text-accent" /></span>
+    <div className="overflow-hidden rounded-xl border border-line bg-panel">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex min-h-10 w-full flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left text-xs transition-colors hover:bg-white/[0.03]">
+        {open ? <ChevronDown className="size-3.5 shrink-0 text-mute" /> : <ChevronRight className="size-3.5 shrink-0 text-mute" />}
         <span className="font-medium">{RUN_LABEL[run.kind]}</span>
-        <span className="text-mute">· {run.agentName}{run.model ? ` (${run.model})` : ''}</span>
-        <span className={clsx('flex items-center gap-1 rounded-full bg-white/[0.04] px-2 py-0.5', color)}>
-          {(run.status === 'running' || run.status === 'queued') && <span className="size-1.5 animate-pulse-soft rounded-full bg-current" />} {label}
+        <span className="min-w-0 truncate text-mute">{run.agentName}{run.model ? ` · ${run.model}` : ''}</span>
+        <span className={clsx('flex shrink-0 items-center gap-1.5', color)}>
+          <span className={clsx('size-1.5 rounded-full bg-current', live && 'animate-pulse-soft')} /> {label}
         </span>
-        <span className="ml-auto hidden gap-2 text-mute sm:flex">
+        <span className="ml-auto hidden shrink-0 gap-3 tabular-nums text-mute sm:flex">
           {secs != null && <span>{duration(secs)}</span>}
           {run.costUsd > 0 && <span>{money(run.costUsd)}</span>}
           {run.commitSha && <span className="font-mono">{run.commitSha}</span>}
         </span>
       </button>
-      {run.request && <div className="border-t border-line bg-card px-3 py-2 text-xs text-dim"><span className="text-mute">{t('Request:')} </span>{run.request}</div>}
+      {run.request && <div className="border-t border-line px-3.5 py-2 text-xs leading-relaxed text-dim"><span className="text-mute">{t('Request:')} </span>{run.request}</div>}
       {open && <RunLog run={run} />}
-      {run.error && !open && <div className="border-t border-line px-3 py-1.5 text-xs text-red-400">{run.error}</div>}
+      {run.error && !open && <div className="border-t border-line px-3.5 py-2 text-xs text-red-400">{run.error}</div>}
     </div>
   );
-}
+});
 
 function RunLog({ run }: { run: Run }) {
   const { data: events, isLoading } = useQuery({
@@ -384,35 +396,39 @@ function RunLog({ run }: { run: Run }) {
     if (box.current && stick.current) box.current.scrollTop = box.current.scrollHeight;
   }, [events?.length]);
   const [showPrompt, setShowPrompt] = useState(false);
-  if (isLoading) return <div className="p-3"><Spinner /></div>;
-  const prompt = events?.find((e) => e.kind === 'prompt');
+  const { prompt, lines } = useMemo(() => ({
+    prompt: events?.find((e) => e.kind === 'prompt'),
+    lines: events?.filter((e) => e.kind !== 'prompt') ?? []
+  }), [events]);
+  if (isLoading) return <div className="border-t border-line p-3"><Spinner /></div>;
   return (
     <div className="border-t border-line bg-bg">
       {prompt && (
-        <button onClick={() => setShowPrompt(!showPrompt)} className="w-full px-3 py-1.5 text-left text-[11px] text-mute hover:text-fg">
-          {showPrompt ? '▾' : '▸'} {t('Context sent to the agent')}
+        <button onClick={() => setShowPrompt(!showPrompt)} aria-expanded={showPrompt} className="flex w-full items-center gap-1 px-3.5 py-2 text-left text-[11px] text-mute transition-colors hover:text-fg">
+          {showPrompt ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />} {t('Context sent to the agent')}
         </button>
       )}
-      {showPrompt && prompt && <pre className="max-h-80 overflow-auto whitespace-pre-wrap border-y border-line px-3 py-2 font-mono text-[11px] text-dim">{prompt.body}</pre>}
+      {showPrompt && prompt && <pre className="max-h-80 overflow-auto whitespace-pre-wrap border-y border-line px-3.5 py-2 font-mono text-[11px] text-dim">{prompt.body}</pre>}
       <div
         ref={box}
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
-        className="max-h-[60vh] overflow-y-auto px-3 py-2 font-mono text-[12px] leading-relaxed"
+        className="max-h-[60dvh] overflow-y-auto overscroll-contain px-3.5 py-2.5 font-mono text-[12px] leading-relaxed"
       >
-        {events?.filter((e) => e.kind !== 'prompt').map((e) => <LogLine key={e.id} ev={e} />)}
-        {!events?.length && <div className="text-mute">{run.status === 'queued' ? t('Waiting for a free slot…') : t('No events.')}</div>}
+        {lines.map((e) => <LogLine key={e.id} ev={e} />)}
+        {!lines.length && <div className="text-mute">{run.status === 'queued' ? t('Waiting for a free slot…') : t('No events.')}</div>}
       </div>
     </div>
   );
 }
 
-function LogLine({ ev }: { ev: RunEvent }) {
+// One line of the agent's log. Memoized: a new line arriving re-renders only itself.
+const LogLine = memo(function LogLine({ ev }: { ev: RunEvent }) {
   switch (ev.kind) {
     case 'text':
-      return <div className="markdown my-2 font-sans text-[13px] text-fg" dangerouslySetInnerHTML={{ __html: renderMarkdown(ev.body) }} />;
+      return <Markdown text={ev.body} className="my-2 font-sans text-[13px] text-fg" />;
     case 'tool':
       return <div className="truncate text-accent">› {ev.body}</div>;
     case 'out':
@@ -424,7 +440,7 @@ function LogLine({ ev }: { ev: RunEvent }) {
     default:
       return <div className="text-sky-400/80">{ev.body}</div>;
   }
-}
+});
 
 function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
   const [body, setBody] = useState('');
@@ -449,16 +465,16 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
     }
   };
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-card/60 p-2.5 transition focus-within:border-accent/50 focus-within:shadow-[0_0_0_3px_rgb(var(--accent)/0.12)]">
+    <div className="rounded-xl border border-line bg-panel p-2.5 transition-colors focus-within:border-accent">
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && submit()}
         rows={3}
         placeholder={send && agentId ? t('Ask for an adjustment: it goes to a new chat along with the summary and the branch commits…') : t('Comment…')}
-        className="w-full resize-y px-1 leading-relaxed placeholder:text-mute"
+        className="w-full resize-y px-1.5 pt-1 leading-relaxed placeholder:text-mute"
       />
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         {canRun && <Toggle checked={send} onChange={setSend} label={t('Send to the agent')} />}
         {send && <AgentPicker value={agentId} onChange={setAgentId} allowNone={false} />}
         <Button size="sm" variant="primary" className="ml-auto" loading={busy} onClick={submit}><Send className="size-3.5" /> {send && agentId ? t('Send') : t('Comment')}</Button>
@@ -487,8 +503,8 @@ function SummaryTab({ issue, runs, onSave }: { issue: Issue; runs: Run[]; onSave
           </div>
         </>
       ) : (
-        <div onClick={() => setEditing(true)} className="cursor-text rounded-xl border border-white/[0.08] bg-card/60 p-4">
-          {issue.summary ? <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(issue.summary) }} /> : <span className="text-mute">{t('No README yet. It shows up after the first run.')}</span>}
+        <div onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) setEditing(true); }} className="cursor-text rounded-xl border border-line bg-panel p-4 transition-colors hover:border-white/20">
+          {issue.summary ? <Markdown text={issue.summary} /> : <span className="text-mute">{t('No README yet. It shows up after the first run.')}</span>}
         </div>
       )}
       {runs.some((r) => r.status !== 'queued' && r.status !== 'running') && (
@@ -522,7 +538,7 @@ function SummaryTab({ issue, runs, onSave }: { issue: Issue; runs: Run[]; onSave
 function runResult(r: Run): [string, string] {
   if (r.status === 'succeeded') {
     if (r.outcome === 'waiting') return [t('waiting for you'), 'text-orange-400'];
-    if (r.outcome === 'incomplete') return ['incompleto', 'text-orange-400'];
+    if (r.outcome === 'incomplete') return [t('incomplete'), 'text-orange-400'];
     return [t('done'), 'text-emerald-400'];
   }
   return RUN_STATUS[r.status];
@@ -549,8 +565,8 @@ function WaitingCard({ issue, lastRun }: { issue: Issue; lastRun?: Run }) {
     }
   };
   return (
-    <div className="mt-5 rounded-xl border border-orange-400/30 bg-gradient-to-b from-orange-400/[0.09] to-orange-400/[0.03] p-4">
-      <div className="flex items-center gap-2 text-sm font-medium text-orange-200">
+    <div className="mt-5 rounded-xl border border-orange-400/30 bg-orange-400/[0.06] p-4">
+      <div className="flex items-center gap-2 text-[13px] font-medium text-orange-200">
         <Hand className="size-4 text-orange-400" />
         {lastRun?.outcome === 'incomplete' ? t('The AI couldn\'t finish') : t('The AI needs you')}
       </div>
@@ -585,34 +601,40 @@ function DiffTab({ issue }: { issue: Issue }) {
   );
 }
 
+// Above this many lines the diff shows only the beginning until asked for the rest
+// (a 50 000-line diff would freeze the page for a moment).
+const DIFF_LINES = 3000;
+const diffClass = (l: string) => clsx(
+  'whitespace-pre px-3.5',
+  l.startsWith('diff --git') && 'mt-2 border-y border-line bg-panel py-1.5 font-semibold text-fg first:mt-0 first:border-t-0',
+  l.startsWith('@@') && 'text-sky-400/80',
+  l.startsWith('+') && !l.startsWith('+++') && 'bg-emerald-500/10 text-emerald-300',
+  l.startsWith('-') && !l.startsWith('---') && 'bg-red-500/10 text-red-300',
+  /^(index |\+\+\+|---|new file|deleted file)/.test(l) && 'text-mute'
+);
+
 function RepoDiffView({ d }: { d: RepoDiff }) {
   const [open, setOpen] = useState(true);
+  const [all, setAll] = useState(false);
+  const lines = useMemo(() => d.patch.split('\n'), [d.patch]);
+  const shown = all ? lines : lines.slice(0, DIFF_LINES);
   return (
     <section>
-      <button onClick={() => setOpen(!open)} className="mb-2 flex w-full items-center gap-1.5 text-left font-medium">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="mb-2 flex w-full items-center gap-1.5 text-left font-medium">
         {open ? <ChevronDown className="size-4 text-mute" /> : <ChevronRight className="size-4 text-mute" />} {d.name}
         {d.pending && <span className="text-xs font-normal text-amber-400">{t('· uncommitted changes')}</span>}
       </button>
       {open && (
         <div className="space-y-2">
-          {d.stat && <pre className="overflow-x-auto rounded-lg border border-line bg-card p-3 font-mono text-[12px] text-dim">{d.stat}</pre>}
-          <div className="overflow-x-auto rounded-lg border border-line bg-bg py-1 font-mono text-[12px] leading-relaxed">
-            {d.patch.split('\n').map((l, i) => (
-              <div
-                key={i}
-                className={clsx(
-                  'whitespace-pre px-3',
-                  l.startsWith('diff --git') && 'mt-2 bg-card py-1 font-semibold text-fg',
-                  l.startsWith('@@') && 'text-sky-400/80',
-                  l.startsWith('+') && !l.startsWith('+++') && 'bg-emerald-500/10 text-emerald-300',
-                  l.startsWith('-') && !l.startsWith('---') && 'bg-red-500/10 text-red-300',
-                  /^(index |\+\+\+|---|new file|deleted file)/.test(l) && 'text-mute'
-                )}
-              >
-                {l || ' '}
-              </div>
-            ))}
+          {d.stat && <pre className="overflow-x-auto rounded-lg border border-line bg-panel p-3 font-mono text-[12px] text-dim">{d.stat}</pre>}
+          <div className="overflow-x-auto rounded-lg border border-line bg-bg font-mono text-[12px] leading-relaxed">
+            <div className="w-max min-w-full py-1">
+              {shown.map((l, i) => <div key={i} className={diffClass(l)}>{l || ' '}</div>)}
+            </div>
           </div>
+          {!all && lines.length > DIFF_LINES && (
+            <Button size="sm" onClick={() => setAll(true)}>{t('Show all {0} lines', lines.length)}</Button>
+          )}
         </div>
       )}
     </section>
@@ -622,26 +644,26 @@ function RepoDiffView({ d }: { d: RepoDiff }) {
 function RunsTable({ runs }: { runs: Run[] }) {
   if (!runs.length) return <p className="text-mute">{t('No runs.')}</p>;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-xs">
+    <div className="surface overflow-x-auto">
+      <table className="w-full whitespace-nowrap text-left text-xs tabular-nums">
         <thead className="text-mute">
           <tr className="border-b border-line">
-            {[t('When'), t('Type'), t('Agent'), t('Result'), t('Duration'), t('Cost'), t('Tokens in / cache / out'), t('Commit')].map((h) => <th key={h} className="px-2 py-1.5 font-medium">{h}</th>)}
+            {[t('When'), t('Type'), t('Agent'), t('Result'), t('Duration'), t('Cost'), t('Tokens in / cache / out'), t('Commit')].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}
           </tr>
         </thead>
         <tbody>
           {[...runs].reverse().map((r) => {
             const secs = runSeconds(r);
             return (
-              <tr key={r.id} className="border-b border-line/60">
-                <td className="px-2 py-2 text-mute">{timeAgo(r.createdAt)}</td>
-                <td className="px-2 py-2">{RUN_LABEL[r.kind]}</td>
-                <td className="px-2 py-2">{r.agentName} <span className="text-mute">{r.model}</span></td>
-                <td className={clsx('px-2 py-2', runResult(r)[1])} title={r.outcomeNote || r.error}>{runResult(r)[0]}</td>
-                <td className="px-2 py-2">{secs != null ? duration(secs) : '—'}</td>
-                <td className="px-2 py-2">{r.costUsd ? money(r.costUsd) : '—'}</td>
-                <td className="px-2 py-2 font-mono">{compact(r.inputTokens)} / {compact(r.cachedTokens)} / {compact(r.outputTokens)}</td>
-                <td className="px-2 py-2 font-mono">{r.commitSha || '—'}</td>
+              <tr key={r.id} className="border-b border-line/60 last:border-0">
+                <td className="px-3 py-2.5 text-mute">{timeAgo(r.createdAt)}</td>
+                <td className="px-3 py-2.5">{RUN_LABEL[r.kind]}</td>
+                <td className="px-3 py-2.5">{r.agentName} <span className="text-mute">{r.model}</span></td>
+                <td className={clsx('px-3 py-2.5', runResult(r)[1])} title={r.outcomeNote || r.error}>{runResult(r)[0]}</td>
+                <td className="px-3 py-2.5">{secs != null ? duration(secs) : '—'}</td>
+                <td className="px-3 py-2.5">{r.costUsd ? money(r.costUsd) : '—'}</td>
+                <td className="px-3 py-2.5 font-mono">{compact(r.inputTokens)} / {compact(r.cachedTokens)} / {compact(r.outputTokens)}</td>
+                <td className="px-3 py-2.5 font-mono">{r.commitSha || '—'}</td>
               </tr>
             );
           })}
@@ -682,7 +704,7 @@ function MergeModal({ issue, onClose }: { issue: Issue; onClose: () => void }) {
       </p>
       <div className="space-y-2">
         {pending.map((r) => (
-          <div key={r.repoId} className="flex flex-wrap items-center gap-2 rounded-lg border border-line p-2">
+          <div key={r.repoId} className="flex flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2">
             <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
             <span className="text-xs text-mute">→</span>
             <BranchPicker repoId={r.repoId} value={targets[r.repoId]} onChange={(b) => setTargets({ ...targets, [r.repoId]: b })} />

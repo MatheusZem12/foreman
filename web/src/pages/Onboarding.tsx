@@ -39,7 +39,7 @@ export function CreateWorkspaceForm({ onDone }: { onDone: (ws: Workspace) => voi
       <Field label={t('Key')} hint={t('issue prefix, e.g. LING-12')}>
         <input required className="field-input font-mono uppercase" value={key} maxLength={10} onChange={(e) => { setTouched(true); setKey(e.target.value.toUpperCase()); }} />
       </Field>
-      {error && <p className="text-red-400">{error}</p>}
+      {error && <p role="alert" className="text-red-400">{error}</p>}
       <Button variant="primary" type="submit" loading={busy} className="w-full">{t('Create workspace')}</Button>
     </form>
   );
@@ -48,10 +48,11 @@ export function CreateWorkspaceForm({ onDone }: { onDone: (ws: Workspace) => voi
 export function Onboarding() {
   const nav = useNavigate();
   return (
-    <div className="grid min-h-full place-items-center p-4">
-      <div className="w-full max-w-sm rounded-xl border border-line bg-panel p-6">
-        <h1 className="text-lg font-semibold">{t('New workspace')}</h1>
-        <p className="mb-4 mt-1 text-dim">{t('A workspace groups a product\'s issues and its repositories.')}</p>
+    <div className="grid h-full place-items-center overflow-y-auto px-4 py-14">
+      <div className="w-full max-w-[22rem]">
+        <img src="/icon.svg" className="size-10" alt="" />
+        <h1 className="mt-4 text-xl font-semibold tracking-tight">{t('New workspace')}</h1>
+        <p className="mb-5 mt-1 text-dim">{t('A workspace groups a product\'s issues and its repositories.')}</p>
         <CreateWorkspaceForm onDone={(ws) => nav(`/w/${ws.key}/workspace`)} />
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import { Languages, Monitor, Moon, Sun } from 'lucide-react';
+import { SectionHeader, Segmented } from './ui';
 import { lang, setLang, setTheme, t, theme, type Lang, type Theme } from '../lib/i18n';
 
 // Tema (sistema, claro, escuro) e idioma (pt-BR, en). Ficam neste navegador.
@@ -26,7 +27,7 @@ export function PrefsQuick({ className }: { className?: string }) {
   const cur = THEMES.find((x) => x.id === th) ?? THEMES[0];
   const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
   const other = LANGS.find((x) => x.id !== lang)!;
-  const btn = 'inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-[12px] text-mute transition hover:bg-white/[0.06] hover:text-fg';
+  const btn = 'inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-[12px] text-mute transition-colors hover:bg-hover hover:text-fg coarse:h-9';
   return (
     <div className={clsx('flex items-center gap-0.5', className)}>
       <button type="button" className={btn} onClick={() => set(next.id)} title={t('Theme: {0} (click for {1})', cur.label(), next.label().toLowerCase())}>
@@ -44,21 +45,14 @@ export function Appearance() {
   const [th, set] = useTheme();
   return (
     <section>
-      <h2 className="mb-1 font-semibold">{t('Appearance & language')}</h2>
-      <p className="mb-3 text-xs text-mute">{t('Apply to this browser.')}</p>
-      <div className="grid gap-4 surface p-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
+      <SectionHeader title={t('Appearance & language')} description={t('Apply to this browser.')} />
+      <div className="surface grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <span className="text-xs font-medium text-dim">{t('Theme')}</span>
-          <div className="flex gap-1 rounded-xl border border-line p-1">
-            {THEMES.map((x) => (
-              <button key={x.id} type="button" onClick={() => set(x.id)}
-                className={clsx('flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-[13px] transition', th === x.id ? 'bg-accent/15 font-medium text-fg' : 'text-dim hover:bg-white/[0.04]')}>
-                <x.icon className="size-3.5" /> {x.label()}
-              </button>
-            ))}
-          </div>
+          {/* Three equal columns that shrink with the screen; never wider than their box. */}
+          <Segmented<Theme> className="grid w-full grid-cols-3 [&>*]:h-9 [&>*]:min-w-0 [&>*]:justify-center [&>*]:px-1.5" items={THEMES.map((x) => ({ id: x.id, label: <span className="truncate">{x.label()}</span>, icon: x.icon }))} value={th} onChange={set} />
         </div>
-        <label className="flex flex-col gap-1.5">
+        <label className="flex min-w-0 flex-col gap-1.5">
           <span className="text-xs font-medium text-dim">{t('Language')}</span>
           <select className="field-input" value={lang} onChange={(e) => setLang(e.target.value as Lang)}>
             {LANGS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}

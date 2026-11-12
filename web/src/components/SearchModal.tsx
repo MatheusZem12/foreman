@@ -30,10 +30,10 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-3 pt-[10vh]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-xl overflow-hidden rounded-xl border border-line bg-panel shadow-2xl">
-        <div className="flex items-center gap-2 border-b border-line px-3">
-          <Search className="size-4 text-mute" />
+    <div className="fixed inset-0 z-50 flex animate-[fade_.12s_ease-out] items-start justify-center bg-black/60 p-3 pt-[max(0.75rem,8dvh)]" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" aria-label={t('Search')} className="w-full max-w-xl animate-[pop_.14s_ease-out] overflow-hidden rounded-xl border border-line bg-panel shadow-pop">
+        <div className="flex items-center gap-2.5 border-b border-line px-3.5">
+          <Search className="size-4 shrink-0 text-mute" />
           <input
             autoFocus
             value={q}
@@ -45,23 +45,24 @@ export function SearchModal({ onClose }: { onClose: () => void }) {
               if (e.key === 'Enter' && results[sel]) open(results[sel].number);
             }}
             placeholder={t('Search issues…')}
-            className="h-11 flex-1"
+            className="h-12 min-w-0 flex-1 text-[14px] placeholder:text-mute"
           />
+          <kbd className="kbd hidden sm:inline">Esc</kbd>
         </div>
-        <div className="max-h-[55vh] overflow-y-auto p-1">
+        <div className="max-h-[55dvh] overflow-y-auto overscroll-contain p-1">
           {results.map((i, idx) => (
             <button
               key={i.id}
               onMouseEnter={() => setSel(idx)}
               onClick={() => open(i.number)}
-              className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left ${idx === sel ? 'bg-hover' : ''}`}
+              className={`flex min-h-9 w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left ${idx === sel ? 'bg-hover' : ''}`}
             >
               <StatusIcon status={i.status} />
               <span className="w-16 shrink-0 font-mono text-xs text-mute">{ws.key}-{i.number}</span>
               <span className="truncate">{i.title}</span>
             </button>
           ))}
-          {!results.length && <div className="p-6 text-center text-mute">{t('Nothing found.')}</div>}
+          {!results.length && <div className="p-8 text-center text-mute">{t('Nothing found.')}</div>}
         </div>
       </div>
     </div>,

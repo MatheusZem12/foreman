@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ArrowUpRight, Pencil, Plus, Search, Tags, Trash2 } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Button, Field, Modal, PageHeader, useToast, useConfirm } from '../components/ui';
+import { Button, EmptyState, Field, Modal, PageHeader, Segmented, useToast, useConfirm } from '../components/ui';
 import { api } from '../lib/api';
 import { LABEL_COLORS } from '../lib/constants';
 import { useCan, useLabels } from '../lib/queries';
@@ -53,43 +53,33 @@ export function LabelsPage() {
 
         {labels.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Search labels…')} className="field-input h-8 w-64 py-1 pl-8" />
+            <div className="relative min-w-0 flex-1 sm:max-w-64">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Search labels…')} aria-label={t('Search labels…')} className="field-input h-8 py-1 pl-8" />
             </div>
-            <div className="ml-auto flex rounded-lg border border-line bg-white/[0.02] p-0.5 text-xs">
-              {([['used', t('Most used')], ['name', t('Name')]] as const).map(([k, label]) => (
-                <button key={k} onClick={() => setOrder(k)} className={clsx('rounded-md px-2.5 py-1 transition', order === k ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{label}</button>
-              ))}
-            </div>
+            <Segmented className="ml-auto" items={[{ id: 'used', label: t('Most used') }, { id: 'name', label: t('Name') }]} value={order} onChange={setOrder} />
           </div>
         )}
 
         {!isLoading && !labels.length && (
-          <div className="rounded-2xl border border-dashed border-line px-6 py-14 text-center">
-            <Tags className="mx-auto mb-3 size-6 text-mute" />
-            <div className="font-medium">{t('No labels yet')}</div>
-            <p className="mx-auto mt-1 max-w-md text-xs text-mute">{t('Create labels like “bug”, “customer” or “front end” to filter the board and fire rules (e.g. an issue with the customer label becomes urgent).')}</p>
-          </div>
+          <EmptyState icon={Tags} title={t('No labels yet')}>{t('Create labels like “bug”, “customer” or “front end” to filter the board and fire rules (e.g. an issue with the customer label becomes urgent).')}</EmptyState>
         )}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {list.map((l) => (
-            <div key={l.id} className="surface group flex flex-col gap-3 p-4">
+            <div key={l.id} className="surface flex flex-col gap-3 p-4">
               <div className="flex items-start gap-3">
-                <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: `${l.color}22` }}>
-                  <span className="size-3 rounded-full" style={{ background: l.color }} />
-                </span>
+                <span className="mt-1.5 size-2.5 shrink-0 rounded-full" style={{ background: l.color }} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{l.name}</div>
                   <div className="text-xs text-mute">{t('{0} open · {1} total', l.open ?? 0, l.issues ?? 0)}</div>
                 </div>
-                <div className="flex shrink-0 gap-0.5 opacity-60 transition group-hover:opacity-100">
-                  {canUpdate && <button title={t('Edit')} onClick={() => setEditing(l)} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Pencil className="size-3.5" /></button>}
-                  {canDelete && <button title={t('Delete')} onClick={() => remove(l)} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-3.5" /></button>}
+                <div className="-mr-1.5 -mt-1.5 flex shrink-0">
+                  {canUpdate && <button title={t('Edit')} onClick={() => setEditing(l)} className="icon-btn"><Pencil className="size-3.5" /></button>}
+                  {canDelete && <button title={t('Delete')} onClick={() => remove(l)} className="icon-btn icon-btn-danger"><Trash2 className="size-3.5" /></button>}
                 </div>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+              <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]">
                 <div className="h-full rounded-full" style={{ width: `${((l.issues ?? 0) / maxUsed) * 100}%`, background: l.color }} />
               </div>
               <Link to={`/w/${ws.key}/issues?label=${l.id}`} className="inline-flex items-center gap-1 self-start text-xs text-mute hover:text-accent">
