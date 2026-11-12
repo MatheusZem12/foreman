@@ -286,6 +286,9 @@ ok(C('PUT', f'/skills/{sk["id"]}/agents', {'agentIds': []}))
 check(sk['id'] not in next(a for a in ok(A('GET', '/agents')) if a['id'] == ag['id'])['skillIds'], 'unlinking removes the skill from the agent')
 ok(own('PATCH', f'/workspaces/{ws["id"]}/', {'name': 'Shop', 'key': 'OTHER'}))
 check([w['key'] for w in ok(own('GET', '/workspaces')) if w['id'] == ws['id']] == ['SHOP'], 'the workspace key does not change')
+check(own('POST', '/workspaces', {'name': ' shop ', 'key': 'SHOP2'})[0] == 409, 'a workspace with a repeated name is refused (ignoring case and spaces)')
+check(own('POST', '/workspaces', {'name': 'Shop 2', 'key': 'shop'})[0] == 409, 'a workspace with a repeated key is refused')
+check(own('PATCH', f'/workspaces/{ws2["id"]}/', {'name': 'SHOP'})[0] == 409, 'renaming a workspace to a name already in use is refused')
 
 # a read-only stage, analytics performance, e-mail rules waiting for sending
 arq = stage_with('Archived', 'done', [('read_only', {})])

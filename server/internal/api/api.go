@@ -55,6 +55,10 @@ func bad(format string, a ...any) error {
 	return httpError{http.StatusBadRequest, fmt.Sprintf(format, a...), format, a}
 }
 
+func conflict(format string, a ...any) error {
+	return httpError{http.StatusConflict, fmt.Sprintf(format, a...), format, a}
+}
+
 func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, ntf *notify.Notifier, static http.Handler) http.Handler {
 	a := &API{cfg: cfg, st: st, hub: h, run: rn, ntf: ntf}
 	r := chi.NewRouter()
@@ -698,7 +702,11 @@ func (a *API) createWorkspace(w http.ResponseWriter, r *http.Request) (any, erro
 	if strings.TrimSpace(in.Name) == "" || !keyRe.MatchString(in.Key) {
 		return nil, bad("enter the name and a key of 2 to 10 letters/numbers (e.g. LING)")
 	}
-	return a.st.CreateWorkspace(r.Context(), strings.TrimSpace(in.Name), in.Key)
+	in.Name = strings.TrimSpace(in.Name)
+	if err := a.uniqueWorkspace(r, "", in.Name, in.Key); err != nil {
+		return nil, err
+	}
+	return a.st.CreateWorkspace(r.Context(), in.Name, in.Key)
 }
 
 func (a *API) patchWorkspace(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -706,7 +714,41 @@ func (a *API) patchWorkspace(w http.ResponseWriter, r *http.Request) (any, error
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
-	return a.st.UpdateWorkspace(r.Context(), chi.URLParam(r, "ws"), strings.TrimSpace(in.Name))
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		return nil, bad("enter the workspace name")
+	}
+	if err := a.uniqueWorkspace(r, chi.URLParam(r, "ws"), in.Name, ""); err != nil {
+		return nil, err
+	}
+	return a.st.UpdateWorkspace(r.Context(), chi.URLParam(r, "ws"), in.Name)
+}
+
+// uniqueWorkspace refuses a name or key another workspace (not self) already uses, with a
+// clear message. The unique indexes still guard against two requests arriving together.
+func (a *API) uniqueWorkspace(r *http.Request, self, name, key string) error {
+	all, err := a.st.ListWorkspaces(r.Context())
+	if err != nil {
+		return err
+	}
+	for _, o := range all {
+		if o.ID == self {
+			continue
+		}
+		if sameWorkspaceName(o.Name, name) {
+			return conflict("a workspace named %q already exists", o.Name)
+		}
+		if key != "" && strings.EqualFold(o.Key, key) {
+			return conflict("a workspace with the key %q already exists", o.Key)
+		}
+	}
+	return nil
+}
+
+// sameWorkspaceName compares names the way the unique index does: ignoring case and
+// surrounding spaces.
+func sameWorkspaceName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 func (a *API) deleteWorkspace(w http.ResponseWriter, r *http.Request) (any, error) {
