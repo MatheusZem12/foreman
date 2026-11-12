@@ -15,7 +15,7 @@ type Variant = 'chip' | 'row';
 // A shared trigger: a compact chip (creation/cards) or a row of the properties bar.
 function Trigger({ variant, children }: { variant: Variant; children: React.ReactNode }) {
   if (variant === 'row') {
-    return <button type="button" className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left hover:bg-hover">{children}</button>;
+    return <button type="button" className="flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-hover coarse:h-10">{children}</button>;
   }
   return <Chip>{children}</Chip>;
 }
@@ -99,7 +99,7 @@ export function AgentPicker({ value, onChange, variant = 'chip', allowNone = tru
               <span className="ml-auto pl-2 text-xs text-mute">{a.model || a.runtime}</span>
             </MenuItem>
           ))}
-          {!agents.length && <div className="px-2 py-1.5 text-mute">{t('Create agents in Settings.')}</div>}
+          {!agents.length && <div className="px-2.5 py-1.5 text-mute">{t('Create agents in Settings.')}</div>}
         </>
       )}
     </Popover>
@@ -176,8 +176,8 @@ export function LabelDots({ ids, labels }: { ids: string[]; labels: Label[] }) {
   return (
     <span className="flex flex-wrap gap-1">
       {items.map((l) => (
-        <span key={l.id} className="inline-flex items-center gap-1 rounded-full border border-line px-1.5 py-px text-[11px] text-dim">
-          <span className="size-1.5 rounded-full" style={{ background: l.color }} /> {l.name}
+        <span key={l.id} className="inline-flex max-w-full items-center gap-1 rounded-full border border-line px-1.5 py-px text-[11px] text-dim">
+          <span className="size-1.5 shrink-0 rounded-full" style={{ background: l.color }} /> <span className="truncate">{l.name}</span>
         </span>
       ))}
     </span>
@@ -212,7 +212,7 @@ export function LabelPicker({ ws, value, onChange, variant = 'chip' }: { ws: str
         <>
           {canCreate && <form onSubmit={(e) => { e.preventDefault(); create(); }} className="mb-1 flex gap-1">
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('New label…')} className="field-input h-7" />
-            <button type="submit" className="rounded-md px-1.5 text-mute hover:bg-hover hover:text-fg"><Plus className="size-4" /></button>
+            <button type="submit" aria-label={t('New label')} className="icon-btn size-7"><Plus className="size-4" /></button>
           </form>}
           {labels.map((l) => (
             <MenuItem key={l.id} selected={value.includes(l.id)} onClick={() => toggle(l.id)}>

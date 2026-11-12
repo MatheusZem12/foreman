@@ -16,7 +16,7 @@ RUN rm -rf internal/webui/dist
 COPY --from=web /dist ./internal/webui/dist
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /foreman ./cmd/foreman
 
-# 3) runtime: git + Claude Code + Codex. The agents run as a regular user
+# 3) runtime: git + Claude Code + Codex + Gemini CLI. The agents run as a regular user
 #    (Claude Code refuses --dangerously-skip-permissions as root).
 FROM node:22-bookworm-slim
 RUN apt-get update \
@@ -24,7 +24,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 ARG CLAUDE_CODE_VERSION=latest
 ARG CODEX_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} && npm cache clean --force
+ARG GEMINI_CLI_VERSION=latest
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} @google/gemini-cli@${GEMINI_CLI_VERSION} && npm cache clean --force
 COPY --from=server /foreman /usr/local/bin/foreman
 RUN mkdir -p /data && chown node:node /data
 ENV FOREMAN_DATA=/data FOREMAN_ADDR=:8700 HOME=/home/node

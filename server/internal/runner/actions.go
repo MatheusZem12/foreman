@@ -74,7 +74,9 @@ func (r *Runner) OpenPRs(ctx context.Context, issue *store.Issue, ref, base stri
 		if target == "" {
 			target = sc.IssueRepo.TargetBranch
 		}
-		args := []string{"pr", "create", "--repo", repo, "--head", issue.Branch, "--base", target, "--title", ref + " " + issue.Title, "--body", body}
+		// The title in English, like the commits: the branch's last commit subject.
+		title := strings.TrimPrefix(mergeMessage(ctx, r.repoDir(sc.ID), ref, "origin/"+issue.Branch), "Merge ")
+		args := []string{"pr", "create", "--repo", repo, "--head", issue.Branch, "--base", target, "--title", title, "--body", body}
 		if draft {
 			args = append(args, "--draft")
 		}

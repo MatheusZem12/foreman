@@ -45,10 +45,11 @@ export interface FileEntry { path: string; content: string }
 export interface Repo {
   id: string; workspaceId: string; name: string; url: string;
   description: string;
+  workBranch: string; // where its issues start and merge ('' = the remote's default)
 }
-export interface Skill { id: string; slug: string; name: string; description: string; content: string; files: FileEntry[]; always: boolean; updatedAt: string }
+export interface Skill { id: string; slug: string; name: string; description: string; content: string; files: FileEntry[]; always: boolean; workspaceIds: string[]; labelIds: string[]; updatedAt: string }
 export interface Agent {
-  id: string; name: string; avatar: string; runtime: 'claude' | 'codex'; model: string; effort: string;
+  id: string; name: string; avatar: string; runtime: 'claude' | 'codex' | 'gemini'; model: string; effort: string;
   maxBudgetUsd: number | null; instructions: string; skillIds: string[]; extraArgs: string;
 }
 export interface Label { id: string; workspaceId: string; name: string; color: string; issues?: number; open?: number }
@@ -84,7 +85,7 @@ export interface Caps {
 export interface IssueDetail { issue: Issue; runs: Run[]; comments: Comment[]; caps: Caps }
 export interface RepoDiff { repoId: string; name: string; stat: string; patch: string; pending: boolean; merged: string }
 export interface RepoMerge { repoId: string; name: string; target: string; conflict?: boolean; files?: string[]; sha?: string }
-export interface GitInfo { version: string; home: string; sshKey?: string; credentialHelper: string; user: string; gh: boolean }
+export interface GitInfo { version: string; home: string; sshKey?: string; sshGitHub?: string; credentialHelper: string; user: string; gh: boolean }
 export interface Totals { costUsd: number; inputTokens: number; cachedTokens: number; outputTokens: number; seconds: number; runs: number; failed: number }
 export interface Analytics {
   totals: Totals;
@@ -103,8 +104,17 @@ export interface Analytics {
   people: { userId: string; name: string; created: number; openAssigned: number; resolved: number; resolveHours: number; comments: number; approvals: number; runs: number; costUsd: number; replyHours: number }[];
 }
 export interface Runtime { runtime: string; bin: string; installed: boolean; version: string }
-export interface ModelOption { id: string; label: string; description?: string; group: 'alias' | 'model' | 'used'; efforts?: string[]; defaultEffort?: string }
-export interface RuntimeModels { runtime: 'claude' | 'codex'; installed: boolean; models: ModelOption[]; efforts: string[]; source: string; fetchedAt: string; error?: string }
+export interface ModelOption {
+  id: string; label: string; description?: string; group: 'alias' | 'model' | 'used'; efforts?: string[]; defaultEffort?: string;
+  // The connection test with this account: undefined = not tested yet.
+  available?: boolean; busy?: boolean; problem?: string; checkedAt?: string;
+}
+export interface RuntimeModels {
+  runtime: 'claude' | 'codex' | 'gemini'; installed: boolean; models: ModelOption[]; efforts: string[]; source: string; fetchedAt: string; error?: string;
+  connected?: boolean; checkError?: string; checkedAt?: string; checking: boolean;
+  defaultOk?: boolean; defaultError?: string;
+}
+export interface Probe { runtime: string; model: string; ok: boolean; error?: string; reply?: string; ms: number; at: string }
 export interface EmailSettings {
   enabled: boolean; host: string; port: number; security: 'starttls' | 'tls' | 'none'; username: string; password?: string;
   from: string; fromName: string; appUrl: string; notifyRules?: number;

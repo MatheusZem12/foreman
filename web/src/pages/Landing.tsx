@@ -19,7 +19,8 @@ export function Landing() {
   const { data: setup } = useQuery({ queryKey: ['setup'], queryFn: () => api.get<{ needsSetup: boolean }>('/setup'), enabled: !me });
   const cta = me ? { to: '/', label: t('Open Foreman') } : setup?.needsSetup ? { to: '/login', label: t('Create the owner account') } : { to: '/login', label: t('Sign in') };
   const scroller = useRef<HTMLDivElement>(null);
-  const [progress, setProgress] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
+  const bar = useRef<HTMLDivElement>(null);
 
   // Elements with data-reveal ease in when they appear on screen.
   useEffect(() => {
@@ -41,33 +42,33 @@ export function Landing() {
   const onScroll = () => {
     const el = scroller.current!;
     const max = el.scrollHeight - el.clientHeight;
-    setProgress(max > 0 ? el.scrollTop / max : 0);
+    // The bar is moved straight in the DOM: scrolling doesn't re-render the page.
+    if (bar.current) bar.current.style.transform = `scaleX(${max > 0 ? el.scrollTop / max : 0})`;
+    setScrolled(el.scrollTop > 4);
   };
 
   return (
-    <div ref={scroller} onScroll={onScroll} className="landing h-full overflow-y-auto overflow-x-hidden scroll-smooth bg-bg">
-      <header className={clsx('sticky top-0 z-30 transition-colors duration-300', progress > 0.005 ? 'border-b border-white/[0.06] bg-bg/70 backdrop-blur-xl' : 'border-b border-transparent')}>
+    <div ref={scroller} onScroll={onScroll} className="landing h-full overflow-y-auto overflow-x-hidden scroll-smooth bg-bg [scrollbar-gutter:stable]">
+      <header className={clsx('sticky top-0 z-30 transition-colors duration-300', scrolled ? 'border-b border-line bg-bg/85 backdrop-blur' : 'border-b border-transparent')}>
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
           <img src="/icon.svg" alt="" className="size-6" />
           <span className="font-semibold tracking-tight">{t('Foreman')}</span>
           <nav className="ml-6 hidden gap-1 text-sm text-dim md:flex">
             {[['#how', t('How it works')], ['#screens', t('Screens')], ['#features', t('Features')], ['#local', t('Local')], ['#start', t('Get started')]].map(([href, label]) => (
-              <a key={href} href={href} className="rounded-md px-2.5 py-1 transition-colors hover:bg-white/[0.05] hover:text-fg">{label}</a>
+              <a key={href} href={href} className="rounded-md px-2.5 py-1 transition-colors hover:bg-hover hover:text-fg">{label}</a>
             ))}
           </nav>
           <PrefsQuick className="ml-auto" />
-          <Link to={cta.to} className="btn-shine inline-flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-b from-accent to-accent/80 px-3 text-sm font-medium text-snow shadow-[0_6px_20px_-8px_rgb(var(--accent)/0.9)] transition hover:brightness-110">
+          <Link to={cta.to} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-medium text-snow transition-colors hover:bg-accent/90">
             {cta.label} <ArrowRight className="size-3.5" />
           </Link>
         </div>
-        <div className="absolute inset-x-0 bottom-[-1px] h-px origin-left bg-gradient-to-r from-accent via-fuchsia-400 to-sky-400" style={{ transform: `scaleX(${progress})` }} />
+        <div className="absolute inset-x-0 bottom-[-1px] h-px origin-left bg-accent" ref={bar} style={{ transform: 'scaleX(0)' }} />
       </header>
 
       {/* Hero */}
       <section className="relative -mt-14 overflow-hidden pt-14">
         <div className="hero-grid pointer-events-none absolute inset-0" />
-        <div className="blob pointer-events-none absolute -top-32 left-1/2 h-[28rem] w-[46rem] -translate-x-[70%] rounded-full bg-accent/25 blur-[110px]" />
-        <div className="blob blob-2 pointer-events-none absolute -top-10 left-1/2 h-80 w-[30rem] -translate-x-[5%] rounded-full bg-sky-500/15 blur-[110px]" />
         <div className="relative mx-auto max-w-6xl px-4 pb-16 pt-16 text-center md:pt-24">
           <span data-reveal className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/[0.08] py-1 pl-1.5 pr-3 text-xs text-emerald-300">
             <span className="relative grid size-5 place-items-center rounded-full bg-emerald-400/15">
@@ -76,17 +77,17 @@ export function Landing() {
             </span>
             {t('Runs only on your machine · nothing is published')}
           </span>
-          <h1 data-reveal style={{ '--d': '80ms' } as React.CSSProperties} className="mx-auto mt-6 max-w-4xl text-balance text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.035em] md:text-6xl">
+          <h1 data-reveal style={{ '--d': '80ms' } as React.CSSProperties} className="mx-auto mt-6 max-w-4xl text-balance text-[clamp(2rem,6vw,3.75rem)] font-semibold leading-[1.08] tracking-[-0.035em]">
             {t('You write the issue.')}<br className="hidden sm:block" /> <span className="text-gradient">{t('The agent delivers the branch.')}</span>
           </h1>
           <p data-reveal style={{ '--d': '160ms' } as React.CSSProperties} className="mx-auto mt-5 max-w-2xl text-balance text-base leading-relaxed text-dim md:text-lg">
             {t('An issue board where each task is carried out by Claude Code or Codex: in an isolated copy of the code, across as many repositories as needed, with a summary, a diff and a merge into the branch you choose.')}
           </p>
           <div data-reveal style={{ '--d': '240ms' } as React.CSSProperties} className="mt-8 flex flex-wrap justify-center gap-2.5">
-            <Link to={cta.to} className="btn-shine group inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-b from-accent to-accent/80 px-5 font-medium text-snow shadow-[0_10px_30px_-10px_rgb(var(--accent)/0.9)] transition hover:brightness-110">
+            <Link to={cta.to} className="group inline-flex h-11 items-center gap-2 rounded-lg bg-accent px-5 font-medium text-snow transition-colors hover:bg-accent/90">
               {cta.label} <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
-            <a href="#how" className="inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/[0.03] px-5 text-dim backdrop-blur transition hover:border-white/20 hover:bg-white/[0.06] hover:text-fg">{t('See how it works')}</a>
+            <a href="#how" className="inline-flex h-11 items-center rounded-xl border border-line bg-white/[0.03] px-5 text-dim backdrop-blur transition hover:border-white/20 hover:bg-hover hover:text-fg">{t('See how it works')}</a>
           </div>
           <div data-reveal style={{ '--d': '360ms' } as React.CSSProperties} className="mx-auto mt-14 max-w-5xl">
             <FlowDemo />
@@ -108,9 +109,9 @@ export function Landing() {
               [Eye, t('Review'), t('Live log, a summary of what was done and a diff per repository. Ask for changes with a comment.')],
               [GitMerge, t('Merge'), t('Merge --no-ff into the branch you choose. On conflict nothing is published, and the AI can resolve it.')]
             ] as const).map(([Icon, title, text], i) => (
-              <li key={i} data-reveal style={{ '--d': `${i * 90}ms` } as React.CSSProperties} className="spot relative rounded-2xl border border-white/[0.07] bg-panel p-5" onMouseMove={spot}>
+              <li key={i} data-reveal style={{ '--d': `${i * 90}ms` } as React.CSSProperties} className="relative rounded-2xl border border-line bg-panel p-5">
                 <div className="flex items-center gap-3">
-                  <span className="relative grid size-9 place-items-center rounded-xl border border-accent/30 bg-gradient-to-b from-accent/25 to-accent/5 text-accent">
+                  <span className="relative grid size-9 place-items-center rounded-xl border border-line bg-white/[0.03] text-accent">
                     <Icon className="size-[18px]" />
                   </span>
                   <span className="font-mono text-xs text-mute">0{i + 1}</span>
@@ -122,7 +123,7 @@ export function Landing() {
           </ol>
 
           <div className="mt-16 grid items-center gap-10 md:grid-cols-2">
-            <div data-reveal><Shot src="/shots/issue.jpg" alt={t('Issue page with the agent log')} tilt /></div>
+            <div data-reveal><Shot src="/shots/issue.jpg" alt={t('Issue page with the agent log')} /></div>
             <div data-reveal style={{ '--d': '120ms' } as React.CSSProperties} className="space-y-4">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1 text-xs text-accent"><Sparkles className="size-3" /> {t('Lean context')}</span>
               <h3 className="text-2xl font-semibold tracking-tight">{t('A clean chat on every run')}</h3>
@@ -131,7 +132,7 @@ export function Landing() {
               </p>
               <div className="grid grid-cols-3 gap-2 pt-1">
                 {[[t('less'), t('tokens')], [t('less'), t('cost')], [t('zero'), t('context rot')]].map(([a, b]) => (
-                  <div key={b} className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
+                  <div key={b} className="rounded-xl border border-line bg-white/[0.02] px-3 py-2.5">
                     <div className="text-xs text-mute">{a}</div>
                     <div className="text-sm font-medium">{b}</div>
                   </div>
@@ -146,7 +147,7 @@ export function Landing() {
       </section>
 
       {/* Telas */}
-      <section id="screens" className="relative scroll-mt-14 overflow-hidden border-y border-white/[0.06] bg-panel/40">
+      <section id="screens" className="relative scroll-mt-14 overflow-hidden border-y border-line bg-panel/40">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent" />
         <div className="mx-auto max-w-6xl px-4 py-20 md:py-24">
           <SectionTitle kicker={t('Screens')} title={t('Everything in one place')} />
@@ -167,7 +168,7 @@ export function Landing() {
       </section>
 
       {/* Local */}
-      <section id="local" className="relative scroll-mt-14 overflow-hidden border-y border-white/[0.06] bg-panel/40">
+      <section id="local" className="relative scroll-mt-14 overflow-hidden border-y border-line bg-panel/40">
         <div className="pointer-events-none absolute -right-40 top-10 h-80 w-80 rounded-full bg-emerald-500/10 blur-[100px]" />
         <div className="relative mx-auto max-w-6xl px-4 py-20 md:py-24">
           <div className="grid gap-12 md:grid-cols-2">
@@ -183,12 +184,12 @@ export function Landing() {
                 <Item icon={Lock}>{t('By default the server only listens on')} <code>{t('localhost')}</code>{t(': nobody outside can reach it.')}</Item>
               </ul>
             </div>
-            <div data-reveal style={{ '--d': '120ms' } as React.CSSProperties} className="rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.04] to-transparent p-6 shadow-[0_30px_60px_-30px_rgb(0_0_0/0.8)]">
+            <div data-reveal style={{ '--d': '120ms' } as React.CSSProperties} className="rounded-2xl border border-line bg-panel p-6">
               <div className="flex items-center gap-2 font-medium"><Globe className="size-4 text-accent" /> {t('Want to use it from your phone or bring the team in?')}</div>
               <p className="mt-2 text-sm text-dim">{t('Only if you want. From the most closed option to the most open:')}</p>
               <div className="relative mt-5 space-y-2.5 text-sm">
                 <div className="absolute bottom-4 left-[11px] top-4 w-px bg-gradient-to-b from-emerald-400/60 via-amber-400/40 to-red-400/50" />
-                <Option level={0} title={t('VPN (Tailscale, WireGuard)')} tag="recomendado">{t('Phone and teammates join your private network; nothing is exposed to the internet.')}</Option>
+                <Option level={0} title={t('VPN (Tailscale, WireGuard)')} tag={t('recommended')}>{t('Phone and teammates join your private network; nothing is exposed to the internet.')}</Option>
                 <Option level={1} title={t('Local network')}>{t('Start it with')} <code>{t('FOREMAN_ADDR=0.0.0.0:8700')}</code> {t('and open it by the machine\'s IP, on the same Wi-Fi.')}</Option>
                 <Option level={2} title={t('Tunnel (Cloudflare Tunnel, ngrok)')}>{t('A temporary public address. Use it with HTTPS and strong passwords.')}</Option>
                 <Option level={3} title={t('Your own server')}>{t('Docker Compose with a reverse proxy (Caddy, nginx) and')} <code>{t('FOREMAN_SECURE_COOKIE=true')}</code>.</Option>
@@ -204,10 +205,7 @@ export function Landing() {
           <SectionTitle kicker={t('Get started')} title={t('In five minutes')} />
           <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2">
             <Step n={1} title={t('Start Foreman')}>
-              <Code>{`# na pasta do projeto
-./run-local.sh           # Postgres no Docker + servidor nativo
-# ou, tudo em container:
-docker compose up -d --build`}</Code>
+              <Code>{t('# in the project folder\n./run-local.sh           # Postgres in Docker + a native server\n# or everything in containers:\ndocker compose up -d --build')}</Code>
               <p>{t('Open')} <code>{t('http://localhost:8700')}</code>{t('. The first sign-up becomes the')} <b className="text-fg">{t('owner')}</b>{t(': can do everything and sets the permissions.')}</p>
             </Step>
             <Step n={2} title={t('Check git and agents')}>
@@ -228,9 +226,8 @@ docker compose up -d --build`}</Code>
             </Step>
           </div>
 
-          <div data-reveal className="relative mt-16 overflow-hidden rounded-3xl border border-white/[0.08] px-6 py-12 text-center">
+          <div data-reveal className="relative mt-16 overflow-hidden rounded-3xl border border-line px-6 py-12 text-center">
             <div className="hero-grid pointer-events-none absolute inset-0 opacity-60" />
-            <div className="blob pointer-events-none absolute -bottom-32 left-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-accent/25 blur-[100px]" />
             <div className="relative">
               <h2 className="text-balance text-2xl font-semibold tracking-tight md:text-4xl">{t('Your first issue is one')} <span className="text-gradient">{t('C')}</span> {t('away.')}</h2>
               <p className="mx-auto mt-3 max-w-lg text-dim">{t('No external sign-up, no card, no cloud. Just your computer.')}</p>
@@ -242,7 +239,7 @@ docker compose up -d --build`}</Code>
         </div>
       </section>
 
-      <footer className="border-t border-white/[0.06]">
+      <footer className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-6 text-xs text-mute">
           <img src="/icon.svg" alt="" className="size-4" /> {t('Foreman · self-hosted, local by default')}
           <span className="ml-auto">{t('Go · PostgreSQL · React')}</span>
@@ -265,13 +262,6 @@ const FEATURES: [typeof Bot, string, React.ReactNode][] = [
   [GitMerge, t('Safe merge'), t('Each issue in its own folder and branch, in a sandbox that can only write there. Several repositories: either every merge goes through, or nothing is published.')],
   [Laptop, t('Phone and tablet'), t('Responsive, installable interface (PWA). Drag cards by touch and follow the log from anywhere.')]
 ];
-
-// A light that follows the mouse on the cards (.spot uses --x/--y).
-function spot(e: React.MouseEvent<HTMLElement>) {
-  const r = e.currentTarget.getBoundingClientRect();
-  e.currentTarget.style.setProperty('--x', `${e.clientX - r.left}px`);
-  e.currentTarget.style.setProperty('--y', `${e.clientY - r.top}px`);
-}
 
 // An animated demo: an issue crosses the board while the agent's log is written.
 const COLS = [
@@ -310,9 +300,8 @@ function FlowDemo() {
 
   return (
     <div className="relative">
-      <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-white/15 via-white/5 to-transparent" />
-      <div className="relative overflow-hidden rounded-2xl bg-panel/95 text-left shadow-[0_40px_120px_-30px_rgb(var(--accent)/0.45),0_30px_60px_-30px_rgb(0_0_0/0.9)]">
-        <div className="flex h-9 items-center gap-1.5 border-b border-white/[0.06] px-3.5">
+      <div className="relative overflow-hidden rounded-xl border border-line bg-panel text-left shadow-pop">
+        <div className="flex h-9 items-center gap-1.5 border-b border-line px-3.5">
           <span className="size-2.5 rounded-full bg-[#ff5f57]/80" /><span className="size-2.5 rounded-full bg-[#febc2e]/80" /><span className="size-2.5 rounded-full bg-[#28c840]/80" />
           <span className="mx-auto flex items-center gap-1.5 rounded-md bg-white/[0.04] px-3 py-0.5 text-[11px] text-mute"><Lock className="size-2.5" /> {t('localhost:8700')}</span>
         </div>
@@ -327,7 +316,7 @@ function FlowDemo() {
                 </div>
                 <div className="space-y-1.5">
                   {step === i && (
-                    <div key={i} className="demo-card rounded-lg border border-accent/40 bg-card p-2 shadow-[0_8px_24px_-10px_rgb(var(--accent)/0.7)]">
+                    <div key={i} className="demo-card rounded-lg border border-accent/40 bg-card p-2">
                       <div className="flex items-center gap-1.5 text-[10px] text-mute">
                         {t('MUL-42')}
                         {i === 1 && <span className="ml-auto size-1.5 animate-pulse-soft rounded-full bg-amber-400" />}
@@ -341,7 +330,7 @@ function FlowDemo() {
                     </div>
                   )}
                   {others[i].map(([k, t]) => (
-                    <div key={k} className="rounded-lg border border-white/[0.05] bg-card/60 p-2">
+                    <div key={k} className="rounded-lg border border-line bg-card/60 p-2">
                       <div className="text-[10px] text-mute">{k}</div>
                       <div className="mt-0.5 truncate text-[12px] text-dim">{t}</div>
                     </div>
@@ -350,7 +339,7 @@ function FlowDemo() {
               </div>
             ))}
           </div>
-          <div className="border-t border-white/[0.06] bg-black/30 p-3 font-mono text-[11px] leading-[1.7] md:border-l md:border-t-0">
+          <div className="border-t border-line bg-black/30 p-3 font-mono text-[11px] leading-[1.7] md:border-l md:border-t-0">
             <div className="mb-1.5 flex items-center gap-1.5 font-sans text-[11px] text-mute"><Terminal className="size-3" /> {t('Agent log')}</div>
             <div className="h-[168px] overflow-hidden">
               {lines.map(([, text, tone], i) => (
@@ -370,7 +359,7 @@ function FlowDemo() {
 function Marquee() {
   const items = [t('Claude Code'), t('Codex'), t('git worktree'), 'PostgreSQL', t('Go'), t('React'), t('Docker'), t('Tailscale'), 'SSH', t('gh CLI'), 'PWA', 'SMTP'];
   return (
-    <div className="marquee relative border-y border-white/[0.06] py-4 text-sm text-mute">
+    <div className="marquee relative border-y border-line py-4 text-sm text-mute">
       <div className="marquee-track flex w-max gap-10">
         {[...items, ...items].map((tt, i) => (
           <span key={i} className="flex items-center gap-10 whitespace-nowrap">{tt}<span className="size-1 rounded-full bg-white/15" /></span>
@@ -400,7 +389,7 @@ function Gallery() {
 
   return (
     <div onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
-      <div className="mx-auto flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl border border-white/[0.07] bg-white/[0.02] p-1">
+      <div className="mx-auto flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl border border-line bg-white/[0.02] p-1">
         {SHOTS.map((s, n) => (
           <button
             key={s.label}
@@ -414,8 +403,7 @@ function Gallery() {
       </div>
       <p className="mt-3 h-5 text-center text-sm text-dim">{SHOTS[i].text}</p>
       <div className="relative mx-auto mt-6 max-w-5xl">
-        <div className="pointer-events-none absolute -inset-x-10 -bottom-10 top-10 rounded-full bg-accent/15 blur-[90px]" />
-        <div className="relative grid">
+                <div className="relative grid">
           {SHOTS.map((s, n) => (
             <div key={s.src} className={clsx('[grid-area:1/1] transition-all duration-700', n === i ? 'opacity-100' : 'pointer-events-none scale-[0.985] opacity-0')} aria-hidden={n !== i}>
               <Shot src={s.src} alt={s.label} />
@@ -440,9 +428,9 @@ function SectionTitle({ kicker, title, align = 'center' }: { kicker: string; tit
 
 function Feature({ icon: Icon, title, delay, children }: { icon: typeof Bot; title: string; delay: number; children: React.ReactNode }) {
   return (
-    <div data-reveal style={{ '--d': `${delay}ms` } as React.CSSProperties} onMouseMove={spot}
-      className="spot group relative rounded-2xl border border-white/[0.07] bg-panel/80 p-5 transition-[border-color,transform] duration-300 hover:-translate-y-0.5 hover:border-white/[0.14]">
-      <span className="grid size-9 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-accent transition-colors group-hover:border-accent/40 group-hover:bg-accent/10">
+    <div data-reveal style={{ '--d': `${delay}ms` } as React.CSSProperties}
+      className="group relative rounded-2xl border border-line bg-panel/80 p-5 transition-[border-color,transform] duration-300 hover:-translate-y-0.5 hover:border-white/20">
+      <span className="grid size-9 place-items-center rounded-xl border border-line bg-white/[0.03] text-accent transition-colors group-hover:border-accent/40 group-hover:bg-accent/10">
         <Icon className="size-[18px]" />
       </span>
       <h3 className="mt-4 font-medium">{title}</h3>
@@ -464,8 +452,8 @@ function Option({ title, tag, level, children }: { title: string; tag?: string; 
   const dot = ['bg-emerald-400', 'bg-lime-400', 'bg-amber-400', 'bg-orange-400'][level];
   return (
     <div className="relative flex gap-3">
-      <span className="relative z-10 mt-3.5 grid size-[23px] shrink-0 place-items-center rounded-full border border-white/10 bg-panel"><span className={clsx('size-2 rounded-full', dot)} /></span>
-      <div className="flex-1 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 transition-colors hover:border-white/[0.14]">
+      <span className="relative z-10 mt-3.5 grid size-[23px] shrink-0 place-items-center rounded-full border border-line bg-panel"><span className={clsx('size-2 rounded-full', dot)} /></span>
+      <div className="flex-1 rounded-xl border border-line bg-white/[0.02] p-3 transition-colors hover:border-white/20">
         <div className="flex flex-wrap items-center gap-2 font-medium">{title}{tag && <span className="rounded-full bg-emerald-400/15 px-2 py-px text-[10px] font-medium text-emerald-300">{tag}</span>}</div>
         <p className="mt-0.5 text-dim">{children}</p>
       </div>
@@ -475,10 +463,10 @@ function Option({ title, tag, level, children }: { title: string; tag?: string; 
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <div data-reveal style={{ '--d': `${(n % 2 ? 0 : 1) * 90}ms` } as React.CSSProperties} onMouseMove={spot}
-      className="spot relative min-w-0 rounded-2xl border border-white/[0.07] bg-panel/80 p-5">
+    <div data-reveal style={{ '--d': `${(n % 2 ? 0 : 1) * 90}ms` } as React.CSSProperties}
+      className="relative min-w-0 rounded-2xl border border-line bg-panel/80 p-5">
       <div className="flex items-center gap-3">
-        <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-b from-accent to-accent/70 font-mono text-xs font-semibold text-snow shadow-[0_4px_14px_-4px_rgb(var(--accent)/0.8)]">{n}</span>
+        <span className="grid size-7 place-items-center rounded-lg bg-accent font-mono text-xs font-semibold text-snow">{n}</span>
         <h3 className="font-medium">{title}</h3>
       </div>
       <div className="mt-3 space-y-2.5 text-sm leading-relaxed text-dim">{children}</div>
@@ -496,13 +484,13 @@ function Code({ children }: { children: string }) {
   };
   return (
     <div className="group relative">
-      <pre className="overflow-x-auto rounded-xl border border-white/[0.07] bg-black/40 p-3.5 pr-10 font-mono text-[12px] leading-relaxed text-fg">
+      <pre className="overflow-x-auto rounded-xl border border-line bg-black/40 p-3.5 pr-10 font-mono text-[12px] leading-relaxed text-fg">
         {children.split('\n').map((l, i) => {
           const at = l.indexOf('#');
           return <div key={i}>{at < 0 ? l : <>{l.slice(0, at)}<span className="text-mute">{l.slice(at)}</span></>}</div>;
         })}
       </pre>
-      <button onClick={copy} aria-label={t('Copy')} className="absolute right-2 top-2 grid size-7 place-items-center rounded-md border border-white/[0.08] bg-panel text-mute opacity-0 transition hover:text-fg group-hover:opacity-100 max-md:opacity-100">
+      <button onClick={copy} aria-label={t('Copy')} className="absolute right-2 top-2 grid size-7 place-items-center rounded-md border border-line bg-panel text-mute opacity-0 transition hover:text-fg group-hover:opacity-100 coarse:opacity-100">
         {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
       </button>
     </div>
@@ -510,12 +498,12 @@ function Code({ children }: { children: string }) {
 }
 
 // A screenshot in a window frame; it disappears if the image doesn't exist.
-function Shot({ src, alt, className = '', tilt }: { src: string; alt: string; className?: string; tilt?: boolean }) {
+function Shot({ src, alt, className = '' }: { src: string; alt: string; className?: string }) {
   const [ok, setOk] = useState(true);
   if (!ok) return null;
   return (
-    <div className={clsx('overflow-hidden rounded-xl border border-white/[0.08] bg-panel shadow-[0_30px_80px_-30px_rgb(0_0_0/0.9)]', tilt && 'tilt', className)}>
-      <div className="flex h-7 items-center gap-1.5 border-b border-white/[0.06] px-3">
+    <div className={clsx('overflow-hidden rounded-xl border border-line bg-panel shadow-pop', className)}>
+      <div className="flex h-7 items-center gap-1.5 border-b border-line px-3">
         <span className="size-2.5 rounded-full bg-[#ff5f57]/70" /><span className="size-2.5 rounded-full bg-[#febc2e]/70" /><span className="size-2.5 rounded-full bg-[#28c840]/70" />
       </div>
       <img src={src} alt={alt} loading="lazy" onError={() => setOk(false)} className="block w-full" />

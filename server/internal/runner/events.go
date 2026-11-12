@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Entry is a normalized run-log line, the same for Claude and Codex.
+// Entry is a normalized run-log line, the same for Claude, Codex and Gemini.
 type Entry struct {
 	Kind string // text | tool | out | error | info | result
 	Body string
@@ -206,6 +206,113 @@ func normalizeCodex(line []byte) []Entry {
 		return []Entry{{Kind: "error", Body: msg}}
 	}
 	return nil
+}
+
+// Gemini CLI's stream-json: init, message (the assistant's text arrives in small deltas),
+// tool_use, tool_result, error and a final result with the token counts.
+type geminiEvent struct {
+	Type       string         `json:"type"`
+	SessionID  string         `json:"session_id"`
+	Model      string         `json:"model"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	Delta      bool           `json:"delta"`
+	ToolName   string         `json:"tool_name"`
+	Parameters map[string]any `json:"parameters"`
+	Status     string         `json:"status"`
+	Output     string         `json:"output"`
+	Message    string         `json:"message"`
+	Error      *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	Stats struct {
+		InputTokens  int64 `json:"input_tokens"`
+		OutputTokens int64 `json:"output_tokens"`
+		Cached       int64 `json:"cached"`
+	} `json:"stats"`
+}
+
+// geminiParser joins the text deltas into one log line per message: it is written out
+// when something else happens (a tool, the result) or the output ends.
+type geminiParser struct {
+	text strings.Builder
+	all  strings.Builder // everything the assistant said, for the final result
+}
+
+func (p *geminiParser) flush() []Entry {
+	t := strings.TrimSpace(p.text.String())
+	p.text.Reset()
+	if t == "" {
+		return nil
+	}
+	return []Entry{{Kind: "text", Body: t}}
+}
+
+func (p *geminiParser) parse(line []byte) []Entry {
+	var ev geminiEvent
+	if json.Unmarshal(line, &ev) != nil {
+		return append(p.flush(), Entry{Kind: "out", Body: string(line)})
+	}
+	switch ev.Type {
+	case "init":
+		return []Entry{{Kind: "info", Body: fmt.Sprintf("session %s · model %s", ev.SessionID, ev.Model)}}
+	case "message":
+		if ev.Role == "assistant" {
+			if !ev.Delta {
+				p.flush()
+			}
+			p.text.WriteString(ev.Content)
+			p.all.WriteString(ev.Content)
+			if !ev.Delta {
+				return p.flush()
+			}
+		}
+		return nil
+	case "tool_use":
+		return append(p.flush(), Entry{Kind: "tool", Body: ev.ToolName + "  " + describeInput(ev.Parameters)})
+	case "tool_result":
+		out := p.flush()
+		if ev.Status == "error" {
+			msg := ev.Output
+			if ev.Error != nil {
+				msg = firstNonEmpty(ev.Error.Message, msg)
+			}
+			return append(out, Entry{Kind: "error", Body: clip(strings.TrimSpace(msg), 600)})
+		}
+		if t := strings.TrimSpace(ev.Output); t != "" {
+			out = append(out, Entry{Kind: "out", Body: clip(t, 600)})
+		}
+		return out
+	case "error":
+		return append(p.flush(), Entry{Kind: "error", Body: ev.Message})
+	case "result":
+		out := p.flush()
+		e := Entry{Kind: "result", Body: "Done", Final: strings.TrimSpace(p.all.String()),
+			In: ev.Stats.InputTokens - ev.Stats.Cached, Cached: ev.Stats.Cached, Out: ev.Stats.OutputTokens}
+		if ev.Status == "error" {
+			e.IsError = true
+			e.Body = "Failed"
+			if ev.Error != nil {
+				e.Body = "Failed: " + ev.Error.Message
+			}
+		}
+		return append(out, e)
+	}
+	return nil
+}
+
+// parserFor turns one line of a runtime's output into log entries. end is called when
+// the output finishes (Gemini may still be holding the last piece of text).
+func parserFor(runtime string) (parse func([]byte) []Entry, end func() []Entry) {
+	switch runtime {
+	case "codex":
+		return normalizeCodex, func() []Entry { return nil }
+	case "gemini":
+		p := &geminiParser{}
+		return p.parse, p.flush
+	default:
+		return normalizeClaude, func() []Entry { return nil }
+	}
 }
 
 func firstNonEmpty(vals ...string) string {

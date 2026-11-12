@@ -54,5 +54,14 @@ export const PRIORITIES = [
 export const LABEL_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#ec4899', '#64748b'];
 
 
+// The agent runtimes: the CLIs Foreman runs on the server.
+export type RuntimeId = 'claude' | 'codex' | 'gemini';
+export const RUNTIMES: { id: RuntimeId; label: string; color: string; defaultModel: string }[] = [
+  { id: 'claude', label: 'Claude Code', color: 'text-[#e58f5c]', defaultModel: 'sonnet' },
+  { id: 'codex', label: 'Codex', color: 'text-emerald-400', defaultModel: '' },
+  { id: 'gemini', label: 'Gemini CLI', color: 'text-sky-400', defaultModel: '' }
+];
+export const runtimeOf = (id?: string) => RUNTIMES.find((r) => r.id === id) ?? RUNTIMES[0];
+
 export const LAST_WS = 'foreman.lastWorkspace';
 export const LAST_AGENT = 'foreman.lastAgent';

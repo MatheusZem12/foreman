@@ -55,6 +55,10 @@ func bad(format string, a ...any) error {
 	return httpError{http.StatusBadRequest, fmt.Sprintf(format, a...), format, a}
 }
 
+func conflict(format string, a ...any) error {
+	return httpError{http.StatusConflict, fmt.Sprintf(format, a...), format, a}
+}
+
 func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, ntf *notify.Notifier, static http.Handler) http.Handler {
 	a := &API{cfg: cfg, st: st, hub: h, run: rn, ntf: ntf}
 	r := chi.NewRouter()
@@ -161,6 +165,8 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.With(a.can("analytics.global")).Get("/analytics", a.h(a.globalAnalytics))
 			r.Get("/runtimes", a.h(a.runtimes))
 			r.Get("/runtimes/models", a.h(a.runtimeModels))
+			r.With(a.can("agent.create", "agent.update", "settings.manage")).Post("/runtimes/check", a.h(a.checkRuntimes))
+			r.With(a.can("agent.view", "agent.create", "agent.update", "settings.manage")).Post("/agents/{id}/check", a.h(a.probeAgent))
 		})
 	})
 	r.Handle("/*", static)
@@ -696,7 +702,11 @@ func (a *API) createWorkspace(w http.ResponseWriter, r *http.Request) (any, erro
 	if strings.TrimSpace(in.Name) == "" || !keyRe.MatchString(in.Key) {
 		return nil, bad("enter the name and a key of 2 to 10 letters/numbers (e.g. LING)")
 	}
-	return a.st.CreateWorkspace(r.Context(), strings.TrimSpace(in.Name), in.Key)
+	in.Name = strings.TrimSpace(in.Name)
+	if err := a.uniqueWorkspace(r, "", in.Name, in.Key); err != nil {
+		return nil, err
+	}
+	return a.st.CreateWorkspace(r.Context(), in.Name, in.Key)
 }
 
 func (a *API) patchWorkspace(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -704,7 +714,41 @@ func (a *API) patchWorkspace(w http.ResponseWriter, r *http.Request) (any, error
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
-	return a.st.UpdateWorkspace(r.Context(), chi.URLParam(r, "ws"), strings.TrimSpace(in.Name))
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" {
+		return nil, bad("enter the workspace name")
+	}
+	if err := a.uniqueWorkspace(r, chi.URLParam(r, "ws"), in.Name, ""); err != nil {
+		return nil, err
+	}
+	return a.st.UpdateWorkspace(r.Context(), chi.URLParam(r, "ws"), in.Name)
+}
+
+// uniqueWorkspace refuses a name or key another workspace (not self) already uses, with a
+// clear message. The unique indexes still guard against two requests arriving together.
+func (a *API) uniqueWorkspace(r *http.Request, self, name, key string) error {
+	all, err := a.st.ListWorkspaces(r.Context())
+	if err != nil {
+		return err
+	}
+	for _, o := range all {
+		if o.ID == self {
+			continue
+		}
+		if sameWorkspaceName(o.Name, name) {
+			return conflict("a workspace named %q already exists", o.Name)
+		}
+		if key != "" && strings.EqualFold(o.Key, key) {
+			return conflict("a workspace with the key %q already exists", o.Key)
+		}
+	}
+	return nil
+}
+
+// sameWorkspaceName compares names the way the unique index does: ignoring case and
+// surrounding spaces.
+func sameWorkspaceName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 func (a *API) deleteWorkspace(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -762,8 +806,16 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 			return nil, bad("a repository named %q already exists in this workspace", o.Name)
 		}
 	}
-	// Only accepts a git repository reachable with the server's credentials.
-	if err := a.run.CheckRemote(r.Context(), in.URL); err != nil {
+	in.WorkBranch = strings.TrimSpace(in.WorkBranch)
+	if strings.HasPrefix(in.WorkBranch, "-") || strings.ContainsAny(in.WorkBranch, " \t~^:?*[\\") {
+		return nil, bad("invalid branch name")
+	}
+	// Only accepts a git repository reachable with the server's credentials (and, when
+	// given, a working branch that exists there).
+	if err := a.run.CheckRemote(r.Context(), in.URL, in.WorkBranch); err != nil {
+		if errors.Is(err, runner.ErrNoBranch) {
+			return nil, bad("the branch %q doesn't exist in this repository", in.WorkBranch)
+		}
 		return nil, bad("not a git repository the server can reach: %v", err)
 	}
 	isNew := in.ID == ""
@@ -871,7 +923,7 @@ func (a *API) saveAgent(w http.ResponseWriter, r *http.Request) (any, error) {
 	if in.Name == "" {
 		return nil, bad("give the agent a name")
 	}
-	if in.Runtime != "codex" {
+	if in.Runtime != "codex" && in.Runtime != "gemini" {
 		in.Runtime = "claude"
 	}
 	if in.Avatar == "" {
@@ -899,7 +951,92 @@ func (a *API) saveSkill(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, bad("give the skill a name")
 	}
 	in.Slug = store.Slugify(in.Name, 48)
+	ids, err := a.skillWorkspaces(r, in.ID, in.WorkspaceIDs)
+	if err != nil {
+		return nil, err
+	}
+	in.WorkspaceIDs = ids
+	labels, err := a.skillLabels(r, in.ID, in.LabelIDs)
+	if err != nil {
+		return nil, err
+	}
+	in.LabelIDs = labels
 	return a.st.SaveSkill(r.Context(), in)
+}
+
+// skillLabels checks the labels a skill is tied to, like skillWorkspaces: only labels of
+// workspaces the person sees can be added; the others already there stay.
+func (a *API) skillLabels(r *http.Request, skillID string, want []string) ([]string, error) {
+	visible, err := a.st.ListWorkspacesFor(r.Context(), userOf(r))
+	if err != nil {
+		return nil, err
+	}
+	wsIDs := make([]string, len(visible))
+	for i, w := range visible {
+		wsIDs[i] = w.ID
+	}
+	var old []string
+	if skillID != "" {
+		if cur, err := a.st.Skill(r.Context(), skillID); err == nil {
+			old = cur.LabelIDs
+		}
+	}
+	sees, err := a.st.LabelsIn(r.Context(), wsIDs, append(append([]string{}, want...), old...))
+	if err != nil {
+		return nil, err
+	}
+	out, seen := []string{}, map[string]bool{}
+	for _, id := range want {
+		if seen[id] {
+			continue
+		}
+		if !sees[id] {
+			return nil, bad("label not found")
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	for _, id := range old {
+		if !sees[id] && !seen[id] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// skillWorkspaces checks the workspaces a skill is tied to: only ones the person sees can
+// be added; the ones they don't see that were already there stay as they were.
+func (a *API) skillWorkspaces(r *http.Request, skillID string, want []string) ([]string, error) {
+	visible, err := a.st.ListWorkspacesFor(r.Context(), userOf(r))
+	if err != nil {
+		return nil, err
+	}
+	sees := map[string]bool{}
+	for _, w := range visible {
+		sees[w.ID] = true
+	}
+	out := []string{}
+	seen := map[string]bool{}
+	for _, id := range want {
+		if seen[id] {
+			continue
+		}
+		if !sees[id] {
+			return nil, bad("workspace not found")
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if skillID != "" {
+		if cur, err := a.st.Skill(r.Context(), skillID); err == nil {
+			for _, id := range cur.WorkspaceIDs {
+				if !sees[id] && !seen[id] {
+					out = append(out, id)
+				}
+			}
+		}
+	}
+	return out, nil
 }
 
 func (a *API) deleteSkill(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -1416,6 +1553,22 @@ func (a *API) runtimeModels(w http.ResponseWriter, r *http.Request) (any, error)
 	return a.run.Models(r.Context(), force), nil
 }
 
+// checkRuntimes tests every runtime and model again (in the background; the catalog says
+// "checking" until it ends).
+func (a *API) checkRuntimes(w http.ResponseWriter, r *http.Request) (any, error) {
+	a.run.CheckAll(true)
+	return a.run.Models(r.Context(), false), nil
+}
+
+// probeAgent tests the agent's runtime and model right now and answers with the result.
+func (a *API) probeAgent(w http.ResponseWriter, r *http.Request) (any, error) {
+	ag, err := a.st.Agent(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		return nil, err
+	}
+	return a.run.ProbeAgent(r.Context(), ag.Runtime, ag.Model), nil
+}
+
 func (a *API) runtimes(w http.ResponseWriter, r *http.Request) (any, error) {
 	return a.run.Runtimes(r.Context()), nil
 }
@@ -1495,16 +1648,15 @@ func (a *API) emailForm(r *http.Request) (notify.Settings, error) {
 	if err := decode(r, &in); err != nil {
 		return in, err
 	}
-	in.Host, in.From, in.Username = strings.TrimSpace(in.Host), strings.TrimSpace(in.From), strings.TrimSpace(in.Username)
 	in.AppURL = strings.TrimRight(strings.TrimSpace(in.AppURL), "/")
-	if in.Password == "" {
+	if strings.TrimSpace(in.Password) == "" {
 		cur, err := a.ntf.Settings(r.Context())
 		if err != nil {
 			return in, err
 		}
 		in.Password = cur.Password
 	}
-	return in, nil
+	return in.Gmail(), nil
 }
 
 func (a *API) saveEmailSettings(w http.ResponseWriter, r *http.Request) (any, error) {

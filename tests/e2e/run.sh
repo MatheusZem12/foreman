@@ -50,6 +50,7 @@ services:
       CLAUDE_BIN: /fake/claude
       CODEX_BIN: /fake/codex
       FOREMAN_RUN_TIMEOUT: 45s
+      FOREMAN_SMTP_CUSTOM: "1"
     volumes: ["$HERE/fake:/fake:ro", "$WORK/remote:/remote"]
     ports: ["127.0.0.1:18700:8700"]
 YML

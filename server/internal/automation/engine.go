@@ -347,7 +347,13 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 				note = strings.TrimSpace(note + "\n\n" + n)
 			}
 		}
-		if err := e.ntf.StageEmail(ctx, is, to, headline, note); err != nil {
+		var by *store.User
+		if ev.ActorID != nil {
+			if u, err := e.st.UserByID(ctx, *ev.ActorID); err == nil {
+				by = u
+			}
+		}
+		if err := e.ntf.StageEmail(ctx, is, to, headline, note, by); err != nil {
 			if errors.Is(err, notify.ErrDisabled) {
 				return "", errSkip // e-mail desligado no servidor: a tela de fluxo avisa
 			}

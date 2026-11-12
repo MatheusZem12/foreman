@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import type { Agent, Label, Member, ModelOption, Permission, Repo, Role, Rule, RuntimeModels, Skill, Stage, User, Workspace } from './types';
-import { localizeStages, registerStages } from './constants';
+import { localizeStages, registerStages, runtimeOf } from './constants';
 import { t } from './i18n';
 
 // retryOnMount: false — without a login, /me gives 401; another component that mounts
@@ -47,14 +47,50 @@ export const useBranches = (repoId?: string | null) =>
   });
 
 // Model catalog read from the CLIs on the server (it refreshes itself every 6 h).
-export const useModels = () => useQuery({ queryKey: ['models'], queryFn: () => api.get<RuntimeModels[]>('/runtimes/models'), staleTime: 10 * 60_000 });
+// While a connection test is running on the server, it asks again every few seconds.
+export const useModels = () => useQuery({
+  queryKey: ['models'],
+  queryFn: () => api.get<RuntimeModels[]>('/runtimes/models'),
+  staleTime: 10 * 60_000,
+  refetchInterval: (q) => (q.state.data?.some((r) => r.checking) ? 3000 : false)
+});
+
+// Whether a runtime works with this account at all (any of its models answered).
+export function runtimeConnection(catalog: RuntimeModels[] | undefined, runtime: string): Connection {
+  const rt = catalog?.find((c) => c.runtime === runtime);
+  if (!rt) return { state: 'untested' };
+  if (rt.installed === false) return { state: 'fail', problem: rt.error };
+  if (rt.connected === false) return { state: 'fail', problem: rt.checkError, at: rt.checkedAt };
+  if (rt.connected === true) return { state: 'ok', at: rt.checkedAt };
+  return rt.checking ? { state: 'checking' } : { state: 'untested' };
+}
+
+// Whether an agent (runtime + model) works with this server's account, per the last test.
+export type Connection = { state: 'ok' | 'fail' | 'busy' | 'untested' | 'checking'; problem?: string; at?: string };
+export function connectionOf(catalog: RuntimeModels[] | undefined, runtime: string, model: string): Connection {
+  const rt = catalog?.find((c) => c.runtime === runtime);
+  if (!rt) return { state: 'untested' };
+  if (rt.installed === false) return { state: 'fail', problem: rt.error || t('{0} isn\'t installed on the server', runtimeOf(runtime).label) };
+  if (rt.connected === false) return { state: 'fail', problem: rt.checkError, at: rt.checkedAt };
+  // No model chosen = the CLI's default model, tested on its own.
+  if (!model) {
+    if (rt.defaultOk === false) return { state: 'fail', problem: rt.defaultError, at: rt.checkedAt };
+    if (rt.defaultOk === true) return { state: 'ok', at: rt.checkedAt };
+    return rt.checking ? { state: 'checking' } : { state: 'untested' };
+  }
+  const m = rt.models.find((x) => x.id === model);
+  if (m?.available === false) return { state: 'fail', problem: m.problem, at: m.checkedAt };
+  if (m?.available === true) return { state: 'ok', at: m.checkedAt };
+  if (m?.busy) return { state: 'busy', problem: m.problem, at: m.checkedAt };
+  return rt.checking ? { state: 'checking' } : { state: 'untested' };
+}
 
 // The agent's model status against the catalog: ok, unknown or unsupported effort.
 export function modelStatus(catalog: RuntimeModels[] | undefined, runtime: string, model: string, effort: string): { option?: ModelOption; warning?: string } {
   const rt = catalog?.find((c) => c.runtime === runtime);
   if (!rt?.installed || !rt.models.length) return {};
   const option = rt.models.find((m) => m.id === model);
-  if (model && !option && !(runtime === 'claude' && model.startsWith('claude-'))) return { warning: t('"{0}" isn\'t in the {1} catalog', model, runtime === 'claude' ? t('Claude Code') : t('Codex')) };
+  if (model && !option && !(runtime === 'claude' && model.startsWith('claude-'))) return { warning: t('"{0}" isn\'t in the {1} catalog', model, runtimeOf(runtime).label) };
   const efforts = option?.efforts ?? rt.efforts;
   if (effort && efforts.length && !efforts.includes(effort)) return { option, warning: t('effort "{0}" isn\'t accepted by this model', effort) };
   return { option };

@@ -17,6 +17,7 @@ type Config struct {
 	RunTimeout   time.Duration // a run that goes over it is killed (a hung agent can't hold a slot forever)
 	ClaudeBin    string
 	CodexBin     string
+	GeminiBin    string
 	SecureCookie bool
 }
 
@@ -45,6 +46,7 @@ func Load() Config {
 		RunTimeout:   timeout,
 		ClaudeBin:    env("CLAUDE_BIN", "claude"),
 		CodexBin:     env("CODEX_BIN", "codex"),
+		GeminiBin:    env("GEMINI_BIN", "gemini"),
 		SecureCookie: env("FOREMAN_SECURE_COOKIE", "false") == "true",
 	}
 }

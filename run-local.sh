@@ -23,7 +23,7 @@ fi
 need() { command -v "$1" >/dev/null || { echo "✗ missing command '$1'"; exit 1; }; }
 need docker
 need git
-for bin in claude codex; do
+for bin in claude codex gemini; do
   command -v "$bin" >/dev/null && echo "✓ $bin: $($bin --version 2>/dev/null | head -1)" || echo "! $bin not found in PATH ($bin agents won't run)"
 done
 

@@ -1,3 +1,5 @@
+import plugin from 'tailwindcss/plugin';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -19,13 +21,17 @@ export default {
         snow: '#ffffff'
       },
       boxShadow: {
-        pop: '0 12px 40px -8px rgb(0 0 0 / var(--shadow, 0.6)), 0 0 0 1px rgb(var(--ink) / 0.04)'
+        pop: '0 16px 48px -12px rgb(0 0 0 / var(--shadow, 0.5)), 0 2px 6px -2px rgb(0 0 0 / calc(var(--shadow, 0.5) / 2))'
       },
+
       fontFamily: {
         sans: ['Inter Variable', 'Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['JetBrains Mono Variable', 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace']
       }
     }
   },
-  plugins: []
+  // hover: only where there is a real hover (no "stuck" hover after a tap on phones).
+  future: { hoverOnlyWhenSupported: true },
+  // coarse: = a finger instead of a mouse, for touch targets that need to grow.
+  plugins: [plugin(({ addVariant }) => addVariant('coarse', '@media (pointer: coarse)'))]
 };

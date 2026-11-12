@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,37 +35,60 @@ const settingsKey = "email"
 // Recipients per message: servers usually limit RCPT (Gmail: 100).
 const batchSize = 50
 
+// Sending goes through Gmail: one Gmail (or Google Workspace) account signs in with an
+// app password and sends every notification. Gmail always sends as that account, so
+// each e-mail shows "Person via Foreman" and replies go to that person (Reply-To).
+//
+// Host, Port, Security and Username stay in the stored JSON for older configurations,
+// but are always set by Gmail(): nobody has to know about SMTP.
 type Settings struct {
 	Enabled  bool   `json:"enabled"`
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
-	Security string `json:"security"` // starttls | tls | none
+	Security string `json:"security"`
 	Username string `json:"username"`
-	Password string `json:"password,omitempty"`
-	From     string `json:"from"`
+	Password string `json:"password,omitempty"` // the Gmail app password
+	From     string `json:"from"`               // the Gmail address that sends
 	FromName string `json:"fromName"`
 	AppURL   string `json:"appUrl"`
 }
 
+const (
+	gmailHost = "smtp.gmail.com"
+	gmailPort = 587
+)
+
 func defaults() Settings {
-	return Settings{Port: 587, Security: "starttls", FromName: "Foreman"}
+	return Settings{Host: gmailHost, Port: gmailPort, Security: "starttls", FromName: "Foreman"}
+}
+
+// Gmail fills in the connection: Gmail's server, STARTTLS on 587 and the address itself
+// as the login. Google shows the app password in groups of four ("abcd efgh ijkl mnop");
+// the spaces go away.
+//
+// FOREMAN_SMTP_CUSTOM=1 keeps the SMTP fields as they came (the test suites point at a
+// local Mailpit; it is not offered on the screen).
+func (c Settings) Gmail() Settings {
+	c.From = strings.TrimSpace(c.From)
+	if os.Getenv("FOREMAN_SMTP_CUSTOM") == "1" {
+		c.Host, c.Username = strings.TrimSpace(c.Host), strings.TrimSpace(c.Username)
+		return c
+	}
+	c.Host, c.Port, c.Security, c.Username = gmailHost, gmailPort, "starttls", c.From
+	c.Password = strings.Join(strings.Fields(c.Password), "")
+	if strings.TrimSpace(c.FromName) == "" {
+		c.FromName = "Foreman"
+	}
+	return c
 }
 
 // Validate checks the minimum needed to send.
 func (c Settings) Validate() error {
-	if strings.TrimSpace(c.Host) == "" {
-		return errors.New("enter the SMTP server")
+	if _, err := mail.ParseAddress(c.From); err != nil || !strings.Contains(c.From, "@") {
+		return errors.New("enter the Gmail address that sends the e-mails")
 	}
-	if c.Port <= 0 || c.Port > 65535 {
-		return errors.New("invalid port")
-	}
-	if _, err := mail.ParseAddress(c.From); err != nil {
-		return errors.New("invalid sender e-mail")
-	}
-	switch c.Security {
-	case "starttls", "tls", "none":
-	default:
-		return errors.New("security must be starttls, tls or none")
+	if strings.TrimSpace(c.Password) == "" && c.Username != "" {
+		return errors.New("enter the Gmail app password")
 	}
 	return nil
 }
@@ -150,6 +174,7 @@ func (n *Notifier) IssueCreated(is *store.Issue, author *store.User, origin stri
 			subject:  "[Foreman] " + ws.Name,
 			text:     issueText(ws, is, ref, author.Name, agent, base),
 			html:     issueHTML(ws, is, ref, author.Name, agent, base),
+			by:       author,
 		}
 		addrs := make([]string, len(to))
 		for i, r := range to {
@@ -162,8 +187,9 @@ func (n *Notifier) IssueCreated(is *store.Issue, author *store.User, origin stri
 var ErrDisabled = errors.New("e-mail sending is turned off (Server → E-mail)")
 
 // StageEmail tells people about a stage change (the "Notify" rule). It uses the
-// workspace's subject, so it lands in the same conversation.
-func (n *Notifier) StageEmail(ctx context.Context, is *store.Issue, to []string, headline, note string) error {
+// workspace's subject, so it lands in the same conversation. by is whoever caused it
+// (nil when it was the system or an agent).
+func (n *Notifier) StageEmail(ctx context.Context, is *store.Issue, to []string, headline, note string, by *store.User) error {
 	c, err := n.Settings(ctx)
 	if err != nil {
 		return err
@@ -204,7 +230,7 @@ func (n *Notifier) StageEmail(ctx context.Context, is *store.Issue, to []string,
 		fmt.Fprintf(&b, `<p style="margin-top:16px"><a href="%s" style="background:#5e6ad2;color:#fff;padding:7px 14px;border-radius:6px;text-decoration:none">Open issue</a></p>`, e(link))
 	}
 	b.WriteString(`</div>`)
-	err = n.send(ctx, c, to, message{threadID: "ws-" + ws.ID, subject: "[Foreman] " + ws.Name, text: text, html: b.String()})
+	err = n.send(ctx, c, to, message{threadID: "ws-" + ws.ID, subject: "[Foreman] " + ws.Name, text: text, html: b.String(), by: by})
 	n.record(err)
 	return err
 }
@@ -229,6 +255,7 @@ type message struct {
 	subject  string
 	text     string
 	html     string
+	by       *store.User // who caused it: shown as "Name via Foreman", and replies go to them
 }
 
 var priorityLabel = []string{"No priority", "Urgent", "High", "Medium", "Low"}
@@ -306,13 +333,20 @@ func build(c Settings, m message) []byte {
 	id := make([]byte, 12)
 	rand.Read(id)
 	root := fmt.Sprintf("<%s@%s>", m.threadID, domain)
-	from := (&mail.Address{Name: c.FromName, Address: c.From}).String()
+	name := c.FromName
+	if m.by != nil && strings.TrimSpace(m.by.Name) != "" {
+		name = m.by.Name + " via " + c.FromName
+	}
+	from := (&mail.Address{Name: name, Address: c.From}).String()
 	boundary := "mx-" + hex.EncodeToString(id)
 
 	var b bytes.Buffer
 	h := func(k, v string) { fmt.Fprintf(&b, "%s: %s\r\n", k, v) }
 	h("From", from)
-	h("To", from) // recipients go only in the envelope (blind copy)
+	h("To", (&mail.Address{Name: c.FromName, Address: c.From}).String()) // recipients go only in the envelope (blind copy)
+	if m.by != nil && m.by.Email != "" && !strings.EqualFold(m.by.Email, c.From) {
+		h("Reply-To", (&mail.Address{Name: m.by.Name, Address: m.by.Email}).String())
+	}
 	h("Subject", mime.QEncoding.Encode("utf-8", m.subject))
 	h("Thread-Topic", mime.QEncoding.Encode("utf-8", m.subject))
 	h("Date", time.Now().Format(time.RFC1123Z))
@@ -339,6 +373,7 @@ func build(c Settings, m message) []byte {
 // ---------- SMTP ----------
 
 func (n *Notifier) send(ctx context.Context, c Settings, to []string, m message) error {
+	c = c.Gmail()
 	if err := c.Validate(); err != nil {
 		return err
 	}
@@ -382,6 +417,9 @@ func deliver(ctx context.Context, c Settings, to []string, msg []byte) error {
 	}
 	if c.Username != "" {
 		if err := cl.Auth(smtp.PlainAuth("", c.Username, c.Password, c.Host)); err != nil {
+			if strings.Contains(err.Error(), "535") || strings.Contains(err.Error(), "534") {
+				return errors.New("Gmail didn't accept the address and app password: create an app password (not your normal password) with two-step verification on")
+			}
 			return fmt.Errorf("authentication: %w", err)
 		}
 	}

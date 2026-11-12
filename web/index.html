@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#111113" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon.svg" />
@@ -15,7 +18,7 @@
         try { t = localStorage.getItem('foreman.theme') || localStorage.getItem('mx.theme') || 'system'; } catch (e) {}
         var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-        if (!dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f6f6f8');
+        if (!dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#fafafb');
       })();
     </script>
   </head>

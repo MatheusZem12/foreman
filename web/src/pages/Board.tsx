@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,9 +6,9 @@ import {
   type DragEndEvent, type DragStartEvent
 } from '@dnd-kit/core';
 import clsx from 'clsx';
-import { ArrowUpDown, Columns3, List, ListFilter, Plus, Search } from 'lucide-react';
+import { ArrowUpDown, Columns3, List, Plus, Search, SlidersHorizontal, X } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Chip, MenuItem, Popover, PriorityIcon, Spinner, StatusIcon, useToast } from '../components/ui';
+import { Chip, MenuItem, PageLoader, Popover, PriorityIcon, Segmented, Spinner, StatusIcon, useToast } from '../components/ui';
 import { LabelDots } from '../components/pickers';
 import { STATUSES, stageGroups, statusOf } from '../lib/constants';
 import { useAgents, useLabels, useMe, useStages } from '../lib/queries';
@@ -77,6 +77,8 @@ function useSideScroll(el: HTMLDivElement | null) {
     return () => el.removeEventListener('wheel', onWheel);
   }, [el]);
 }
+
+const NONE: Issue[] = [];
 
 const SORTS: [BoardSort, () => string][] = [
   ['manual', () => t('Manual (drag)')],
@@ -184,9 +186,17 @@ export function Board() {
   }, [filtered, sorts, stages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const working = board?.working ?? 0;
+  // The columns are memoized: they get the same functions on every render (which call
+  // the latest version), so typing in the filter or an issue arriving in real time only
+  // re-renders the cards that changed.
+  const latest = useRef({ changeSort, loadMore, openNewIssue });
+  latest.current = { changeSort, loadMore, openNewIssue };
+  const onSort = useCallback((s: Status, v: BoardSort) => { latest.current.changeSort(s, v); }, []);
+  const onMore = useCallback((s: Status) => { latest.current.loadMore(s); }, []);
+  const onAdd = useCallback((s: Status) => latest.current.openNewIssue(s), []);
   const colProps = (s: Status) => ({
-    status: s, issues: byStatus[s], total: board?.counts[s] ?? 0, sort: sortOf(s), loading: !!loading[s],
-    onSort: (v: BoardSort) => changeSort(s, v), onMore: () => loadMore(s), agents, labels, onAdd: () => openNewIssue(s)
+    status: s, issues: byStatus[s] ?? NONE, total: board?.counts[s] ?? 0, sort: sortOf(s), loading: !!loading[s],
+    onSort, onMore, agents, labels, onAdd, wsKey: ws.key
   });
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -240,66 +250,72 @@ export function Board() {
   // Parallel stages share the same column, one under the other.
   const groups = stageGroups(STATUSES.filter((s) => columns.includes(s.id))).map((g) => g.map((s) => s.id));
 
+  const active = who !== 'all' || !!labelFilter || !!text;
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line/70 bg-panel/40 px-3 py-2.5 backdrop-blur md:px-5">
-        <h1 className="mr-2 hidden text-[15px] font-semibold tracking-tight md:block">{t('Issues')}</h1>
-        <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
+      <div className="toolbar">
+        <h1 className="mr-1 hidden text-[15px] font-semibold tracking-tight lg:block">{t('Issues')}</h1>
+        <div className="seg">
           {[
             ['all', t('All')],
             ['mine', t('Mine')]
           ].map(([id, label]) => (
-            <button key={id} onClick={() => setWho(id)} className={clsx('rounded-md px-2.5 py-1 text-xs transition', who === id ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{label}</button>
+            <button key={id} onClick={() => setWho(id)} aria-pressed={who === id} className="seg-item">{label}</button>
           ))}
           <AgentFilter agents={agents} value={who} onChange={setWho} />
         </div>
-        <div className="relative hidden sm:block">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('Filter…')} className="field-input h-8 w-52 py-1 pl-8" />
-        </div>
         <LabelFilter labels={labels} value={labelFilter} onChange={setLabelFilter} />
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className={clsx('hidden items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs sm:flex', working ? 'text-amber-400' : 'text-mute')}>
-            <span className={clsx('size-1.5 rounded-full', working ? 'animate-pulse-soft bg-amber-400' : 'bg-mute')} /> {working} {working === 1 ? t('agent working') : t('agents working')}
-          </span>
+        {active && <button onClick={() => { setWho('all'); setLabelFilter(null); setText(''); }} className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-mute transition-colors hover:bg-hover hover:text-fg"><X className="size-3" /> {t('Clear')}</button>}
+        {/* On a phone the search takes a row of its own, under the filters. */}
+        <div className="relative order-last w-full sm:order-none sm:w-56">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-mute" />
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t('Filter…')} aria-label={t('Filter…')} className="field-input h-8 py-1 pl-8" />
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {working > 0 && (
+            <span className="hidden items-center gap-1.5 text-xs text-amber-400 sm:flex">
+              <span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {working} {working === 1 ? t('agent working') : t('agents working')}
+            </span>
+          )}
           <Popover
             align="right"
-            trigger={() => <Chip><ListFilter className="size-3.5" /> <span className="hidden sm:inline">{t('View')}</span></Chip>}
+            trigger={() => <Chip title={t('View')}><SlidersHorizontal className="size-3.5" /> <span className="hidden sm:inline">{t('View')}</span></Chip>}
           >
             {() => (
               <>
                 <MenuItem selected={showCancelled} onClick={() => setShowCancelled(!showCancelled)}>{t('Show cancelled')}</MenuItem>
                 <div className="my-1 border-t border-line" />
-                <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Columns (just for you)')}</div>
+                <div className="label-caps px-2.5 pb-1 pt-1">{t('Columns (just for you)')}</div>
                 <MenuItem selected={layout.mode === 'side'} onClick={() => saveLayout({ mode: 'side' })}>{t('Side by side')}</MenuItem>
                 <MenuItem selected={layout.mode === 'grid'} onClick={() => saveLayout({ mode: 'grid' })}>{t('Stacked')}</MenuItem>
                 {layout.mode === 'grid' && (
-                  <div className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-mute">
+                  <div className="hidden items-center gap-1 px-2.5 py-1.5 text-xs text-mute sm:flex">
                     {t('Per row')}
                     {[1, 2, 3, 4].map((n) => (
-                      <button key={n} onClick={() => saveLayout({ perRow: n })} className={clsx('ml-1 rounded-md px-2 py-0.5', layout.perRow === n ? 'bg-white/10 text-fg' : 'hover:text-fg')}>{n}</button>
+                      <button key={n} onClick={() => saveLayout({ perRow: n })} className={clsx('ml-1 rounded-md px-2 py-0.5', layout.perRow === n ? 'bg-hover text-fg' : 'hover:text-fg')}>{n}</button>
                     ))}
                   </div>
                 )}
-                <div className="px-2.5 pb-1 pt-0.5 text-[11px] leading-snug text-mute">{t('Column order follows the workflow (Workflow & automations).')}</div>
+                <div className="max-w-60 px-2.5 pb-1.5 pt-1 text-[11px] leading-snug text-mute">{t('Column order follows the workflow (Workflow & automations).')}</div>
               </>
             )}
           </Popover>
-          <div className="flex rounded-lg border border-line bg-white/[0.02] p-0.5">
-            <button onClick={() => { setView('board'); writePref('foreman.view', 'board'); }} className={clsx('rounded-md p-1.5', view === 'board' ? 'bg-white/10 text-fg' : 'text-mute')} title={t('Board')}><Columns3 className="size-3.5" /></button>
-            <button onClick={() => { setView('list'); writePref('foreman.view', 'list'); }} className={clsx('rounded-md p-1.5', view === 'list' ? 'bg-white/10 text-fg' : 'text-mute')} title={t('List')}><List className="size-3.5" /></button>
-          </div>
+          <Segmented<View>
+            items={[{ id: 'board', label: <Columns3 className="size-3.5" />, hint: t('Board') }, { id: 'list', label: <List className="size-3.5" />, hint: t('List') }]}
+            value={view}
+            onChange={(v) => { setView(v); writePref('foreman.view', v); }}
+          />
         </div>
       </div>
 
       {isLoading ? (
-        <div className="grid flex-1 place-items-center"><Spinner /></div>
+        <PageLoader />
       ) : view === 'list' ? (
         <ListView byStatus={byStatus} columns={columns} agents={agents} labels={labels} counts={board?.counts ?? {}} loading={loading} onMore={loadMore} />
       ) : (
         <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
           {layout.mode === 'grid' ? (
-            <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5">
               <div
                 className="grid grid-cols-1 gap-3 sm:[grid-template-columns:repeat(var(--per-row),minmax(0,1fr))]"
                 style={{ '--per-row': layout.perRow } as React.CSSProperties}
@@ -307,25 +323,25 @@ export function Board() {
                 {groups.map((g) => g.length === 1
                   ? <Column key={g[0]} grid {...colProps(g[0])} />
                   : (
-                    <div key={g[0]} className="flex h-[clamp(20rem,60vh,40rem)] min-w-0 flex-col gap-2">
+                    <div key={g[0]} className="flex h-[clamp(20rem,60vh,40rem)] min-w-0 flex-col gap-3">
                       {g.map((s) => <Column key={s} stacked {...colProps(s)} />)}
                     </div>
                   ))}
               </div>
             </div>
           ) : (
-            <div ref={setScroller} className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto p-3 md:snap-none md:p-4">
+            <div ref={setScroller} className="flex min-h-0 flex-1 snap-x snap-mandatory scroll-px-3 gap-3 overflow-x-auto overscroll-x-contain p-3 md:snap-none md:p-5">
               {groups.map((g) => g.length === 1
                 ? <Column key={g[0]} {...colProps(g[0])} />
                 : (
-                  <div key={g[0]} className="flex w-[85vw] shrink-0 snap-center flex-col gap-2 sm:w-[19rem]">
+                  <div key={g[0]} className={clsx(COL_W, 'flex flex-col gap-3')}>
                     {g.map((s) => <Column key={s} stacked {...colProps(s)} />)}
                   </div>
                 ))}
             </div>
           )}
           <DragOverlay dropAnimation={null}>
-            {dragging && <Tilt><Card issue={dragging} agents={agents} labels={labels} overlay /></Tilt>}
+            {dragging && <Tilt><Card issue={dragging} agents={agents} labels={labels} wsKey={ws.key} overlay /></Tilt>}
           </DragOverlay>
         </DndContext>
       )}
@@ -333,21 +349,28 @@ export function Board() {
   );
 }
 
+// A column's width side by side: nearly the whole screen on a phone (the next one peeks
+// in, so it is clear there is more), a fixed width from a tablet up.
+const COL_W = 'w-[min(86vw,20rem)] shrink-0 snap-start sm:w-[19.5rem]';
+
 function AgentFilter({ agents, value, onChange }: { agents: Agent[]; value: string; onChange: (v: string) => void }) {
   const current = agents.find((a) => a.id === value);
   return (
     <Popover
       trigger={() => (
-        <button className={clsx('rounded-md px-2.5 py-1 text-xs transition', current ? 'bg-white/10 text-fg' : 'text-mute hover:text-fg')}>{current ? <span className="inline-flex items-center gap-1.5"><AgentIcon avatar={current.avatar} size={14} />{current.name}</span> : t('Agents')}</button>
+        <button aria-pressed={!!current} className="seg-item max-w-40">{current ? <><AgentIcon avatar={current.avatar} size={14} /><span className="truncate">{current.name}</span></> : t('Agents')}</button>
       )}
     >
-      {(close) =>
-        agents.map((a) => (
-          <MenuItem key={a.id} selected={a.id === value} onClick={() => { onChange(a.id === value ? 'all' : a.id); close(); }}>
-            <AgentIcon avatar={a.avatar} /> {a.name}
-          </MenuItem>
-        ))
-      }
+      {(close) => (
+        <>
+          {agents.map((a) => (
+            <MenuItem key={a.id} selected={a.id === value} onClick={() => { onChange(a.id === value ? 'all' : a.id); close(); }}>
+              <AgentIcon avatar={a.avatar} /> <span className="truncate">{a.name}</span>
+            </MenuItem>
+          ))}
+          {!agents.length && <div className="px-2.5 py-1.5 text-mute">{t('No agents created yet.')}</div>}
+        </>
+      )}
     </Popover>
   );
 }
@@ -356,13 +379,13 @@ function LabelFilter({ labels, value, onChange }: { labels: Label[]; value: stri
   if (!labels.length) return null;
   const current = labels.find((l) => l.id === value);
   return (
-    <Popover trigger={() => <Chip className={current ? 'text-fg' : ''}>{current ? <><span className="size-2 rounded-full" style={{ background: current.color }} />{current.name}</> : t('Label')}</Chip>}>
+    <Popover trigger={() => <Chip className={current ? 'text-fg' : ''}>{current ? <><span className="size-2 shrink-0 rounded-full" style={{ background: current.color }} /><span className="truncate">{current.name}</span></> : t('Label')}</Chip>}>
       {(close) => (
         <>
           <MenuItem selected={!value} onClick={() => { onChange(null); close(); }}>{t('All')}</MenuItem>
           {labels.map((l) => (
             <MenuItem key={l.id} selected={l.id === value} onClick={() => { onChange(l.id); close(); }}>
-              <span className="size-2 rounded-full" style={{ background: l.color }} /> {l.name}
+              <span className="size-2 rounded-full" style={{ background: l.color }} /> <span className="truncate">{l.name}</span>
             </MenuItem>
           ))}
         </>
@@ -371,57 +394,55 @@ function LabelFilter({ labels, value, onChange }: { labels: Label[]; value: stri
   );
 }
 
-function Column({ status, issues, total, sort, loading, onSort, onMore, agents, labels, onAdd, grid, stacked }: {
-  status: Status; issues: Issue[]; total: number; sort: BoardSort; loading: boolean; onSort: (s: BoardSort) => void; onMore: () => void;
-  agents: Agent[]; labels: Label[]; onAdd: () => void; grid?: boolean; stacked?: boolean;
+const Column = memo(function Column({ status, issues, total, sort, loading, onSort, onMore, agents, labels, onAdd, wsKey, grid, stacked }: {
+  status: Status; issues: Issue[]; total: number; sort: BoardSort; loading: boolean; onSort: (s: Status, v: BoardSort) => void; onMore: (s: Status) => void;
+  agents: Agent[]; labels: Label[]; onAdd: (s: Status) => void; wsKey: string; grid?: boolean; stacked?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${status}` });
   const s = statusOf(status);
   // Got near the end of the column: fetch the next page of this stage only.
   const sentinel = useRef<HTMLDivElement>(null);
   const more = issues.length < total;
-  const latest = useRef(onMore);
-  latest.current = onMore;
   // Recreates the observer when the page finishes: if the end is still visible, fetch the next.
   useEffect(() => {
     const el = sentinel.current;
     if (!el || !more || loading) return;
-    const io = new IntersectionObserver((e) => e[0].isIntersecting && latest.current(), { rootMargin: '200px' });
+    const io = new IntersectionObserver((e) => e[0].isIntersecting && onMore(status), { rootMargin: '200px' });
     io.observe(el);
     return () => io.disconnect();
-  }, [more, issues.length, loading]);
+  }, [more, issues.length, loading, onMore, status]);
   return (
     <section
       ref={setNodeRef}
       className={clsx(
-        'flex flex-col rounded-2xl border bg-white/[0.015] transition-colors',
-        stacked ? 'min-h-0 flex-1' : grid ? 'h-[clamp(14rem,42vh,30rem)] min-w-0' : 'w-[85vw] shrink-0 snap-center sm:w-[19rem]',
-        isOver ? 'border-accent/50 bg-accent/[0.04]' : 'border-white/[0.06]'
+        'flex flex-col rounded-xl transition-colors',
+        stacked ? 'min-h-0 flex-1' : grid ? 'h-[clamp(14rem,42vh,30rem)] min-w-0' : COL_W,
+        isOver ? 'bg-accent/[0.07] ring-1 ring-inset ring-accent/40' : 'bg-white/[0.025]'
       )}
     >
-      <header data-col-head className="flex items-center gap-2 px-3.5 py-3">
+      <header data-col-head className="flex h-11 shrink-0 items-center gap-2 pl-3.5 pr-2">
         <StatusIcon status={status} />
-        <span className="font-medium">{s.label}</span>
-        {s.parallel && <span className="rounded bg-white/[0.06] px-1 text-[10px] text-mute" title={t('In parallel with the stage above')}>{t('parallel')}</span>}
-        <span className="rounded-full bg-white/[0.06] px-1.5 text-[11px] tabular-nums text-mute" title={more ? t('{0} loaded of {1}', issues.length, total) : undefined}>{total}</span>
+        <span className="min-w-0 truncate font-medium">{s.label}</span>
+        {s.parallel && <span className="badge shrink-0 px-1 py-0 text-[10px]" title={t('In parallel with the stage above')}>{t('parallel')}</span>}
+        <span className="shrink-0 text-xs tabular-nums text-mute" title={more ? t('{0} loaded of {1}', issues.length, total) : undefined}>{total}</span>
         <Popover align="right" trigger={() => (
-          <button className={clsx('ml-auto rounded p-1 hover:bg-hover hover:text-fg', sort === 'manual' ? 'text-mute' : 'text-accent')} title={t('This stage\'s order: {0}', SORTS.find(([k]) => k === sort)![1]())}><ArrowUpDown className="size-3.5" /></button>
+          <button className={clsx('icon-btn ml-auto size-7', sort !== 'manual' && 'text-accent')} title={t('This stage\'s order: {0}', SORTS.find(([k]) => k === sort)![1]())}><ArrowUpDown className="size-3.5" /></button>
         )}>
           {(close) => (
             <>
-              <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('This stage\'s order')}</div>
-              {SORTS.map(([k, label]) => <MenuItem key={k} selected={sort === k} onClick={() => { onSort(k); close(); }}>{label()}</MenuItem>)}
+              <div className="label-caps px-2.5 pb-1 pt-1">{t('This stage\'s order')}</div>
+              {SORTS.map(([k, label]) => <MenuItem key={k} selected={sort === k} onClick={() => { onSort(status, k); close(); }}>{label()}</MenuItem>)}
             </>
           )}
         </Popover>
-        <button onClick={onAdd} className="rounded p-1 text-mute hover:bg-hover hover:text-fg" title={t('New issue in this column')}><Plus className="size-3.5" /></button>
+        <button onClick={() => onAdd(status)} className="icon-btn size-7" title={t('New issue in this column')}><Plus className="size-3.5" /></button>
       </header>
-      <div data-col-body className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2.5">
-        {issues.map((i) => <Card key={i.id} issue={i} agents={agents} labels={labels} />)}
-        {!issues.length && <div className="mx-1 rounded-xl border border-dashed border-white/[0.07] py-8 text-center text-xs text-mute">{t('Drag an issue here')}</div>}
+      <div data-col-body className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain px-2 pb-2">
+        {issues.map((i) => <Card key={i.id} issue={i} agents={agents} labels={labels} wsKey={wsKey} />)}
+        {!issues.length && <div className="px-3 py-8 text-center text-xs text-mute/80">{t('Drag an issue here')}</div>}
         {more && (
           <div ref={sentinel}>
-            <button onClick={onMore} disabled={loading} className="w-full rounded-lg py-2 text-xs text-mute hover:bg-white/[0.04] hover:text-fg">
+            <button onClick={() => onMore(status)} disabled={loading} className="grid w-full place-items-center rounded-lg py-2 text-xs text-mute transition-colors hover:bg-hover hover:text-fg">
               {loading ? <Spinner /> : t('Load more ({0} of {1})', issues.length, total)}
             </button>
           </div>
@@ -429,7 +450,7 @@ function Column({ status, issues, total, sort, loading, onSort, onMore, agents, 
       </div>
     </section>
   );
-}
+});
 
 // Tilts the dragged card in the direction of movement, in proportion to the speed,
 // and straightens it again when the pointer stops.
@@ -469,44 +490,44 @@ function Tilt({ children }: { children: React.ReactNode }) {
   return <div ref={el} className="origin-top will-change-transform" style={{ transform: 'scale(1.03)' }}>{children}</div>;
 }
 
-function Card({ issue, agents, labels, overlay }: { issue: Issue; agents: Agent[]; labels: Label[]; overlay?: boolean }) {
-  const { ws } = useWs();
+const Card = memo(function Card({ issue, agents, labels, wsKey, overlay }: { issue: Issue; agents: Agent[]; labels: Label[]; wsKey: string; overlay?: boolean }) {
   const drag = useDraggable({ id: issue.id, disabled: overlay });
   const drop = useDroppable({ id: `card:${issue.id}`, disabled: overlay });
   const agent = agents.find((a) => a.id === issue.agentId);
   const running = !!issue.activeRun;
   return (
     <Link
-      to={`/w/${ws.key}/issues/${ws.key}-${issue.number}`}
+      to={`/w/${wsKey}/issues/${wsKey}-${issue.number}`}
       ref={(el) => {
         drag.setNodeRef(el);
         drop.setNodeRef(el);
       }}
       {...drag.listeners}
       {...drag.attributes}
+      draggable={false}
       onClick={(e) => Date.now() - lastDragEnd < 300 && e.preventDefault()}
       className={clsx(
-        'block select-none rounded-xl border bg-gradient-to-b from-card to-panel p-3 shadow-[0_1px_0_0_rgb(var(--ink)/0.04)_inset,0_2px_8px_-4px_rgb(0_0_0/0.6)] transition hover:-translate-y-px hover:border-white/15',
-        drop.isOver ? 'border-accent/60' : 'border-white/[0.07]',
+        'block shrink-0 select-none rounded-lg border bg-panel p-3 transition-colors hover:border-white/20 [-webkit-touch-callout:none]',
+        drop.isOver ? 'border-accent/60' : 'border-line',
         drag.isDragging && 'opacity-30',
         overlay && 'shadow-pop'
       )}
     >
       <div className="flex items-center gap-1.5 text-[11px] text-mute">
-        <span className="font-mono">{ws.key}-{issue.number}</span>
-        {running && <span className="flex items-center gap-1 rounded-full bg-amber-400/10 px-1.5 text-amber-300"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {t('working')}</span>}
+        <span className="font-mono">{wsKey}-{issue.number}</span>
+        {running && <span className="flex items-center gap-1 text-amber-400"><span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" /> {t('working')}</span>}
         <span className="ml-auto"><PriorityIcon priority={issue.priority} /></span>
       </div>
-      <div className="mt-1.5 font-medium leading-snug">{issue.title}</div>
-      {issue.labelIds.length > 0 && <div className="mt-1.5"><LabelDots ids={issue.labelIds} labels={labels} /></div>}
-      <div className="mt-2 flex items-center gap-1.5 text-[11px] text-mute">
+      <div className="mt-1.5 line-clamp-3 font-medium leading-snug [overflow-wrap:anywhere]">{issue.title}</div>
+      {issue.labelIds.length > 0 && <div className="mt-2"><LabelDots ids={issue.labelIds} labels={labels} /></div>}
+      <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-mute">
         {agent ? <><AgentIcon avatar={agent.avatar} size={16} /><span className="truncate">{agent.name}</span></> : <span>{t('No agent')}</span>}
-        {issue.costUsd > 0 && <span>· {money(issue.costUsd)}</span>}
+        {issue.costUsd > 0 && <span className="shrink-0">· {money(issue.costUsd)}</span>}
         <span className="ml-auto shrink-0">{timeAgo(issue.updatedAt)}</span>
       </div>
     </Link>
   );
-}
+});
 
 function ListView({ byStatus, columns, agents, labels, counts, loading, onMore }: {
   byStatus: Record<Status, Issue[]>; columns: Status[]; agents: Agent[]; labels: Label[];
@@ -514,37 +535,38 @@ function ListView({ byStatus, columns, agents, labels, counts, loading, onMore }
 }) {
   const { ws } = useWs();
   return (
-    <div className="flex-1 overflow-y-auto pb-20">
+    <div className="flex-1 overflow-y-auto pb-24">
       {columns.map((s) =>
-        byStatus[s].length ? (
+        byStatus[s]?.length ? (
           <div key={s}>
-            <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-line bg-panel px-4 py-1.5 text-xs font-medium">
-              <StatusIcon status={s} /> {statusOf(s).label} <span className="text-mute">{counts[s] ?? byStatus[s].length}</span>
+            <div className="sticky top-0 z-10 flex h-9 items-center gap-2 border-b border-line bg-bg px-4 text-xs font-medium md:px-5">
+              <StatusIcon status={s} /> {statusOf(s).label} <span className="font-normal tabular-nums text-mute">{counts[s] ?? byStatus[s].length}</span>
             </div>
-            {byStatus[s].map((i) => {
-              const agent = agents.find((a) => a.id === i.agentId);
-              return (
-                <Link key={i.id} to={`/w/${ws.key}/issues/${ws.key}-${i.number}`} className="flex items-center gap-3 border-b border-line/50 px-4 py-2 hover:bg-hover">
-                  <PriorityIcon priority={i.priority} />
-                  <span className="w-16 shrink-0 font-mono text-xs text-mute">{ws.key}-{i.number}</span>
-                  <StatusIcon status={i.status} />
-                  <span className="min-w-0 flex-1 truncate">{i.title}</span>
-                  {i.activeRun && <span className="size-1.5 animate-pulse-soft rounded-full bg-amber-400" />}
-                  <span className="hidden md:block"><LabelDots ids={i.labelIds} labels={labels} /></span>
-                  {agent && <AgentIcon avatar={agent.avatar} />}
-                  <span className="hidden w-12 text-right text-xs text-mute sm:block">{timeAgo(i.updatedAt)}</span>
-                </Link>
-              );
-            })}
+            {byStatus[s].map((i) => <ListRow key={i.id} issue={i} agents={agents} labels={labels} wsKey={ws.key} />)}
             {byStatus[s].length < (counts[s] ?? 0) && (
-              <button onClick={() => onMore(s)} disabled={loading[s]} className="w-full border-b border-line/50 py-2 text-xs text-mute hover:bg-hover hover:text-fg">
+              <button onClick={() => onMore(s)} disabled={loading[s]} className="grid w-full place-items-center border-b border-line/60 py-2.5 text-xs text-mute transition-colors hover:bg-hover hover:text-fg">
                 {loading[s] ? <Spinner /> : t('Load more ({0} of {1})', byStatus[s].length, counts[s])}
               </button>
             )}
           </div>
         ) : null
       )}
-      {columns.every((s) => !byStatus[s].length) && <div className="p-10 text-center text-mute">{t('No issues. Press')} <kbd className="rounded border border-line px-1">{t('C')}</kbd> {t('to create one.')}</div>}
+      {columns.every((s) => !byStatus[s]?.length) && <div className="p-10 text-center text-mute">{t('No issues. Press')} <kbd className="kbd">{t('C')}</kbd> {t('to create one.')}</div>}
     </div>
   );
 }
+
+const ListRow = memo(function ListRow({ issue: i, agents, labels, wsKey }: { issue: Issue; agents: Agent[]; labels: Label[]; wsKey: string }) {
+  const agent = agents.find((a) => a.id === i.agentId);
+  return (
+    <Link to={`/w/${wsKey}/issues/${wsKey}-${i.number}`} className="flex min-h-10 items-center gap-3 border-b border-line/60 px-4 py-2 transition-colors hover:bg-white/[0.03] md:px-5">
+      <PriorityIcon priority={i.priority} />
+      <span className="hidden w-16 shrink-0 font-mono text-xs text-mute sm:block">{wsKey}-{i.number}</span>
+      <span className="min-w-0 flex-1 truncate">{i.title}</span>
+      {i.activeRun && <span className="size-1.5 shrink-0 animate-pulse-soft rounded-full bg-amber-400" title={t('working')} />}
+      <span className="hidden max-w-[40%] shrink-0 overflow-hidden lg:block"><LabelDots ids={i.labelIds} labels={labels} /></span>
+      {agent && <span title={agent.name} className="inline-flex"><AgentIcon avatar={agent.avatar} /></span>}
+      <span className="w-12 shrink-0 text-right text-xs text-mute">{timeAgo(i.updatedAt)}</span>
+    </Link>
+  );
+});

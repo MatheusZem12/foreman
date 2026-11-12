@@ -12,7 +12,7 @@ import {
   UserCheck, Users, Webhook, Workflow, Zap
 } from 'lucide-react';
 import { useWs } from '../components/Layout';
-import { Button, Field, Modal, PageHeader, Popover, StatusIcon, Toggle, useToast, useConfirm } from '../components/ui';
+import { Button, Field, Modal, PageHeader, Popover, StatusIcon, Tabs, Toggle, useToast, useConfirm } from '../components/ui';
 import { AgentIcon } from '../components/AgentIcon';
 import { api } from '../lib/api';
 import { PRIORITIES, localizeStages, stageGroups } from '../lib/constants';
@@ -183,11 +183,11 @@ export function WorkflowPage() {
           actions={canEdit ? <>
             <Button onClick={() => setCopying(true)}><Copy className="size-4" /> {t('Copy to…')}</Button>
             <Button variant="primary" onClick={() => setEditingStage({ after: stages[stages.length - 1]?.id ?? '' })}><Plus className="size-4" /> {t('New stage')}</Button>
-          </> : <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs text-mute">{t('read-only')}</span>}
+          </> : <span className="badge">{t('read-only')}</span>}
         />
 
         {warnings.length > 0 && (
-          <div className="mb-4 rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-3 text-xs text-amber-200">
+          <div className="mb-5 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] p-3 text-xs leading-relaxed text-amber-200">
             <div className="mb-1.5 flex items-center gap-2 font-medium"><AlertTriangle className="size-3.5 text-amber-400" /> {warnings.length} {t('item(s) to review')}</div>
             <ul className="space-y-0.5 pl-5">
               {warnings.map((w, i) => <li key={i} className="list-disc"><b className="font-medium">{w.where}:</b> {w.message}</li>)}
@@ -196,14 +196,8 @@ export function WorkflowPage() {
         )}
         {email && !email.enabled && rules.some((r) => r.action === 'notify' && r.enabled) && <EmailOffAlert count={rules.filter((r) => r.action === 'notify' && r.enabled).length} />}
 
-        <div className="mb-4 flex gap-1 border-b border-line">
-          {([['map', t('Flow map'), MapIcon], ['stages', t('Stages & rules'), ListOrdered], ['general', t('General rules'), Zap]] as const).map(([id, label, I]) => (
-            <button key={id} onClick={() => pickView(id)}
-              className={clsx('-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] transition-colors', view === id ? 'border-accent font-medium text-fg' : 'border-transparent text-mute hover:text-fg')}>
-              <I className="size-3.5" /> {label}
-            </button>
-          ))}
-        </div>
+        <Tabs className="mb-5" value={view} onChange={pickView}
+          items={[{ id: 'map', label: t('Flow map'), icon: MapIcon }, { id: 'stages', label: t('Stages & rules'), icon: ListOrdered }, { id: 'general', label: t('General rules'), icon: Zap }]} />
 
         {view === 'map' && <FlowMap stages={stages} rules={rules} />}
 
@@ -213,12 +207,12 @@ export function WorkflowPage() {
             {/* Trilha numerada na ordem do quadro; etapas em paralelo dividem o mesmo degrau. */}
             <ol>
               {stageGroups(ordered).map((g, gi, all) => (
-                <li key={g[0].id} className="relative flex gap-3 pb-4 last:pb-0">
-                  <div className="relative flex w-7 shrink-0 justify-center">
+                <li key={g[0].id} className="relative flex gap-2 pb-3 last:pb-0 sm:gap-3">
+                  <div className="relative hidden w-7 shrink-0 justify-center sm:flex">
                     <span className="relative z-[1] mt-3.5 grid size-7 place-items-center rounded-full border border-line bg-panel text-[11px] font-semibold text-dim">{gi + 1}</span>
                     {gi < all.length - 1 && <span className="absolute bottom-0 top-10 w-px bg-line" />}
                   </div>
-                  <div className={clsx('min-w-0 flex-1', g.length > 1 && 'rounded-2xl border border-dashed border-sky-400/30 p-2')}>
+                  <div className={clsx('min-w-0 flex-1', g.length > 1 && 'rounded-xl border border-dashed border-sky-400/30 p-2')}>
                     {g.length > 1 && <div className="mb-2 flex items-center gap-1.5 px-1 text-[11px] text-sky-300"><ArrowRightLeft className="size-3" /> {t('In parallel: they share one board column; a rule decides where each issue goes')}</div>}
                     <div className="space-y-2">
                       {g.map((s) => (
@@ -253,7 +247,7 @@ export function WorkflowPage() {
                     <div className="mb-2 flex items-baseline gap-2 px-1">
                       <span className="text-[13px] font-semibold">{x.label}</span>
                       <span className="text-[11px] text-mute">{x.hint}</span>
-                      {canEdit && <button type="button" onClick={() => newRule({ trigger: x.id, stage: '' })} className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-mute hover:bg-white/5 hover:text-fg"><Plus className="size-3" /> {t('Rule')}</button>}
+                      {canEdit && <button type="button" onClick={() => newRule({ trigger: x.id, stage: '' })} className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-mute hover:bg-hover hover:text-fg"><Plus className="size-3" /> {t('Rule')}</button>}
                     </div>
                     <RuleList readOnly={!canEdit} rules={list} stages={stages} onEdit={setEditingRule} onToggle={toggle} onDelete={remove} />
                   </div>
@@ -289,7 +283,7 @@ function StageCard({ readOnly, stage: s, stages, rules, onEdit, onDelete, onAddR
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
       className={clsx('surface min-w-0', isDragging && 'relative z-10 shadow-pop')}>
-      <div className="flex items-center gap-2 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
         <button {...attributes} {...listeners} aria-label={t('Drag')} className={clsx('grid h-7 w-5 shrink-0 cursor-grab touch-none place-items-center rounded text-mute hover:text-fg active:cursor-grabbing', readOnly && 'hidden')}>
           <GripVertical className="size-4" />
         </button>
@@ -303,13 +297,13 @@ function StageCard({ readOnly, stage: s, stages, rules, onEdit, onDelete, onAddR
           <p className="truncate text-xs text-mute">{rules.length ? t('{0} rule(s)', rules.length) : t('No rules yet.')}</p>
         </div>
         {!readOnly && <div className="flex shrink-0 items-center gap-0.5">
-          <button title={t('Rename or move')} onClick={onEdit} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Settings2 className="size-4" /></button>
-          {stages.length > 1 && <button title={t('Remove stage')} onClick={onDelete} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-4" /></button>}
+          <button title={t('Rename or move')} onClick={onEdit} className="icon-btn"><Settings2 className="size-4" /></button>
+          {stages.length > 1 && <button title={t('Remove stage')} onClick={onDelete} className="icon-btn icon-btn-danger"><Trash2 className="size-4" /></button>}
           <Button size="sm" variant="ghost" onClick={onAddRule}><Plus className="size-3.5" /> {t('Rule')}</Button>
         </div>}
       </div>
       {sections.length > 0 && (
-        <div className="space-y-3 border-t border-line/70 px-3 pb-3 pt-2.5">
+        <div className="space-y-3 border-t border-line px-3 pb-3 pt-3">
           {sections.map((x) => (
             <div key={x.key}>
               <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-dim">
@@ -376,7 +370,7 @@ function EmailOffAlert({ count }: { count?: number }) {
   const { ws } = useWs();
   const canSet = useCan('settings.manage');
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/[0.07] px-3 py-2.5 text-xs text-amber-200">
+    <div className="callout mb-5 flex-wrap items-center">
       <AlertTriangle className="size-3.5 shrink-0 text-amber-400" />
       <span className="min-w-0 flex-1">
         {t('Email sending is')} <b>{t('off')}</b>{count ? t(': {0} notify rule(s) send nothing', count) : t(': this rule won\'t send anything')} {t('until it\'s turned on.')}
@@ -437,25 +431,25 @@ function RuleRow({ readOnly, rule: r, stages, index, onEdit, onToggle, onDelete 
   ].filter(Boolean);
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={clsx('group relative flex items-center gap-2 rounded-lg border px-1.5 py-1.5', missing ? 'border-red-400/30 bg-red-400/[0.05]' : 'border-white/[0.06] bg-white/[0.02]', !r.enabled && 'opacity-50', isDragging && 'z-10 bg-panel shadow-pop')}>
+      className={clsx('relative flex items-center gap-2 rounded-lg border px-1.5 py-1.5', missing ? 'border-red-400/30 bg-red-400/[0.05]' : 'border-line', !r.enabled && 'opacity-50', isDragging && 'z-10 bg-panel shadow-pop')}>
       {!readOnly && (
         <button {...attributes} {...listeners} aria-label={t('Drag to reorder')} className="grid h-7 w-4 shrink-0 cursor-grab touch-none place-items-center rounded text-mute hover:text-fg active:cursor-grabbing">
           <GripVertical className="size-3.5" />
         </button>
       )}
       {index !== undefined && <span className="grid size-5 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[10px] font-semibold text-dim">{index + 1}</span>}
-      <span className={clsx('grid size-7 shrink-0 place-items-center rounded-lg', missing ? 'bg-red-400/10 text-red-400' : 'bg-accent/10 text-accent')}><A.icon className="size-3.5" /></span>
+      <span className={clsx('grid size-7 shrink-0 place-items-center rounded-md', missing ? 'bg-red-400/10 text-red-400' : 'bg-white/[0.06] text-dim')}><A.icon className="size-3.5" /></span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 text-[13px]">
-          <span className="truncate">{what}</span>
-          {filters.map((f) => <span key={f} className="rounded bg-white/5 px-1.5 text-[10px] text-dim">{f}</span>)}
+          <span className="min-w-0 [overflow-wrap:anywhere]">{what}</span>
+          {filters.map((f) => <span key={f} className="badge py-0 text-[10px]">{f}</span>)}
         </div>
         {missing && <div className="truncate text-[11px] text-mute">{t('The target stage was removed: edit or delete this rule.')}</div>}
       </div>
       {readOnly ? <span className="pr-1.5 text-[11px] text-mute">{r.enabled ? t('on') : t('off')}</span> : <>
         <Toggle checked={r.enabled} onChange={onToggle} />
-        <button onClick={onEdit} title={t('Edit')} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-fg"><Pencil className="size-3.5" /></button>
-        <button onClick={onDelete} title={t('Delete')} className="rounded-lg p-1.5 text-mute hover:bg-white/5 hover:text-red-400"><Trash2 className="size-3.5" /></button>
+        <button onClick={onEdit} title={t('Edit')} className="icon-btn"><Pencil className="size-3.5" /></button>
+        <button onClick={onDelete} title={t('Delete')} className="icon-btn icon-btn-danger"><Trash2 className="size-3.5" /></button>
       </>}
     </div>
   );
@@ -485,18 +479,18 @@ function WhoPicker({ value, onChange, empty }: { value: Who; onChange: (w: Who) 
           {c.label}
         </button>
       ))}
-      <Popover className="w-64 p-1.5" trigger={() => <button type="button" className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs text-dim hover:bg-hover"><Plus className="size-3" /> {t('Add')}</button>}>
+      <Popover className="w-64 p-1.5" trigger={() => <button type="button" className="pill"><Plus className="size-3" /> {t('Add')}</button>}>
         {() => (
           <div className="max-h-72 overflow-y-auto">
             <div className="px-2 pb-1 pt-1 text-[11px] text-mute">{t('Roles')}</div>
             {roles.map((x) => (
-              <button key={x.id} type="button" onClick={() => toggle('roles', x.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-white/[0.06]">
+              <button key={x.id} type="button" onClick={() => toggle('roles', x.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-hover">
                 <ShieldCheck className="size-3.5 text-mute" /> <span className="flex-1">{x.name}</span> {r.includes(x.id) && <Check className="size-3.5 text-accent" />}
               </button>
             ))}
             <div className="px-2 pb-1 pt-2 text-[11px] text-mute">{t('People with access to this workspace')}</div>
             {members.map((m) => (
-              <button key={m.id} type="button" onClick={() => toggle('users', m.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-white/[0.06]">
+              <button key={m.id} type="button" onClick={() => toggle('users', m.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-hover">
                 <span className="grid size-4 place-items-center rounded-full bg-white/10 text-[9px] font-bold">{m.name[0]}</span>
                 <span className="min-w-0 flex-1 truncate">{m.name} <span className="text-mute">· {m.isOwner ? t('owner') : m.roleName}</span></span>
                 {u.includes(m.id) && <Check className="size-3.5 text-accent" />}
@@ -516,7 +510,7 @@ function Chips<T extends string | number>({ options, value, onChange }: { option
         const on = value.includes(k);
         return (
           <button key={String(k)} type="button" onClick={() => onChange(on ? value.filter((x) => x !== k) : [...value, k])}
-            className={clsx('inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs transition', on ? 'border-accent/50 bg-accent/15 text-fg' : 'border-line text-dim hover:bg-hover hover:text-fg')}>
+            aria-pressed={on} className="pill">
             {on && <Check className="size-3 text-accent" />}{label}
           </button>
         );
@@ -560,7 +554,7 @@ function StageModal({ stage, stages, onClose, onSaved }: { stage: Partial<Stage>
             {stages.filter((x) => x.id !== s.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </Field>
-        <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', s.parallel ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
+        <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', s.parallel ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/20')}>
           <Toggle checked={!!s.parallel} onChange={(parallel) => setS({ ...s, parallel })} />
           <span>
             <span className="block text-[13px] font-medium">{t('In parallel with')} {afterName ? `“${afterName}”` : t('the previous stage')}</span>
@@ -646,14 +640,14 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
   return (
     <Modal open onClose={onClose} title={r.id ? t('Edit rule') : t('New rule')} footer={footer}>
       {/* Steps: clickable to jump straight there; each shows what was already chosen. */}
-      <div className="-mt-1 mb-4 flex items-center gap-1">
+      <div className="no-scrollbar -mt-1 mb-4 flex items-center gap-1 overflow-x-auto">
         {STEPS.map((label, i) => (
           <button key={label} type="button" onClick={() => setStep(i as WizardStep)} title={summary[i]}
-            className={clsx('flex min-w-0 flex-1 flex-col items-start rounded-lg px-2 py-1.5 text-left transition', step === i ? 'bg-accent/15' : 'hover:bg-white/[0.04]')}>
-            <span className={clsx('flex items-center gap-1 text-[11px] font-medium', step === i ? 'text-accent' : i < step ? 'text-dim' : 'text-mute')}>
+            className={clsx('flex min-w-0 flex-1 flex-col items-start rounded-lg px-2 py-1.5 text-left transition-colors', step === i ? 'bg-accent/[0.12]' : 'hover:bg-hover')}>
+            <span className={clsx('flex w-full items-center gap-1 truncate whitespace-nowrap text-[11px] font-medium', step === i ? 'text-accent' : i < step ? 'text-dim' : 'text-mute')}>
               {i < step ? <Check className="size-3" /> : <span>{i + 1}</span>} {label}
             </span>
-            <span className="w-full truncate text-[10px] text-mute">{summary[i]}</span>
+            <span className="hidden w-full truncate text-[10px] text-mute sm:block">{summary[i]}</span>
           </button>
         ))}
       </div>
@@ -663,14 +657,14 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
           <div className="grid gap-1">
             {TRIGGERS.map((x) => (
               <button key={x.id} type="button" onClick={() => pickTrigger(x.id, !!x.stage)}
-                className={clsx('flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition', r.trigger === x.id ? 'border-accent/50 bg-accent/10' : 'border-transparent hover:bg-white/[0.04]')}>
+                className={clsx('flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition', r.trigger === x.id ? 'border-accent/50 bg-accent/10' : 'border-transparent hover:bg-hover')}>
                 <span className={clsx('grid size-4 place-items-center rounded-full border', r.trigger === x.id ? 'border-accent' : 'border-line')}>{r.trigger === x.id && <span className="size-2 rounded-full bg-accent" />}</span>
                 <span className="min-w-0"><span className="block text-[13px]">{x.label}</span><span className="block text-[11px] text-mute">{x.hint}</span></span>
               </button>
             ))}
           </div>
           {(tt.stage || r.trigger === 'cost_over' || r.trigger === 'run_finished') && (
-            <div className="grid gap-3 rounded-xl border border-white/[0.06] bg-black/10 p-3 sm:grid-cols-2">
+            <div className="grid gap-3 rounded-xl border border-line bg-black/10 p-3 sm:grid-cols-2">
               {tt.stage && (
                 <Field label={t('Stage')}>
                   <select className="field-input" value={r.stage} onChange={(e) => setR({ ...r, stage: e.target.value })}>
@@ -690,11 +684,11 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
       )}
 
       {step === 1 && (
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {(access ? ACCESS : ACTIONS).map((a) => (
             <button key={a.id} type="button" title={a.desc}
               onClick={() => { setR({ ...r, action: a.id, config: a.id === r.action ? c : a.id === 'notify' ? { to: 'requester' } : { ...(ACCESS_DEFAULTS[a.id] ?? {}) } }); setStep(2); }}
-              className={clsx('flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition', r.action === a.id ? 'border-accent/60 bg-accent/10' : 'border-line bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]')}>
+              className={clsx('flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition', r.action === a.id ? 'border-accent/60 bg-accent/10' : 'border-line bg-white/[0.02] hover:border-white/20 hover:bg-hover')}>
               <span className={clsx('grid size-7 shrink-0 place-items-center rounded-lg', r.action === a.id ? 'bg-accent/20 text-accent' : 'bg-white/5 text-dim')}><a.icon className="size-3.5" /></span>
               <span className="min-w-0 truncate text-[13px] font-medium">{a.label}</span>
             </button>
@@ -790,9 +784,9 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
           )}
           {(r.action === 'run_agent' || r.action === 'set_agent') && (
             <div className="flex flex-wrap gap-1.5">
-              {r.action === 'run_agent' && <button type="button" onClick={() => setC({ agentId: '' })} className={clsx('rounded-full border px-3 py-1 text-xs', !c.agentId ? 'border-accent/50 bg-accent/15' : 'border-line text-dim hover:bg-hover')}>{t('The issue\'s')}</button>}
+              {r.action === 'run_agent' && <button type="button" onClick={() => setC({ agentId: '' })} aria-pressed={!c.agentId} className="pill">{t('The issue\'s')}</button>}
               {agents.map((a) => (
-                <button key={a.id} type="button" onClick={() => setC({ agentId: a.id })} className={clsx('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs', c.agentId === a.id ? 'border-accent/50 bg-accent/15' : 'border-line text-dim hover:bg-hover')}>
+                <button key={a.id} type="button" onClick={() => setC({ agentId: a.id })} aria-pressed={c.agentId === a.id} className="pill">
                   <AgentIcon avatar={a.avatar} size={14} /> {a.name}
                 </button>
               ))}
@@ -801,7 +795,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
           {r.action === 'run_agent' && <>
             <Field label={t('What to ask')} hint={t('empty = run the issue')}><textarea className="field-input" rows={3} value={c.request ?? ''} onChange={(e) => setC({ request: e.target.value })} placeholder={t('E.g. review the diff and run the tests.')} /></Field>
             {(r.trigger === 'enter' || r.trigger === 'stale') && (
-              <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', c.wait ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
+              <label className={clsx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition', c.wait ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/20')}>
                 <Toggle checked={!!c.wait} onChange={(wait) => setC({ wait })} />
                 <span>
                   <span className="block text-[13px] font-medium">{t('Wait for it to finish in this stage')}</span>
@@ -825,7 +819,7 @@ function RuleModal({ rule, stages, onClose, onSaved }: { rule: Partial<Rule>; st
             <div className="grid gap-2 sm:grid-cols-2">
               {([['done', t('Done'), t('Counts as resolved: goes into “issues resolved” and time to resolve.')], ['cancelled', t('Cancelled'), t('Leaves the open issues without counting as resolved.')]] as const).map(([k, label, desc]) => (
                 <button key={k} type="button" onClick={() => setC({ kind: k })}
-                  className={clsx('rounded-xl border p-3 text-left transition', (c.kind ?? 'done') === k ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/15')}>
+                  className={clsx('rounded-xl border p-3 text-left transition', (c.kind ?? 'done') === k ? 'border-accent/50 bg-accent/10' : 'border-line hover:border-white/20')}>
                   <span className="block text-[13px] font-medium">{label}</span>
                   <span className="block text-xs text-mute">{desc}</span>
                 </button>
@@ -920,7 +914,7 @@ function CopyModal({ onClose }: { onClose: () => void }) {
               <div className="mt-2 text-dim">{t('In their place: {0} stage(s) and {1} rule(s) from {2}.', preview.stages, preview.rules, ws.name)}</div>
             </div>
             {preview.warnings.length > 0 ? (
-              <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-3 text-xs text-amber-200">
+              <div className="rounded-lg border border-amber-400/25 bg-amber-400/[0.06] p-3 text-xs text-amber-200">
                 <div className="mb-1 font-medium">{t('Will need fixing in the destination ({0})', preview.warnings.length)}</div>
                 <ul className="space-y-0.5 pl-4">{preview.warnings.map((w, i) => <li key={i} className="list-disc"><b className="font-medium">{w.where}:</b> {w.message}</li>)}</ul>
               </div>
