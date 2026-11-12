@@ -25,7 +25,14 @@ export function WorkspaceSettings() {
 
   const saveName = async () => {
     if (!name.trim() || name === ws.name) return;
-    await api.patch(`/workspaces/${ws.id}`, { name });
+    try {
+      await api.patch(`/workspaces/${ws.id}`, { name });
+    } catch (err) {
+      // e.g. another workspace already has this name: keep the saved one.
+      setName(ws.name);
+      toast('error', (err as Error).message);
+      return;
+    }
     qc.invalidateQueries({ queryKey: ['workspaces'] });
     toast('success', t('Name saved'));
   };
