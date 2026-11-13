@@ -304,21 +304,50 @@ func (r *Runner) Branches(ctx context.Context, repo *store.Repo) ([]string, erro
 	return list, nil
 }
 
-// CheckRemote confirms the URL is a git repository reachable with the server's
-// credentials (git ls-remote, without cloning).
-func (r *Runner) CheckRemote(ctx context.Context, url string) error {
+// RemoteBranches checks that the URL is a git repository reachable with the server's
+// credentials (git ls-remote, without cloning) and lists its branches, plus the remote's
+// default one (its HEAD).
+func (r *Runner) RemoteBranches(ctx context.Context, url string) (branches []string, def string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	res := runGit(ctx, os.TempDir(), "ls-remote", "--heads", "--", url)
+	res := runGit(ctx, os.TempDir(), "ls-remote", "--symref", "--", url)
 	if !res.ok {
 		msg := redact(firstNonEmpty(res.stderr, res.stdout))
 		if ctx.Err() != nil {
 			msg = "timed out (did the server ask for a password? set up SSH or a token)"
 		}
-		return errors.New(msg)
+		return nil, "", errors.New(msg)
+	}
+	for _, l := range lines(res.stdout) {
+		if rest, ok := strings.CutPrefix(l, "ref: refs/heads/"); ok {
+			def = strings.Fields(rest)[0]
+			continue
+		}
+		if f := strings.Fields(l); len(f) == 2 {
+			if b, ok := strings.CutPrefix(f[1], "refs/heads/"); ok {
+				branches = append(branches, b)
+			}
+		}
+	}
+	slices.Sort(branches)
+	return branches, def, nil
+}
+
+// CheckRemote confirms the URL is a git repository reachable with the server's
+// credentials. branch, when given, must exist there.
+func (r *Runner) CheckRemote(ctx context.Context, url, branch string) error {
+	branches, _, err := r.RemoteBranches(ctx, url)
+	if err != nil {
+		return err
+	}
+	if branch != "" && !slices.Contains(branches, branch) {
+		return ErrNoBranch
 	}
 	return nil
 }
+
+// ErrNoBranch: the repository's working branch doesn't exist on the remote.
+var ErrNoBranch = errors.New("that branch doesn't exist on the remote")
 
 var reGitHubUser = regexp.MustCompile(`Hi ([\w.-]+)! You've successfully authenticated`)
 

@@ -685,7 +685,12 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				return
 			}
 			if w.IssueRepo.BaseBranch == "" || w.IssueRepo.TargetBranch == "" {
-				def, err := defaultBranch(ctx, repoDir)
+				// The repository's working branch (picked from the remote's branches); without
+				// one, the remote's default.
+				def, err := w.WorkBranch, error(nil)
+				if def == "" {
+					def, err = defaultBranch(ctx, repoDir)
+				}
 				if err != nil && w.IssueRepo.BaseBranch == "" {
 					errs[i] = fmt.Errorf("%s: %w", w.Name, err)
 					return

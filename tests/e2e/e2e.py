@@ -62,8 +62,8 @@ check(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/api.git
 st, r = C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/missing.git', 'name': 'missing'})
 check(st == 400 and 'not a git repository' in r['error'], 'a URL that is not a git repo is refused: ' + r.get('error', '')[:70])
 desc = {'api': 'REST API (orders and payments)', 'web': 'The shop React front end', 'docs': 'Documentation'}
-repos = {n: ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': f'file:///remote/{n}.git', 'name': n, 'description': desc[n]})) for n in ['api', 'web', 'docs']}
-check(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/api.git', 'name': 'API'})[0] == 400, 'a repeated repository name is refused')
+repos = {n: ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': f'file:///remote/{n}.git', 'name': n, 'description': desc[n], 'workBranch': 'main'})) for n in ['api', 'web', 'docs']}
+check(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/api.git', 'name': 'API', 'workBranch': 'main'})[0] == 400, 'a repeated repository name is refused')
 ag = ok(C('POST', '/agents', {'name': 'Fake', 'runtime': 'claude'}))
 
 def wait(s, iid, states, t=60):
@@ -131,7 +131,7 @@ check(not res['conflict'] and show('api', 'conf.txt') == 'resolved' and show('we
 # ---------- a new repository joins the open issues on "all" ----------
 K = ok(A('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'Open', 'status': 'backlog'}))['issue']
 subprocess.run(['git', 'clone', '-q', '--bare', f'{REM}/docs.git', f'{REM}/mobile.git'])
-ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/mobile.git', 'name': 'mobile', 'description': 'Mobile app'}))
+ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/mobile.git', 'name': 'mobile', 'description': 'Mobile app', 'workBranch': 'main'}))
 check('mobile' in rmap(ok(A('GET', f'/issues/{K["id"]}'))['issue']), 'a new repository joins the open issues on "all"')
 st, k2 = A('PUT', f'/issues/{K["id"]}/repos', {'all': False, 'repos': [{'repoId': repos['api']['id'], 'targetBranch': 'main'}]})
 check(st == 200 and list(rmap(k2)) == ['api'] and not k2['allRepos'], 'switching the issue scope to the api only')

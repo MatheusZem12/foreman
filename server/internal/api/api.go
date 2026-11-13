@@ -104,6 +104,7 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 				r.With(a.can("member.manage")).Delete("/members/{user}", a.h(a.removeMember))
 				r.Get("/repos", a.h(a.listRepos))
 				r.With(a.can("repo.create")).Post("/repos", a.h(a.saveRepo))
+				r.With(a.can("repo.create", "repo.update")).Post("/repos/check", a.h(a.checkRepo))
 				r.Get("/labels", a.h(a.listLabels))
 				r.With(a.can("label.create")).Post("/labels", a.h(a.createLabel))
 				r.Get("/issues", a.h(a.listIssues))
@@ -809,10 +810,17 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 			return nil, bad("a repository named %q already exists in this workspace", o.Name)
 		}
 	}
-	// Only accepts a git repository reachable with the server's credentials. Which branch
-	// an issue works on is up to the issue and its skills, not the repository.
-	if err := a.run.CheckRemote(r.Context(), in.URL); err != nil {
+	// Only accepts a git repository reachable with the server's credentials, with a working
+	// branch picked from the ones that exist there (the screen lists them; never typed).
+	in.WorkBranch = strings.TrimSpace(in.WorkBranch)
+	if err := a.run.CheckRemote(r.Context(), in.URL, in.WorkBranch); err != nil {
+		if errors.Is(err, runner.ErrNoBranch) {
+			return nil, bad("the branch %q doesn't exist in this repository", in.WorkBranch)
+		}
 		return nil, bad("not a git repository the server can reach: %v", err)
+	}
+	if in.WorkBranch == "" {
+		return nil, bad("choose the repository's working branch")
 	}
 	isNew := in.ID == ""
 	repo, err := a.st.SaveRepo(r.Context(), in)
@@ -824,6 +832,46 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	repo.URL = runner.MaskURL(repo.URL)
 	return repo, nil
+}
+
+// checkRepo tests the connection to a git URL (before saving) and lists its branches, for
+// the working-branch picker. id = the repository being edited: its URL comes back masked,
+// meaning "the one saved".
+func (a *API) checkRepo(w http.ResponseWriter, r *http.Request) (any, error) {
+	var in struct {
+		URL string `json:"url"`
+		ID  string `json:"id"`
+	}
+	if err := decode(r, &in); err != nil {
+		return nil, err
+	}
+	url := strings.TrimSpace(in.URL)
+	if url == "" {
+		return nil, bad("enter the repository URL")
+	}
+	if strings.HasPrefix(url, "-") {
+		return nil, bad("invalid repository URL")
+	}
+	if in.ID != "" {
+		cur, err := a.st.Repo(r.Context(), in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if cur.WorkspaceID != chi.URLParam(r, "ws") {
+			return nil, store.ErrNotFound
+		}
+		if url == runner.MaskURL(cur.URL) {
+			url = cur.URL
+		}
+	}
+	branches, def, err := a.run.RemoteBranches(r.Context(), url)
+	if err != nil {
+		return nil, bad("not a git repository the server can reach: %v", err)
+	}
+	if len(branches) == 0 {
+		return nil, bad("the repository is empty: push a first commit so it has a branch")
+	}
+	return map[string]any{"branches": branches, "default": def}, nil
 }
 
 func (a *API) gitInfo(w http.ResponseWriter, r *http.Request) (any, error) {

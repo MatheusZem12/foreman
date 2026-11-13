@@ -50,7 +50,7 @@ def wait(iid, states, t=420):
 open(f'{OUTSIDE}/canary.txt', 'w').write('canary-7d2f\n')
 ok(call('POST', '/setup', {'name': 'Owner', 'email': 'owner@x.com', 'password': 'password1234'}))
 ws = ok(call('POST', '/workspaces', {'name': 'Real', 'key': 'REAL'}))
-ok(call('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file://' + REMOTE, 'name': 'app', 'description': 'A tiny Python app'}))
+ok(call('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file://' + REMOTE, 'name': 'app', 'description': 'A tiny Python app', 'workBranch': 'main'}))
 sk = ok(call('POST', '/skills', {'name': 'House rules', 'description': 'Read this before writing any code', 'content': 'Every new Python file must start with the comment `# house-rule-ok`.'}))
 rt = {r['runtime']: r for r in ok(call('GET', '/runtimes'))}
 print('runtimes:', {k: (v['installed'], v['version'][:30], 'sandbox' if v['sandbox'] else 'NO SANDBOX') for k, v in rt.items()})
