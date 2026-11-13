@@ -65,7 +65,7 @@ for suite in "${SUITES[@]}"; do
   mkdir -p "$WORK/remote" "$WORK/seed"
   for r in api web docs; do
     (cd "$WORK/seed" && git init -q -b main "$r" && cd "$r" && echo "$r v1" > main.txt && echo "base" > conf.txt \
-      && git add . && git -c user.name=t -c user.email=t@t commit -qm init && git branch hmg)
+      && git add . && git -c user.name=t -c user.email=t@t commit -qm init && git branch release)
     git clone -q --bare "$WORK/seed/$r" "$WORK/remote/$r.git"
   done
   echo "→ $suite: stack $PROJECT"

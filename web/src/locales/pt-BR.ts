@@ -265,7 +265,7 @@ const ptBR: Record<string, string> = {
   "Deletes the issue, its history and its branches.": "Apaga a issue, o histórico e as branches.",
   "Deletes the issues, history and links. Remote repositories aren't touched.": "Apaga as issues, o histórico e os vínculos. Os repositórios remotos não são tocados.",
   "Deletes the issues, history and links. This can't be undone.": "Apaga as issues, o histórico e os vínculos. Não dá para desfazer.",
-  "deploy-staging, commit-style…": "deploy-hmg, padrao-de-commits…",
+  "deploy-staging, commit-style…": "deploy-prd, padrao-de-commits…",
   "Description": "Descrição",
   "description": "descrição",
   "Description and README": "Descrição e README",
