@@ -809,11 +809,13 @@ def working_branch_is_picked_from_the_remote():
     check(st == 400 and 'not a git repository' in body['error'], 'the connection test refuses a URL that is not a reachable repository')
     st, body = login('mem@x.com')('POST', f'/workspaces/{ws["id"]}/repos/check', {'url': url})
     check(st == 403, 'whoever cannot add or edit repositories cannot test URLs')
-    st, body = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app'})
+    st, body = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app', 'description': '  ', 'workBranch': 'dev'})
+    check(st == 400 and 'description' in body['error'], 'a repository without a description is refused: ' + body.get('error', '')[:60])
+    st, body = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app', 'description': 'd'})
     check(st == 400 and 'working branch' in body['error'], 'a repository without a working branch is refused: ' + body.get('error', '')[:60])
-    st, body = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app', 'workBranch': 'typed-by-hand'})
+    st, body = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app', 'description': 'd', 'workBranch': 'typed-by-hand'})
     check(st == 400 and 'typed-by-hand' in body['error'], 'a branch that does not exist on the remote is refused')
-    repo = ok(own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app', 'workBranch': 'dev'}))
+    repo = ok(own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app', 'description': 'd', 'workBranch': 'dev'}))
     check(repo['workBranch'] == 'dev', 'the picked branch is saved')
     i = to_review(ws, 'P', '[[WRITE:p.txt]]')
     r = i['repos'][0]
@@ -821,7 +823,7 @@ def working_branch_is_picked_from_the_remote():
     ok(own('POST', f'/issues/{i["id"]}/approve'))
     settled(i['id'], ['done'], 15)
     check(show(remote, 'p.txt', 'dev') != '' and show(remote, 'p.txt', 'main') == '', 'the merge lands on the working branch and main stays untouched')
-    st, _ = own('PUT', f'/repos/{repo["id"]}', {'url': repo['url'], 'name': 'app', 'workBranch': 'gone'})
+    st, _ = own('PUT', f'/repos/{repo["id"]}', {'url': repo['url'], 'name': 'app', 'description': 'd', 'workBranch': 'gone'})
     check(st == 400 and psql(f"select work_branch from repos where id = '{repo['id']}'") == 'dev', 'editing to a branch that does not exist is refused and keeps the old one')
 
 
@@ -904,7 +906,7 @@ def repository_problems():
         subprocess.run(['cp', '-r', f'{d}/e.git', f'{REM}/empty-real.git'])
     st, body = own('POST', f'/workspaces/{ws["id"]}/repos/check', {'url': 'file:///remote/empty-real.git'})
     check(st == 400 and 'empty' in body['error'], 'an empty remote has no branch to pick and says it is empty: ' + body.get('error', '')[:80])
-    st, _ = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/empty-real.git', 'name': 'empty', 'workBranch': 'main'})
+    st, _ = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/empty-real.git', 'name': 'empty', 'description': 'd', 'workBranch': 'main'})
     check(st == 400, 'and it cannot be saved')
 
     gone = workspace('Gone')
@@ -1339,7 +1341,7 @@ def repository_urls_are_not_a_way_in():
     ws = workspace('Url', repos=())
     canary = f'/tmp/pwned-{seq["n"]}'
     for url in [f'ext::sh -c touch% {canary}', f'--upload-pack=touch {canary}', '-oProxyCommand=x']:
-        st, _ = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': f'n{seq["n"]}'})
+        st, _ = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': f'n{seq["n"]}', 'description': 'd'})
         check(st == 400, f'a URL that runs a command is refused: {url[:30]} ({st})')
     check(sh(f'ls {canary} 2>/dev/null') == '', 'and nothing ran')
     # A token in the URL never reaches people.

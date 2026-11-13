@@ -620,7 +620,7 @@ const ptBR: Record<string, string> = {
   "Open, assigned": "Abertas c/ ela",
   "open, assigned to them": "aberta(s) com ela",
   "optional": "opcional",
-  "optional; helps the AI choose the repository": "opcional; ajuda a IA a escolher o repositório",
+  "required; helps the AI choose the repository": "obrigatória; ajuda a IA a escolher o repositório",
   "or": "ou",
   "Organize": "Organizar",
   "Other…": "Outro…",

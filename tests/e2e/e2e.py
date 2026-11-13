@@ -59,11 +59,11 @@ check(Bb('POST', f'/workspaces/{ws["id"]}/issues', {'title': 'now allowed'})[0] 
 
 # ---------- repositories ----------
 check(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/api.git'})[0] == 400, 'a repository without a name is refused')
-st, r = C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/missing.git', 'name': 'missing'})
+st, r = C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/missing.git', 'name': 'missing', 'description': 'd'})
 check(st == 400 and 'not a git repository' in r['error'], 'a URL that is not a git repo is refused: ' + r.get('error', '')[:70])
 desc = {'api': 'REST API (orders and payments)', 'web': 'The shop React front end', 'docs': 'Documentation'}
 repos = {n: ok(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': f'file:///remote/{n}.git', 'name': n, 'description': desc[n], 'workBranch': 'main'})) for n in ['api', 'web', 'docs']}
-check(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/api.git', 'name': 'API', 'workBranch': 'main'})[0] == 400, 'a repeated repository name is refused')
+check(C('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/api.git', 'name': 'API', 'description': 'd', 'workBranch': 'main'})[0] == 400, 'a repeated repository name is refused')
 ag = ok(C('POST', '/agents', {'name': 'Fake', 'runtime': 'claude'}))
 
 def wait(s, iid, states, t=60):
