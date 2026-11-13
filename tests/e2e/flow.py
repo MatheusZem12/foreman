@@ -230,8 +230,14 @@ def has_comment(iid, text):
     return any(text in c for c in comments(iid))
 
 
+def dbg(iid):
+    """Where the simulated agent keeps a copy of its last args, prompt and env."""
+    ref = psql(f"select w.key || '-' || i.number from issues i join workspaces w on w.id = i.workspace_id where i.id = '{iid}'")
+    return f'/data/debug/{ref}'
+
+
 def run_args(iid):
-    return sh(f'cat /data/issues/{iid}/last-args.txt')
+    return sh(f'cat {dbg(iid)}/last-args.txt')
 
 
 SCENARIOS = []
@@ -291,7 +297,7 @@ def flow_complete_default_path():
     check(show(remote, 'discount.txt') != '' and not has_ref(remote, br), 'main received it and the branch was removed from the remote')
     d = detail(i['id'])
     check(d['issue']['closed'] == 'done' and d['issue']['doneAt'], 'Done closes the issue as resolved')
-    check(sh(f'ls /data/worktrees/{i["id"]} 2>/dev/null') == '', 'the worktree was removed after the merge')
+    check(sh('ls /data/tmp 2>/dev/null') == '', 'no temporary folder is left after the runs and the merge')
     log = psql(f"select string_agg(stage, ',' order by id) from issue_stage_log where issue_id='{i['id']}'")
     check(log == 'todo,in_progress,in_review,done', 'stage history: ' + log)
     an = ok(own('GET', f'/workspaces/{ws["id"]}/analytics?days=1&person=all'))
@@ -333,7 +339,7 @@ def flow_agent_outcomes():
     check(w['runs'][-1]['outcomeNote'] == 'which color?' and any('which color?' in c['body'] for c in w['comments']), 'waiting: the question becomes a comment and goes to Waiting')
     ok(own('POST', f'/issues/{w["issue"]["id"]}/comments', {'body': 'blue [[WRITE:color.txt]]', 'sendToAgent': True}))
     d = settled(w['issue']['id'], ['in_review'])
-    check('blue' in sh(f'cat /data/issues/{w["issue"]["id"]}/last-prompt.txt') and 'which color?' in sh(f'cat /data/issues/{w["issue"]["id"]}/last-prompt.txt'), 'the reply goes in the prompt with the history of the question')
+    check('blue' in sh(f'cat {dbg(w["issue"]["id"])}/last-prompt.txt') and 'which color?' in sh(f'cat {dbg(w["issue"]["id"])}/last-prompt.txt'), 'the reply goes in the prompt with the history of the question')
     check(d['runs'][-1]['kind'] == 'followup', 'a reply is an adjustment on the same issue')
 
     inc = settled(issue(ws, 'I', '[[STATUS:incomplete: no access to the API]]')['id'], ['waiting'])
@@ -375,7 +381,7 @@ def flow_codex_runtime():
     args = run_args(i['id'])
     check('-m\no4-test' in args and 'model_reasoning_effort="high"' in args, 'Codex receives model and effort')
     check(args.endswith('-') and 'exec' in args and '--json' in args, 'Codex reads the prompt from stdin in JSON mode')
-    check('Follow the house style' in sh(f'cat /data/issues/{i["id"]}/last-prompt.txt'), "Codex has no system prompt: the instructions go at the start")
+    check('Follow the house style' in sh(f'cat {dbg(i["id"])}/last-prompt.txt'), "Codex has no system prompt: the instructions go at the start")
     f = settled(issue(ws, 'Codex fail', '[[CODEX_FAIL]]', agent=False, agentId=CX['id'])['id'], ['blocked'])
     check(f['runs'][-1]['status'] == 'failed', 'a Codex failure goes to Blocked')
 
@@ -401,7 +407,7 @@ def flow_agent_configuration_reaches_the_cli():
     check('deploy body' in sh(f'cat /data/skills/{sk["slug"]}/SKILL.md'), 'the whole skill is on disk')
     check(sh(f'test -x /data/skills/{sk["slug"]}/run.sh && echo yes') == 'yes', 'scripts with a shebang are executable')
     check(sh('find /data -maxdepth 2 -name escape.txt; ls /escape.txt 2>/dev/null') == '', 'a skill file path cannot escape its folder')
-    env = sh(f'cat /data/issues/{i["id"]}/last-env.txt')
+    env = sh(f'cat {dbg(i["id"])}/last-env.txt')
     check('DATABASE_URL' not in env, "the database URL does not reach the agent's environment")
     check('FOREMAN_ISSUE=' + ws['key'] in env and 'GOCACHE=/data/cache' in env, 'the agent gets FOREMAN_* and the package cache')
     ok(own('DELETE', f'/skills/{sk_all["id"]}'))
@@ -413,7 +419,7 @@ def flow_multi_repo_scope():
     i = settled(issue(ws, 'Both', '[[WRITE:api/a.txt]][[WRITE:web/w.txt]]')['id'], ['in_review'])
     rep = {r['name']: r for r in i['issue']['repos']}
     check(rep['api']['changed'] and rep['web']['changed'], 'the agent changed both repositories')
-    prompt = sh(f'cat /data/issues/{i["issue"]["id"]}/last-prompt.txt')
+    prompt = sh(f'cat {dbg(i["issue"]["id"])}/last-prompt.txt')
     check('the api repository' in prompt and 'the web repository' in prompt, 'the prompt has the repository map')
     one = settled(issue(ws, 'One', '[[WRITE:web/only.txt]]')['id'], ['in_review'])
     rep = {r['name']: r for r in one['issue']['repos']}
@@ -421,7 +427,7 @@ def flow_multi_repo_scope():
     check(not has_ref(ws['remotes']['api'], one['issue']['branch']), 'the untouched repository got no branch')
     ok(own('POST', f'/issues/{one["issue"]["id"]}/approve'))
     settled(one['issue']['id'], ['done'])
-    check(sh(f'ls /data/worktrees/{one["issue"]["id"]} 2>/dev/null') == '', 'after the merge no worktree is left, not even of the untouched one')
+    check(sh('ls /data/tmp 2>/dev/null') == '', 'after the merge no temporary folder is left, not even of the untouched repository')
 
 
 # ======================================================================
@@ -499,7 +505,7 @@ def deleting_a_running_issue():
     ok(own('DELETE', f'/issues/{i["id"]}'))
     check(wait_until(lambda: 'sleep 3103' not in dc('top', 'foreman').stdout, 15), 'deleting kills the agent')
     check(own('GET', f'/issues/{i["id"]}')[0] == 404 and healthy(), 'the issue is gone and the server is fine')
-    check(sh(f'ls /data/worktrees/{i["id"]} 2>/dev/null') == '' or wait_until(lambda: sh(f'ls /data/worktrees/{i["id"]} 2>/dev/null') == '', 10), 'its worktree is gone')
+    check(wait_until(lambda: sh('ls /data/tmp 2>/dev/null') == '', 10), "the run's temporary folder is gone")
 
 
 @scenario
@@ -844,14 +850,19 @@ def human_commits_on_the_issue_branch_survive():
 
 
 @scenario
-def manual_edits_in_the_worktree_are_kept():
-    ws = workspace('Hand')
+def every_request_gets_a_new_temporary_folder():
+    ws = workspace('Temp')
     remote = ws['remotes']['api']
-    i = to_review(ws, 'H', '[[WRITE:a.txt]]')
-    sh(f'echo by-hand > /data/worktrees/{i["id"]}/api/hand.txt')
-    ok(own('POST', f'/issues/{i["id"]}/approve'))
-    settled(i['id'], ['done'], 15)
-    check(show(remote, 'hand.txt') == 'by-hand', 'a file edited by hand in the worktree goes in the merge')
+    i = to_review(ws, 'T', '[[WRITE:a.txt]]')
+    check(sh('find /data/tmp /data/worktrees /data/issues -mindepth 1 2>/dev/null') == '', 'the run left no folder behind (no worktree, no issue folder)')
+    ok(own('POST', f'/issues/{i["id"]}/comments', {'body': 'more [[WRITE:b.txt]]', 'sendToAgent': True}))
+    d = settled(i['id'], ['in_review'], 20)
+    br = d['issue']['branch']
+    check(show(remote, 'a.txt', br) != '' and show(remote, 'b.txt', br) != '', 'the second request starts from the branch, with the first one\'s work')
+    prompts = [e['body'] for r in d['runs'] for e in ok(own('GET', f'/runs/{r["id"]}/events')) if e['kind'] == 'prompt']
+    roots = {l.split('`')[1] for p in prompts for l in p.splitlines() if 'isolated git worktree' in l}
+    check(len(roots) == 2 and all(r.startswith('/data/tmp/run-') for r in roots), f'each request ran in its own temporary folder: {roots}')
+    check(sh('ls /data/tmp 2>/dev/null') == '', 'and both were removed')
 
 
 @scenario
@@ -873,11 +884,10 @@ def repository_problems():
     d = settled(i['id'], ['blocked'], 15)
     check(d['runs'][-1]['status'] == 'failed', 'a remote that vanished fails the run, it does not hang')
     subprocess.run(['mv', f'{REM}/moved.git', f'{REM}/{gone["remotes"]["api"]}.git'])
-    sh(f'rm -rf /data/worktrees/{i["id"]}')
     ok(own('POST', f'/issues/{i["id"]}/comments', {'body': 'again [[WRITE:b.txt]]', 'sendToAgent': True}))
     d = settled(i['id'], ['in_review', 'blocked'], 20)
     br = d['issue']['branch']
-    check(d['issue']['status'] == 'in_review' and show(gone['remotes']['api'], 'a.txt', br) != '', 'a lost worktree is recreated with the branch work intact')
+    check(d['issue']['status'] == 'in_review' and show(gone['remotes']['api'], 'a.txt', br) != '', 'the next request starts again from the branch, with the work intact')
 
 
 # ======================================================================
