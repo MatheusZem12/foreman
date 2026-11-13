@@ -314,3 +314,32 @@ func TestCommitMessage(t *testing.T) {
 		t.Fatalf("blank file: %q", m)
 	}
 }
+
+func TestLocalizeUploads(t *testing.T) {
+	r := New(config.Config{DataDir: t.TempDir()}, nil, nil)
+	name := strings.Repeat("ab", 16) + ".png"
+	os.MkdirAll(r.UploadDir(), 0o755)
+	os.WriteFile(filepath.Join(r.UploadDir(), name), []byte("img"), 0o644)
+	missing := strings.Repeat("cd", 16) + ".jpg"
+	dir := filepath.Join(t.TempDir(), "attachments")
+
+	in := "# K-1: x\n\n![a](/api/uploads/" + name + ") and again /api/uploads/" + name +
+		"\n\n![gone](/api/uploads/" + missing + ")\n\n## When you finish\n1. ..."
+	out := r.localizeUploads(in, dir)
+	local := filepath.Join(dir, name)
+	if data, err := os.ReadFile(local); err != nil || string(data) != "img" {
+		t.Fatalf("image not copied: %v", err)
+	}
+	if strings.Contains(out, "/api/uploads/"+name) || strings.Count(out, local) != 3 {
+		t.Fatalf("references not rewritten:\n%s", out)
+	}
+	if !strings.Contains(out, "/api/uploads/"+missing) {
+		t.Fatalf("a missing image should stay as it was:\n%s", out)
+	}
+	if i, j := strings.Index(out, "## Attached images"), strings.Index(out, "## When you finish"); i < 0 || i > j {
+		t.Fatalf("the images block should come before the closing instructions:\n%s", out)
+	}
+	if got := r.localizeUploads("no images", dir); got != "no images" {
+		t.Fatalf("a prompt without images changed: %q", got)
+	}
+}

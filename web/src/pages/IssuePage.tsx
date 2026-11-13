@@ -17,6 +17,7 @@ import type { Comment, Issue, IssueDetail, IssueRepo, RepoDiff, RepoMerge, Run, 
 import { AgentIcon } from '../components/AgentIcon';
 import { locale, t } from '../lib/i18n';
 import { upsertIssue } from '../lib/board';
+import { useImageAttach } from '../components/ImageAttach';
 
 type Tab = 'activity' | 'summary' | 'diff' | 'runs';
 
@@ -268,6 +269,8 @@ function TitleEditor({ issue, onSave }: { issue: Issue; onSave: (tt: string) => 
 function DescriptionEditor({ issue, onSave }: { issue: Issue; onSave: (d: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(issue.description);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const img = useImageAttach(ref, setValue);
   useEffect(() => {
     if (!editing) setValue(issue.description);
   }, [issue.description, editing]);
@@ -275,19 +278,22 @@ function DescriptionEditor({ issue, onSave }: { issue: Issue; onSave: (d: string
     return (
       <div className="mt-3">
         <textarea
+          ref={ref}
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          {...img.textareaProps}
           onKeyDown={(e) => {
             if (e.key === 'Escape') setEditing(false);
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { onSave(value); setEditing(false); }
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !img.uploading) { onSave(value); setEditing(false); }
           }}
           rows={10}
           className="field-input min-h-40"
         />
-        <div className="mt-2 flex justify-end gap-2">
+        <div className="mt-2 flex items-center justify-end gap-2">
+          <span className="mr-auto">{img.button}</span>
           <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>{t('Cancel')}</Button>
-          <Button size="sm" variant="primary" onClick={() => { onSave(value); setEditing(false); }}>{t('Save')}</Button>
+          <Button size="sm" variant="primary" disabled={img.uploading} onClick={() => { onSave(value); setEditing(false); }}>{t('Save')}</Button>
         </div>
       </div>
     );
@@ -444,6 +450,8 @@ const LogLine = memo(function LogLine({ ev }: { ev: RunEvent }) {
 
 function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
   const [body, setBody] = useState('');
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const img = useImageAttach(ref, setBody);
   const [agentId, setAgentId] = useState<string | null>(issue.agentId);
   const canRun = useCan('issue.run');
   const [send, setSend] = useState(canRun && !!issue.agentId && !issue.closed);
@@ -451,7 +459,7 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
   const toast = useToast();
   useEffect(() => setAgentId(issue.agentId), [issue.agentId]);
   const submit = async () => {
-    if (!body.trim()) return;
+    if (!body.trim() || img.uploading) return;
     setBusy(true);
     try {
       const res = await api.post<{ warning?: string }>(`/issues/${issue.id}/comments`, { body, sendToAgent: send && !!agentId, agentId: agentId ?? '' });
@@ -467,8 +475,10 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
   return (
     <div className="rounded-xl border border-line bg-panel p-2.5 transition-colors focus-within:border-accent">
       <textarea
+        ref={ref}
         value={body}
         onChange={(e) => setBody(e.target.value)}
+        {...img.textareaProps}
         onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && submit()}
         rows={3}
         placeholder={send && agentId ? t('Ask for an adjustment: it goes to a new chat along with the summary and the branch commits…') : t('Comment…')}
@@ -476,8 +486,9 @@ function Composer({ issue, hasRuns }: { issue: Issue; hasRuns: boolean }) {
       />
       <div className="flex flex-wrap items-center gap-2 pt-1">
         {canRun && <Toggle checked={send} onChange={setSend} label={t('Send to the agent')} />}
+        {img.button}
         {send && <AgentPicker value={agentId} onChange={setAgentId} allowNone={false} />}
-        <Button size="sm" variant="primary" className="ml-auto" loading={busy} onClick={submit}><Send className="size-3.5" /> {send && agentId ? t('Send') : t('Comment')}</Button>
+        <Button size="sm" variant="primary" className="ml-auto" loading={busy} disabled={img.uploading} onClick={submit}><Send className="size-3.5" /> {send && agentId ? t('Send') : t('Comment')}</Button>
       </div>
     </div>
   );
@@ -547,11 +558,13 @@ function runResult(r: Run): [string, string] {
 // The AI stopped and needs someone: shows what it asked for and lets you reply right away.
 function WaitingCard({ issue, lastRun }: { issue: Issue; lastRun?: Run }) {
   const [reply, setReply] = useState('');
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const img = useImageAttach(ref, setReply);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const canRun = useCan('issue.run');
   const send = async () => {
-    if (!reply.trim()) return;
+    if (!reply.trim() || img.uploading) return;
     setBusy(true);
     try {
       const res = await api.post<{ warning?: string }>(`/issues/${issue.id}/comments`, { body: reply, sendToAgent: true, agentId: issue.agentId ?? '' });
@@ -573,10 +586,13 @@ function WaitingCard({ issue, lastRun }: { issue: Issue; lastRun?: Run }) {
       <p className="mt-1.5 whitespace-pre-wrap text-[13px] text-dim">{lastRun?.outcomeNote || t('See the agent\'s last comment.')}</p>
       {canRun && issue.agentId && (
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2} placeholder={t('Answer or decide here; it goes to the agent to continue…')}
+          <textarea ref={ref} value={reply} onChange={(e) => setReply(e.target.value)} {...img.textareaProps} rows={2} placeholder={t('Answer or decide here; it goes to the agent to continue…')}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(); }}
             className="field-input flex-1 text-[13px]" />
-          <Button variant="primary" loading={busy} onClick={send} className="sm:self-end"><Send className="size-3.5" /> {t('Reply')}</Button>
+          <div className="flex items-center gap-2 sm:self-end">
+            {img.button}
+            <Button variant="primary" loading={busy} disabled={img.uploading} onClick={send}><Send className="size-3.5" /> {t('Reply')}</Button>
+          </div>
         </div>
       )}
     </div>
