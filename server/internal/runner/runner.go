@@ -685,11 +685,7 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				return
 			}
 			if w.IssueRepo.BaseBranch == "" || w.IssueRepo.TargetBranch == "" {
-				// The repository's working branch, if set; otherwise the remote's default.
-				def, err := w.WorkBranch, error(nil)
-				if def == "" {
-					def, err = defaultBranch(ctx, repoDir)
-				}
+				def, err := defaultBranch(ctx, repoDir)
 				if err != nil && w.IssueRepo.BaseBranch == "" {
 					errs[i] = fmt.Errorf("%s: %w", w.Name, err)
 					return
@@ -869,6 +865,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		Key: ws.Key, Issue: issue, Repos: prs, Root: cwd, Kind: run.Kind, Request: run.Request, Requester: requester,
 		SummaryPath: summaryPath, StatusPath: statusPath, CommitPath: commitPath, History: history,
 	})
+	prompt = r.localizeUploads(prompt, filepath.Join(idir, "attachments"))
 	r.logEvent(ctx, run, "prompt", "<!-- system -->\n"+system+"\n\n<!-- prompt -->\n"+prompt)
 	addDirs := []string{idir}
 	if len(works) == 1 {

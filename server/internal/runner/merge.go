@@ -305,8 +305,8 @@ func (r *Runner) Branches(ctx context.Context, repo *store.Repo) ([]string, erro
 }
 
 // CheckRemote confirms the URL is a git repository reachable with the server's
-// credentials (git ls-remote, without cloning). branch, when given, must exist there.
-func (r *Runner) CheckRemote(ctx context.Context, url, branch string) error {
+// credentials (git ls-remote, without cloning).
+func (r *Runner) CheckRemote(ctx context.Context, url string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	res := runGit(ctx, os.TempDir(), "ls-remote", "--heads", "--", url)
@@ -317,14 +317,8 @@ func (r *Runner) CheckRemote(ctx context.Context, url, branch string) error {
 		}
 		return errors.New(msg)
 	}
-	if branch != "" && !strings.Contains(res.stdout+"\n", "refs/heads/"+branch+"\n") {
-		return ErrNoBranch
-	}
 	return nil
 }
-
-// ErrNoBranch: the repository's working branch doesn't exist on the remote.
-var ErrNoBranch = errors.New("that branch doesn't exist on the remote")
 
 var reGitHubUser = regexp.MustCompile(`Hi ([\w.-]+)! You've successfully authenticated`)
 

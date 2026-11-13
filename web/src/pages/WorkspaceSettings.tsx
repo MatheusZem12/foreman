@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderCog, FolderGit2, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FolderCog, FolderGit2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Avatar, Button, Empty, Field, Modal, PageHeader, SectionHeader, useToast, useConfirm } from '../components/ui';
 import { api } from '../lib/api';
@@ -60,7 +60,6 @@ export function WorkspaceSettings() {
                   <div className="font-medium">{r.name}</div>
                   {r.description && <div className="text-xs text-dim">{r.description}</div>}
                   <div className="truncate font-mono text-xs text-mute">{r.url.replace(/\/\/[^@/]+@/, '//***@')}</div>
-                  <div className="mt-1 flex items-center gap-1 text-xs text-mute"><GitBranch className="size-3" /> {r.workBranch ? t('works on {0}', r.workBranch) : t('works on the remote\'s default branch')}</div>
                 </div>
                 {canEditRepo && <button onClick={() => setEditing(r)} className="icon-btn"><Pencil className="size-4" /></button>}
                 {canDelRepo && <button
@@ -187,9 +186,6 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
             <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('E.g. Go API (orders, payments)')} />
           </Field>
         </div>
-        <Field label={t('Working branch')} hint={t('optional; new issues start from it and merge into it')}>
-          <input className="field-input font-mono text-xs" value={r.workBranch ?? ''} onChange={(e) => set({ workBranch: e.target.value })} placeholder={t('empty = the remote\'s default branch (e.g. main)')} />
-        </Field>
       </div>
     </Modal>
   );

@@ -45,7 +45,6 @@ export interface FileEntry { path: string; content: string }
 export interface Repo {
   id: string; workspaceId: string; name: string; url: string;
   description: string;
-  workBranch: string; // where its issues start and merge ('' = the remote's default)
 }
 export interface Skill { id: string; slug: string; name: string; description: string; content: string; files: FileEntry[]; always: boolean; workspaceIds: string[]; labelIds: string[]; updatedAt: string }
 export interface Agent {
