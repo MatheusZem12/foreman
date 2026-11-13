@@ -101,7 +101,7 @@ def git(*args, cwd=None):
 seq = {'n': 0}
 
 
-def new_remote(tag, default='main', branches=('hmg',)):
+def new_remote(tag, default='main', branches=('release',)):
     seq['n'] += 1
     name = f'{tag}{seq["n"]}'
     with tempfile.TemporaryDirectory() as d:
@@ -776,17 +776,17 @@ def other_default_branches_and_targets():
     settled(i['id'], ['done'], 15)
     check(show(remote, 'd.txt', 'develop') != '' and not has_ref(remote, 'refs/heads/main'), 'the merge lands on develop')
     j = issue(ws, 'H', '[[WRITE:h.txt]]', status='backlog')
-    ok(own('PUT', f'/issues/{j["id"]}/repos', {'all': False, 'repos': [{'repoId': ws['repos']['api']['id'], 'baseBranch': 'hmg', 'targetBranch': 'hmg'}]}))
+    ok(own('PUT', f'/issues/{j["id"]}/repos', {'all': False, 'repos': [{'repoId': ws['repos']['api']['id'], 'baseBranch': 'release', 'targetBranch': 'release'}]}))
     ok(own('POST', f'/issues/{j["id"]}/run', {}))
     settled(j['id'], ['in_review'])
     ok(own('POST', f'/issues/{j["id"]}/approve'))
     settled(j['id'], ['done'], 15)
-    check(show(remote, 'h.txt', 'hmg') != '' and show(remote, 'h.txt', 'develop') == '', 'a chosen branch: base and merge on hmg only')
+    check(show(remote, 'h.txt', 'release') != '' and show(remote, 'h.txt', 'develop') == '', 'a chosen branch: base and merge on release only')
     k = to_review(ws, 'T', '[[WRITE:t.txt]]')
     st, body = own('POST', f'/issues/{k["id"]}/merge', {'targets': {ws['repos']['api']['id']: 'nope'}})
     check(st == 400 and 'nope' in body['error'], 'a merge to a branch that does not exist is refused')
     br = ok(own('GET', f'/repos/{ws["repos"]["api"]["id"]}/branches'))
-    check('develop' in br and 'hmg' in br and not any(b.startswith('fm/') for b in br), f'the branch picker hides issue branches: {br}')
+    check('develop' in br and 'release' in br and not any(b.startswith('fm/') for b in br), f'the branch picker hides issue branches: {br}')
 
 
 @scenario
