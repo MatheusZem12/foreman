@@ -211,9 +211,9 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
   return (
     <Modal open wide onClose={onClose} title={r.id ? t('Edit {0}', repo.name) : t('Add repository')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="primary" loading={busy} disabled={!ready} onClick={save}>{t('Save')}</Button></>}>
       {/* Hints sit under the fields (not beside the label), so a long hint doesn't push
-          its field down and the fields of a row stay aligned. */}
-      <div className="grid gap-x-4 gap-y-5 sm:grid-cols-2">
-        <Field label={t('Git URL')} className="sm:col-span-2">
+          its field down: the URL and the working branch share a row and stay aligned. */}
+      <div className="grid items-start gap-x-4 gap-y-5 sm:grid-cols-[2fr_1fr]">
+        <Field label={t('Git URL')}>
           <div className="flex gap-2">
             <input autoFocus className="field-input h-9 coarse:h-10 min-w-0 flex-1 font-mono text-xs" value={r.url ?? ''}
               onChange={(e) => { set({ url: e.target.value }); setTestError(''); }}
@@ -226,9 +226,6 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
             ? <p className="text-xs text-red-400">{testError}</p>
             : <FieldHint>{tested ? t('connection OK: {0} branch(es)', remote!.branches.length) : t('SSH or HTTPS; test the connection to list the branches')}</FieldHint>}
         </Field>
-        <Field label={t('Name')}>
-          <input className="field-input h-9 coarse:h-10" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('e.g. api')} />
-        </Field>
         <Field label={t('Working branch')}>
           <select className="field-input h-9 coarse:h-10 py-0 font-mono text-xs" disabled={!tested} value={tested ? r.workBranch ?? '' : ''} onChange={(e) => set({ workBranch: e.target.value })}>
             <option value="" disabled>{tested ? t('Choose the branch…') : '—'}</option>
@@ -236,7 +233,12 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
           </select>
           <FieldHint>{tested ? t('new issues start from it and merge into it') : t('test the connection first')}</FieldHint>
         </Field>
-        <Field label={t('Description')} className="sm:col-span-2">
+      </div>
+      <div className="mt-5 grid items-start gap-x-4 gap-y-5 sm:grid-cols-[1fr_2fr]">
+        <Field label={t('Name')}>
+          <input className="field-input h-9 coarse:h-10" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('e.g. api')} />
+        </Field>
+        <Field label={t('Description')}>
           <input className="field-input h-9 coarse:h-10" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('E.g. Go API (orders, payments)')} />
           <FieldHint>{t('optional; helps the AI choose the repository')}</FieldHint>
         </Field>
