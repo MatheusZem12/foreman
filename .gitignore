@@ -7,3 +7,4 @@ server/internal/webui/dist/*
 data/
 bin/
 *.tsbuildinfo
+__pycache__/
