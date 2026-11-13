@@ -3,7 +3,8 @@
 if [[ "$1" == "--version" ]]; then echo "codex-cli 9.9.9 (fake)"; exit 0; fi
 if [[ "$1" == "debug" ]]; then echo '{"models":[]}'; exit 0; fi
 prompt=$(cat)
-idir="${FOREMAN_SUMMARY%/*}"
+# Debug copies outside the run's temporary folder (removed when the run ends).
+idir="/data/debug/$FOREMAN_ISSUE"; mkdir -p "$idir"
 printf '%s\n' "$@" > "$idir/last-args.txt"
 echo "$prompt" > "$idir/last-prompt.txt"
 echo '{"type":"thread.started","thread_id":"fake-thread"}'

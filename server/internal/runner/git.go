@@ -63,8 +63,7 @@ func redact(s string) string { return credInURL.ReplaceAllString(s, "${1}***@") 
 // only ever see this.
 func MaskURL(url string) string { return redact(url) }
 
-func (r *Runner) repoDir(repoID string) string      { return r.cfg.Path("repos", repoID+".git") }
-func (r *Runner) worktreeDir(issueID string) string { return r.cfg.Path("worktrees", issueID) }
+func (r *Runner) repoDir(repoID string) string { return r.cfg.Path("repos", repoID+".git") }
 
 // syncRepo garante o clone e atualiza as refs remotas.
 func (r *Runner) syncRepo(ctx context.Context, repoID, url string) (string, error) {
@@ -104,27 +103,28 @@ func refExists(ctx context.Context, dir, ref string) bool {
 	return runGit(ctx, dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}").ok
 }
 
-// ensureWorktree creates (or reuses) the issue's worktree. The branch's origin, in order:
-// existing local → existing remote (a previous run already published) → base.
-func (r *Runner) ensureWorktree(ctx context.Context, repoDir, wt, branch, base string) (created bool, err error) {
-	if _, err := os.Stat(filepath.Join(wt, ".git")); err == nil {
-		return false, nil
-	}
+// newWorktree checks the issue's branch out in a fresh worktree (in the run's temporary
+// folder). The branch's origin, in order: existing local → existing remote (a previous run
+// already published) → base. It says which one it was.
+func (r *Runner) newWorktree(ctx context.Context, repoDir, wt, branch, base string) (from string, err error) {
 	os.RemoveAll(wt)
 	runGit(ctx, repoDir, "worktree", "prune")
 	os.MkdirAll(filepath.Dir(wt), 0o755)
 	switch {
 	case refExists(ctx, repoDir, "refs/heads/"+branch):
+		from = "branch " + branch
 		_, err = mustGit(ctx, repoDir, "worktree", "add", wt, branch)
 	case refExists(ctx, repoDir, "refs/remotes/origin/"+branch):
+		from = "branch " + branch + " (remote)"
 		_, err = mustGit(ctx, repoDir, "worktree", "add", "-B", branch, wt, "origin/"+branch)
 	default:
 		if !refExists(ctx, repoDir, "refs/remotes/origin/"+base) {
-			return false, fmt.Errorf("base branch %q doesn't exist on the remote", base)
+			return "", fmt.Errorf("base branch %q doesn't exist on the remote", base)
 		}
+		from = "new branch " + branch + " from " + base
 		_, err = mustGit(ctx, repoDir, "worktree", "add", "--no-track", "-B", branch, wt, "origin/"+base)
 	}
-	return err == nil, err
+	return from, err
 }
 
 // syncRemoteBranch brings in what someone pushed to the issue's branch since the last run;
@@ -216,28 +216,7 @@ func pushBranch(ctx context.Context, dir, branch string) error {
 	return err
 }
 
-type Diff struct {
-	Stat      string `json:"stat"`
-	Patch     string `json:"patch"`
-	Pending   bool   `json:"pending"`
-	Available bool   `json:"available"`
-}
-
 const maxPatch = 2 << 20 // 2 MB: larger diffs are cut in the response
-
-func worktreeDiff(ctx context.Context, wt, base string) Diff {
-	ref := "origin/" + base
-	stat := runGit(ctx, wt, "diff", "--stat", ref+"...HEAD").stdout
-	patch := runGit(ctx, wt, "diff", ref+"...HEAD").stdout
-	pending := runGit(ctx, wt, "diff", "HEAD").stdout
-	if pending != "" {
-		patch += "\n" + pending
-	}
-	if len(patch) > maxPatch {
-		patch = patch[:maxPatch] + "\n… (diff truncated)"
-	}
-	return Diff{Stat: stat, Patch: patch, Pending: pending != "", Available: true}
-}
 
 func runCmd(ctx context.Context, bin string, args ...string) gitResult {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)

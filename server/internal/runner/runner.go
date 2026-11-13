@@ -80,7 +80,7 @@ func (r *Runner) Start(ctx context.Context) {
 	// An interrupted run (the server went down) counts as a failure: the rules decide the stage.
 	for _, it := range cut {
 		if is, err := r.st.Issue(ctx, it.IssueID); err == nil {
-			r.systemComment(ctx, is, nil, "Interrupted: the server restarted during the run. Ask again to continue; the work so far stays in the worktree.")
+			r.systemComment(ctx, is, nil, "Interrupted: the server restarted during the run. Ask again to continue; what was already committed stays on the issue's branch.")
 		}
 		r.st.Emit(ctx, store.Event{Kind: "run_finished", IssueID: it.IssueID, Outcome: "failed"})
 		// A stage step: the sequence waiting for it died with the server, and no "run
@@ -89,6 +89,7 @@ func (r *Runner) Start(ctx context.Context) {
 			r.st.Emit(ctx, store.Event{Kind: "rule_failed", IssueID: it.IssueID})
 		}
 	}
+	r.cleanLeftovers(ctx)
 	go r.refreshModelsLoop(ctx)
 	go func() {
 		for {
@@ -276,7 +277,46 @@ func (r *Runner) isCancelled(runID string) bool {
 // ---------- execution ----------
 
 func (r *Runner) skillDir(s store.Skill) string { return r.cfg.Path("skills", s.Slug) }
-func (r *Runner) issueDir(id string) string     { return r.cfg.Path("issues", id) }
+
+// tempDir creates a new folder under data/tmp. Everything an agent or a script touches
+// lives in one of these and is removed when it ends; continuity between requests comes
+// from the issue's README (in the database), the request history and the branch.
+func (r *Runner) tempDir(prefix string) (string, error) {
+	base := r.cfg.Path("tmp")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return "", err
+	}
+	return os.MkdirTemp(base, prefix)
+}
+
+// dropRunDir removes a run's temporary folder: its worktrees leave the clones' records and
+// the folder goes away. The commits stay in the issue's branch (local and pushed).
+func (r *Runner) dropRunDir(works []*repoWork, root string) {
+	ctx := context.Background()
+	for _, w := range works {
+		if w == nil {
+			continue
+		}
+		unlock := r.lockRepo(w.ID)
+		removeWorktree(ctx, r.repoDir(w.ID), w.wt)
+		unlock()
+	}
+	os.RemoveAll(root)
+}
+
+// cleanLeftovers removes what an earlier server left on disk: temporary folders of runs
+// cut short by a restart and the old per-issue worktrees and folders. The work in them was
+// already committed to the issue's branch at the end of each run.
+func (r *Runner) cleanLeftovers(ctx context.Context) {
+	tmp, _ := filepath.Glob(r.cfg.Path("tmp", "*"))
+	for _, d := range append(tmp, r.cfg.Path("worktrees"), r.cfg.Path("issues")) {
+		os.RemoveAll(d)
+	}
+	repos, _ := filepath.Glob(r.cfg.Path("repos", "*.git"))
+	for _, d := range repos {
+		runGit(ctx, d, "worktree", "prune")
+	}
+}
 
 // Materializes the database skills on disk for the agent to read (and run scripts).
 func (r *Runner) materializeSkills(skills []store.Skill) {
@@ -614,10 +654,11 @@ func slugs(scope []store.RepoScope) []string {
 	return out
 }
 
-// prepare updates the clones and ensures one worktree per repository, in parallel
-// (the fetch is what takes longest). Clones are shared between issues, so a new
-// worktree only costs the checkout.
-func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue) ([]*repoWork, error) {
+// prepare updates the clones and creates, inside the run's temporary folder (root), a fresh
+// worktree of the issue's branch per repository, in parallel (the fetch is what takes
+// longest). Clones are shared between issues, so a worktree only costs the checkout. The
+// works come back even on error, so the caller can remove what was created.
+func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue, root string) ([]*repoWork, error) {
 	r.st.SyncIssueRepos(ctx, issue.ID)
 	scope, err := r.st.IssueRepos(ctx, issue.ID)
 	if err != nil {
@@ -625,11 +666,6 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 	}
 	if len(scope) == 0 {
 		return nil, errors.New("the workspace has no repository: add one under Workspace")
-	}
-	root := r.worktreeDir(issue.ID)
-	// Old layout (one worktree straight in the issue's folder): recreate it in the new one.
-	if fileExists(filepath.Join(root, ".git")) {
-		os.RemoveAll(root)
 	}
 	names := slugs(scope)
 	works := make([]*repoWork, len(scope))
@@ -649,7 +685,12 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				return
 			}
 			if w.IssueRepo.BaseBranch == "" || w.IssueRepo.TargetBranch == "" {
-				def, err := defaultBranch(ctx, repoDir)
+				// The repository's working branch (picked from the remote's branches); without
+				// one, the remote's default.
+				def, err := w.WorkBranch, error(nil)
+				if def == "" {
+					def, err = defaultBranch(ctx, repoDir)
+				}
 				if err != nil && w.IssueRepo.BaseBranch == "" {
 					errs[i] = fmt.Errorf("%s: %w", w.Name, err)
 					return
@@ -662,7 +703,7 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				}
 				r.st.SetRepoBranches(ctx, issue.ID, w.ID, w.IssueRepo.BaseBranch, w.IssueRepo.TargetBranch)
 			}
-			created, err := r.ensureWorktree(ctx, repoDir, w.wt, issue.Branch, w.base())
+			from, err := r.newWorktree(ctx, repoDir, w.wt, issue.Branch, w.base())
 			if err != nil {
 				errs[i] = fmt.Errorf("%s: %w", w.Name, err)
 				return
@@ -671,16 +712,11 @@ func (r *Runner) prepare(ctx context.Context, run *store.Run, issue *store.Issue
 				errs[i] = fmt.Errorf("%s: %w", w.Name, err)
 				return
 			}
-			if created {
-				r.logEvent(ctx, run, "info", fmt.Sprintf("%s/ → branch %s from %s", w.slug, issue.Branch, w.base()))
-			}
+			r.logEvent(ctx, run, "info", fmt.Sprintf("%s/ → %s", w.slug, from))
 		}(i)
 	}
 	wg.Wait()
-	if err := errors.Join(errs...); err != nil {
-		return nil, err
-	}
-	return works, nil
+	return works, errors.Join(errs...)
 }
 
 func (r *Runner) execute(ctx context.Context, run *store.Run) {
@@ -744,8 +780,16 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		requester, _ = r.st.UserByID(ctx, *run.CreatedBy)
 	}
 
-	r.logEvent(ctx, run, "info", "Preparing the repositories")
-	if works, err = r.prepare(ctx, run, issue); err != nil {
+	// Every request starts in a new temporary folder (fresh worktrees + the issue's files),
+	// removed when the run ends.
+	root, err := r.tempDir("run-")
+	if err != nil {
+		res.Error = err.Error()
+		return
+	}
+	defer func() { r.dropRunDir(works, root) }()
+	r.logEvent(ctx, run, "info", "Preparing the repositories in a temporary folder")
+	if works, err = r.prepare(ctx, run, issue, root); err != nil {
 		res.Error = err.Error()
 		return
 	}
@@ -798,7 +842,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		return
 	}
 	r.materializeSkills(skills)
-	idir := r.issueDir(issue.ID)
+	idir := filepath.Join(root, ".foreman")
 	os.MkdirAll(idir, 0o755)
 	summaryPath := filepath.Join(idir, "README.md")
 	os.WriteFile(summaryPath, []byte(issue.Summary), 0o644)
@@ -811,7 +855,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 		history = runHistory(past, run.ID)
 	}
 
-	cwd := r.worktreeDir(issue.ID)
+	cwd := root
 	if len(works) == 1 {
 		cwd = works[0].wt
 	}
@@ -830,7 +874,7 @@ func (r *Runner) execute(ctx context.Context, run *store.Run) {
 	r.logEvent(ctx, run, "prompt", "<!-- system -->\n"+system+"\n\n<!-- prompt -->\n"+prompt)
 	addDirs := []string{idir}
 	if len(works) == 1 {
-		addDirs = append(addDirs, r.worktreeDir(issue.ID))
+		addDirs = append(addDirs, root)
 	}
 	for _, s := range skills {
 		addDirs = append(addDirs, r.skillDir(s))

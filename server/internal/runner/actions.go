@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"syscall"
@@ -19,21 +20,6 @@ import (
 
 func (r *Runner) SystemComment(ctx context.Context, issue *store.Issue, body string) {
 	r.systemComment(ctx, issue, nil, body)
-}
-
-// IssueFolder is the issue's working folder (worktrees) or, if it doesn't exist
-// yet, its data folder.
-func (r *Runner) IssueFolder(issueID string) string {
-	if fileExists(r.worktreeDir(issueID)) {
-		return r.worktreeDir(issueID)
-	}
-	d := r.issueDir(issueID)
-	os.MkdirAll(d, 0o755)
-	return d
-}
-
-func (r *Runner) ReadmePath(issueID string) string {
-	return r.issueDir(issueID) + "/README.md"
 }
 
 var reGitHub = regexp.MustCompile(`github\.com[:/]([^/]+)/([^/]+?)(\.git)?/?$`)
@@ -102,19 +88,27 @@ func lastLine(s string) string {
 	return strings.TrimSpace(l[len(l)-1])
 }
 
-// RunScript runs a rule's script in the issue's folder, with a timeout.
+// RunScript runs a rule's script in a temporary folder of its own, with a timeout; the
+// folder (with the issue's README.md in $FOREMAN_README) is removed when it ends.
 // Returns the last lines of the output.
-func (r *Runner) RunScript(ctx context.Context, issueID, script string, env []string) (string, error) {
+func (r *Runner) RunScript(ctx context.Context, issue *store.Issue, script string, env []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
+	dir, err := r.tempDir("script-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(dir)
+	readme := filepath.Join(dir, "README.md")
+	os.WriteFile(readme, []byte(issue.Summary), 0o644)
 	cmd := exec.CommandContext(ctx, "bash", "-lc", script)
-	cmd.Dir = r.IssueFolder(issueID)
-	cmd.Env = append(agentEnv(r.cacheEnv()...), env...)
+	cmd.Dir = dir
+	cmd.Env = append(append(agentEnv(r.cacheEnv()...), env...), "FOREMAN_README="+readme)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	err := cmd.Run()
+	err = cmd.Run()
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if len(lines) > 20 {
 		lines = lines[len(lines)-20:]

@@ -16,7 +16,8 @@ if [[ "$1" == "--version" ]]; then echo "9.9.9 (fake)"; exit 0; fi
 [[ "$1" == "-p" ]] || exit 0   # e.g. the model catalog asking for --help
 prompt=$(cat)
 p() { if [[ -d "$1" ]]; then echo "$1/"; else echo ""; fi; }   # multi: subfolder; single: cwd
-idir="${FOREMAN_SUMMARY%/*}"
+# Debug copies outside the run's temporary folder (removed when the run ends).
+idir="/data/debug/$FOREMAN_ISSUE"; mkdir -p "$idir"
 printf '%s\n' "$@" > "$idir/last-args.txt"
 echo "$prompt" > "$idir/last-prompt.txt"
 env | grep -E '^(DATABASE_URL|FOREMAN_|XDG_CACHE_HOME|GOCACHE)' > "$idir/last-env.txt" || true

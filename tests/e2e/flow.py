@@ -155,14 +155,14 @@ def make_user(name, role_id, workspaces=()):
     return ok(own('POST', '/users', {'name': name, 'email': f'{name}@x.com', 'password': 'password1234', 'roleId': role_id, 'workspaceIds': list(workspaces)}))
 
 
-def workspace(name, repos=('api',), default='main', members=('mem',)):
+def workspace(name, repos=('api',), default='main', members=('mem',), work=None):
     seq['n'] += 1
     w = ok(own('POST', '/workspaces', {'name': f'{name} {seq["n"]}', 'key': f'F{seq["n"]}'}))
     w['remotes'], w['repos'] = {}, {}
     for r in repos:
         remote = new_remote(r, default)
         w['remotes'][r] = remote
-        w['repos'][r] = ok(own('POST', f'/workspaces/{w["id"]}/repos', {'url': f'file:///remote/{remote}.git', 'name': r, 'description': f'the {r} repository'}))
+        w['repos'][r] = ok(own('POST', f'/workspaces/{w["id"]}/repos', {'url': f'file:///remote/{remote}.git', 'name': r, 'description': f'the {r} repository', 'workBranch': work or default}))
     for m in members:
         ok(own('PUT', f'/workspaces/{w["id"]}/members/{U[m]["id"]}'))
     return w
@@ -230,8 +230,14 @@ def has_comment(iid, text):
     return any(text in c for c in comments(iid))
 
 
+def dbg(iid):
+    """Where the simulated agent keeps a copy of its last args, prompt and env."""
+    ref = psql(f"select w.key || '-' || i.number from issues i join workspaces w on w.id = i.workspace_id where i.id = '{iid}'")
+    return f'/data/debug/{ref}'
+
+
 def run_args(iid):
-    return sh(f'cat /data/issues/{iid}/last-args.txt')
+    return sh(f'cat {dbg(iid)}/last-args.txt')
 
 
 SCENARIOS = []
@@ -291,7 +297,7 @@ def flow_complete_default_path():
     check(show(remote, 'discount.txt') != '' and not has_ref(remote, br), 'main received it and the branch was removed from the remote')
     d = detail(i['id'])
     check(d['issue']['closed'] == 'done' and d['issue']['doneAt'], 'Done closes the issue as resolved')
-    check(sh(f'ls /data/worktrees/{i["id"]} 2>/dev/null') == '', 'the worktree was removed after the merge')
+    check(sh('ls /data/tmp 2>/dev/null') == '', 'no temporary folder is left after the runs and the merge')
     log = psql(f"select string_agg(stage, ',' order by id) from issue_stage_log where issue_id='{i['id']}'")
     check(log == 'todo,in_progress,in_review,done', 'stage history: ' + log)
     an = ok(own('GET', f'/workspaces/{ws["id"]}/analytics?days=1&person=all'))
@@ -333,7 +339,7 @@ def flow_agent_outcomes():
     check(w['runs'][-1]['outcomeNote'] == 'which color?' and any('which color?' in c['body'] for c in w['comments']), 'waiting: the question becomes a comment and goes to Waiting')
     ok(own('POST', f'/issues/{w["issue"]["id"]}/comments', {'body': 'blue [[WRITE:color.txt]]', 'sendToAgent': True}))
     d = settled(w['issue']['id'], ['in_review'])
-    check('blue' in sh(f'cat /data/issues/{w["issue"]["id"]}/last-prompt.txt') and 'which color?' in sh(f'cat /data/issues/{w["issue"]["id"]}/last-prompt.txt'), 'the reply goes in the prompt with the history of the question')
+    check('blue' in sh(f'cat {dbg(w["issue"]["id"])}/last-prompt.txt') and 'which color?' in sh(f'cat {dbg(w["issue"]["id"])}/last-prompt.txt'), 'the reply goes in the prompt with the history of the question')
     check(d['runs'][-1]['kind'] == 'followup', 'a reply is an adjustment on the same issue')
 
     inc = settled(issue(ws, 'I', '[[STATUS:incomplete: no access to the API]]')['id'], ['waiting'])
@@ -375,7 +381,7 @@ def flow_codex_runtime():
     args = run_args(i['id'])
     check('-m\no4-test' in args and 'model_reasoning_effort="high"' in args, 'Codex receives model and effort')
     check(args.endswith('-') and 'exec' in args and '--json' in args, 'Codex reads the prompt from stdin in JSON mode')
-    check('Follow the house style' in sh(f'cat /data/issues/{i["id"]}/last-prompt.txt'), "Codex has no system prompt: the instructions go at the start")
+    check('Follow the house style' in sh(f'cat {dbg(i["id"])}/last-prompt.txt'), "Codex has no system prompt: the instructions go at the start")
     f = settled(issue(ws, 'Codex fail', '[[CODEX_FAIL]]', agent=False, agentId=CX['id'])['id'], ['blocked'])
     check(f['runs'][-1]['status'] == 'failed', 'a Codex failure goes to Blocked')
 
@@ -401,7 +407,7 @@ def flow_agent_configuration_reaches_the_cli():
     check('deploy body' in sh(f'cat /data/skills/{sk["slug"]}/SKILL.md'), 'the whole skill is on disk')
     check(sh(f'test -x /data/skills/{sk["slug"]}/run.sh && echo yes') == 'yes', 'scripts with a shebang are executable')
     check(sh('find /data -maxdepth 2 -name escape.txt; ls /escape.txt 2>/dev/null') == '', 'a skill file path cannot escape its folder')
-    env = sh(f'cat /data/issues/{i["id"]}/last-env.txt')
+    env = sh(f'cat {dbg(i["id"])}/last-env.txt')
     check('DATABASE_URL' not in env, "the database URL does not reach the agent's environment")
     check('FOREMAN_ISSUE=' + ws['key'] in env and 'GOCACHE=/data/cache' in env, 'the agent gets FOREMAN_* and the package cache')
     ok(own('DELETE', f'/skills/{sk_all["id"]}'))
@@ -413,7 +419,7 @@ def flow_multi_repo_scope():
     i = settled(issue(ws, 'Both', '[[WRITE:api/a.txt]][[WRITE:web/w.txt]]')['id'], ['in_review'])
     rep = {r['name']: r for r in i['issue']['repos']}
     check(rep['api']['changed'] and rep['web']['changed'], 'the agent changed both repositories')
-    prompt = sh(f'cat /data/issues/{i["issue"]["id"]}/last-prompt.txt')
+    prompt = sh(f'cat {dbg(i["issue"]["id"])}/last-prompt.txt')
     check('the api repository' in prompt and 'the web repository' in prompt, 'the prompt has the repository map')
     one = settled(issue(ws, 'One', '[[WRITE:web/only.txt]]')['id'], ['in_review'])
     rep = {r['name']: r for r in one['issue']['repos']}
@@ -421,7 +427,7 @@ def flow_multi_repo_scope():
     check(not has_ref(ws['remotes']['api'], one['issue']['branch']), 'the untouched repository got no branch')
     ok(own('POST', f'/issues/{one["issue"]["id"]}/approve'))
     settled(one['issue']['id'], ['done'])
-    check(sh(f'ls /data/worktrees/{one["issue"]["id"]} 2>/dev/null') == '', 'after the merge no worktree is left, not even of the untouched one')
+    check(sh('ls /data/tmp 2>/dev/null') == '', 'after the merge no temporary folder is left, not even of the untouched repository')
 
 
 # ======================================================================
@@ -435,9 +441,12 @@ def queue_respects_the_parallel_limit():
     peak = 0
     end = time.time() + 40
     while time.time() < end:
-        states = [r['status'] for x in ids for r in detail(x)['runs']]
-        peak = max(peak, states.count('running'))
-        if states.count('succeeded') == 6:
+        # One query, so the count is a single moment (reading issue by issue, a run that ends and
+        # the next one that starts in between would both look running).
+        idl = ','.join(f"'{x}'" for x in ids)
+        running, done = map(int, psql(f"select count(*) filter (where status = 'running'), count(*) filter (where status = 'succeeded') from runs where issue_id in ({idl})").split('|'))
+        peak = max(peak, running)
+        if done == 6:
             break
         time.sleep(0.2)
     check(peak == 3, f'at most FOREMAN_MAX_PARALLEL running at once (peak {peak})')
@@ -499,7 +508,7 @@ def deleting_a_running_issue():
     ok(own('DELETE', f'/issues/{i["id"]}'))
     check(wait_until(lambda: 'sleep 3103' not in dc('top', 'foreman').stdout, 15), 'deleting kills the agent')
     check(own('GET', f'/issues/{i["id"]}')[0] == 404 and healthy(), 'the issue is gone and the server is fine')
-    check(sh(f'ls /data/worktrees/{i["id"]} 2>/dev/null') == '' or wait_until(lambda: sh(f'ls /data/worktrees/{i["id"]} 2>/dev/null') == '', 10), 'its worktree is gone')
+    check(wait_until(lambda: sh('ls /data/tmp 2>/dev/null') == '', 10), "the run's temporary folder is gone")
 
 
 @scenario
@@ -790,6 +799,33 @@ def other_default_branches_and_targets():
 
 
 @scenario
+def working_branch_is_picked_from_the_remote():
+    ws = workspace('Pick', repos=())
+    remote = new_remote('pick', 'main', branches=('release', 'dev'))
+    url = f'file:///remote/{remote}.git'
+    got = ok(own('POST', f'/workspaces/{ws["id"]}/repos/check', {'url': url}))
+    check(got['branches'] == ['dev', 'main', 'release'] and got['default'] == 'main', f'the connection test lists the remote branches and its default: {got}')
+    st, body = own('POST', f'/workspaces/{ws["id"]}/repos/check', {'url': 'file:///remote/nothing-here.git'})
+    check(st == 400 and 'not a git repository' in body['error'], 'the connection test refuses a URL that is not a reachable repository')
+    st, body = login('mem@x.com')('POST', f'/workspaces/{ws["id"]}/repos/check', {'url': url})
+    check(st == 403, 'whoever cannot add or edit repositories cannot test URLs')
+    st, body = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app'})
+    check(st == 400 and 'working branch' in body['error'], 'a repository without a working branch is refused: ' + body.get('error', '')[:60])
+    st, body = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app', 'workBranch': 'typed-by-hand'})
+    check(st == 400 and 'typed-by-hand' in body['error'], 'a branch that does not exist on the remote is refused')
+    repo = ok(own('POST', f'/workspaces/{ws["id"]}/repos', {'url': url, 'name': 'app', 'workBranch': 'dev'}))
+    check(repo['workBranch'] == 'dev', 'the picked branch is saved')
+    i = to_review(ws, 'P', '[[WRITE:p.txt]]')
+    r = i['repos'][0]
+    check(r['baseBranch'] == 'dev' and r['targetBranch'] == 'dev', f"the issue starts from the working branch, not the remote's default: {r['baseBranch']}/{r['targetBranch']}")
+    ok(own('POST', f'/issues/{i["id"]}/approve'))
+    settled(i['id'], ['done'], 15)
+    check(show(remote, 'p.txt', 'dev') != '' and show(remote, 'p.txt', 'main') == '', 'the merge lands on the working branch and main stays untouched')
+    st, _ = own('PUT', f'/repos/{repo["id"]}', {'url': repo['url'], 'name': 'app', 'workBranch': 'gone'})
+    check(st == 400 and psql(f"select work_branch from repos where id = '{repo['id']}'") == 'dev', 'editing to a branch that does not exist is refused and keeps the old one')
+
+
+@scenario
 def protected_target_branch():
     # A real server (protected branch): the push is refused and nothing can be lost.
     ws = workspace('Protected')
@@ -844,14 +880,19 @@ def human_commits_on_the_issue_branch_survive():
 
 
 @scenario
-def manual_edits_in_the_worktree_are_kept():
-    ws = workspace('Hand')
+def every_request_gets_a_new_temporary_folder():
+    ws = workspace('Temp')
     remote = ws['remotes']['api']
-    i = to_review(ws, 'H', '[[WRITE:a.txt]]')
-    sh(f'echo by-hand > /data/worktrees/{i["id"]}/api/hand.txt')
-    ok(own('POST', f'/issues/{i["id"]}/approve'))
-    settled(i['id'], ['done'], 15)
-    check(show(remote, 'hand.txt') == 'by-hand', 'a file edited by hand in the worktree goes in the merge')
+    i = to_review(ws, 'T', '[[WRITE:a.txt]]')
+    check(sh('find /data/tmp /data/worktrees /data/issues -mindepth 1 2>/dev/null') == '', 'the run left no folder behind (no worktree, no issue folder)')
+    ok(own('POST', f'/issues/{i["id"]}/comments', {'body': 'more [[WRITE:b.txt]]', 'sendToAgent': True}))
+    d = settled(i['id'], ['in_review'], 20)
+    br = d['issue']['branch']
+    check(show(remote, 'a.txt', br) != '' and show(remote, 'b.txt', br) != '', 'the second request starts from the branch, with the first one\'s work')
+    prompts = [e['body'] for r in d['runs'] for e in ok(own('GET', f'/runs/{r["id"]}/events')) if e['kind'] == 'prompt']
+    roots = {l.split('`')[1] for p in prompts for l in p.splitlines() if 'isolated git worktree' in l}
+    check(len(roots) == 2 and all(r.startswith('/data/tmp/run-') for r in roots), f'each request ran in its own temporary folder: {roots}')
+    check(sh('ls /data/tmp 2>/dev/null') == '', 'and both were removed')
 
 
 @scenario
@@ -861,10 +902,10 @@ def repository_problems():
     with tempfile.TemporaryDirectory() as d:
         git('init', '-q', '--bare', '-b', 'main', f'{d}/e.git')
         subprocess.run(['cp', '-r', f'{d}/e.git', f'{REM}/empty-real.git'])
-    r = ok(own('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/empty-real.git', 'name': 'empty'}))
-    d = settled(issue(ws, 'Empty', 'x')['id'], ['blocked'], 15)
-    check(any('empty' in c['body'].lower() or 'no commit' in c['body'].lower() for c in d['comments']), 'an empty remote fails and says it is empty: ' + str([c['body'][:80] for c in d['comments']][-1:]))
-    ok(own('DELETE', f'/repos/{r["id"]}'))
+    st, body = own('POST', f'/workspaces/{ws["id"]}/repos/check', {'url': 'file:///remote/empty-real.git'})
+    check(st == 400 and 'empty' in body['error'], 'an empty remote has no branch to pick and says it is empty: ' + body.get('error', '')[:80])
+    st, _ = own('POST', f'/workspaces/{ws["id"]}/repos', {'url': 'file:///remote/empty-real.git', 'name': 'empty', 'workBranch': 'main'})
+    check(st == 400, 'and it cannot be saved')
 
     gone = workspace('Gone')
     i = to_review(gone, 'G', '[[WRITE:a.txt]]')
@@ -873,11 +914,10 @@ def repository_problems():
     d = settled(i['id'], ['blocked'], 15)
     check(d['runs'][-1]['status'] == 'failed', 'a remote that vanished fails the run, it does not hang')
     subprocess.run(['mv', f'{REM}/moved.git', f'{REM}/{gone["remotes"]["api"]}.git'])
-    sh(f'rm -rf /data/worktrees/{i["id"]}')
     ok(own('POST', f'/issues/{i["id"]}/comments', {'body': 'again [[WRITE:b.txt]]', 'sendToAgent': True}))
     d = settled(i['id'], ['in_review', 'blocked'], 20)
     br = d['issue']['branch']
-    check(d['issue']['status'] == 'in_review' and show(gone['remotes']['api'], 'a.txt', br) != '', 'a lost worktree is recreated with the branch work intact')
+    check(d['issue']['status'] == 'in_review' and show(gone['remotes']['api'], 'a.txt', br) != '', 'the next request starts again from the branch, with the work intact')
 
 
 # ======================================================================

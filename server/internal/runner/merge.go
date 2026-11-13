@@ -70,7 +70,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		if target == "" {
 			target = sc.IssueRepo.TargetBranch
 		}
-		w := &repoWork{RepoScope: sc, slug: names[i], wt: filepath.Join(r.worktreeDir(issue.ID), names[i])}
+		w := &repoWork{RepoScope: sc, slug: names[i]}
 		todo = append(todo, &pendingMerge{w: w, target: target, res: RepoMerge{RepoID: sc.ID, Name: sc.Name, Target: target}})
 	}
 	if len(todo) == 0 {
@@ -113,12 +113,6 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		if !refExists(ctx, p.repoDir, "refs/remotes/origin/"+p.target) {
 			return nil, fmt.Errorf("%s: target branch %q doesn't exist on the remote", w.Name, p.target)
 		}
-		// Pending changes made by hand in the worktree go in before the merge.
-		if fileExists(w.wt) {
-			if _, err := commitAll(ctx, w.wt, ref+": manual changes made in the worktree", "Foreman"); err != nil {
-				return nil, fmt.Errorf("%s: %w", w.Name, err)
-			}
-		}
 		source := issue.Branch
 		if !refExists(ctx, p.repoDir, "refs/heads/"+source) {
 			source = "origin/" + issue.Branch
@@ -155,7 +149,7 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		}
 		r.st.Emit(ctx, store.Event{Kind: "merge_conflict", IssueID: issue.ID})
 		r.systemComment(ctx, issue, nil, "Merge conflict; nothing was published.\n"+strings.Join(lines, "\n")+
-			"\n\nUse **Resolve conflict with AI** or resolve it in the worktree.")
+			"\n\nUse **Resolve conflict with AI** or resolve it on the issue's branch.")
 		r.PublishIssue(ctx, issue.ID)
 		return out, nil
 	}
@@ -169,7 +163,6 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 		}
 		p.res.SHA, _ = mustGit(ctx, p.tmp, "rev-parse", "--short", "HEAD")
 		r.st.SetRepoMerged(ctx, issue.ID, p.w.ID, p.target, p.res.SHA)
-		removeWorktree(ctx, p.repoDir, p.w.wt)
 		runGit(ctx, p.repoDir, "branch", "-D", issue.Branch)
 		runGit(ctx, p.repoDir, "push", "origin", "--delete", issue.Branch)
 		done = append(done, fmt.Sprintf("**%s** → `%s` (%s)", p.w.Name, p.target, p.res.SHA))
@@ -186,12 +179,11 @@ func (r *Runner) Merge(ctx context.Context, issue *store.Issue, targets map[stri
 	return out, nil
 }
 
-// cleanupUnchanged removes worktrees and local branches of the repositories the AI
-// didn't change (they have nothing to publish).
+// cleanupUnchanged removes the local branches of the repositories the AI didn't change
+// (they have nothing to publish).
 func (r *Runner) cleanupUnchanged(ctx context.Context, issue *store.Issue) {
 	scope, _ := r.st.IssueRepos(ctx, issue.ID)
-	names := slugs(scope)
-	for i, sc := range scope {
+	for _, sc := range scope {
 		if sc.IssueRepo.Changed && sc.IssueRepo.MergedInto == "" {
 			continue
 		}
@@ -200,27 +192,24 @@ func (r *Runner) cleanupUnchanged(ctx context.Context, issue *store.Issue) {
 			continue
 		}
 		unlock := r.lockRepo(sc.ID)
-		removeWorktree(ctx, repoDir, filepath.Join(r.worktreeDir(issue.ID), names[i]))
 		runGit(ctx, repoDir, "branch", "-D", issue.Branch)
 		unlock()
 	}
-	os.RemoveAll(r.worktreeDir(issue.ID))
 }
 
-// Discard cancels whatever is running and deletes the issue's worktrees and branches.
+// Discard cancels whatever is running and deletes the issue's branches (the run's own
+// temporary folder goes away when it ends).
 func (r *Runner) Discard(ctx context.Context, issue *store.Issue) error {
 	if run, err := r.st.ActiveRun(ctx, issue.ID); err == nil {
 		r.Cancel(ctx, run.ID)
 	}
 	scope, _ := r.st.IssueRepos(ctx, issue.ID)
-	names := slugs(scope)
-	for i, sc := range scope {
+	for _, sc := range scope {
 		repoDir := r.repoDir(sc.ID)
 		if !fileExists(repoDir) || sc.IssueRepo.MergedInto != "" {
 			continue
 		}
 		unlock := r.lockRepo(sc.ID)
-		removeWorktree(ctx, repoDir, filepath.Join(r.worktreeDir(issue.ID), names[i]))
 		runGit(ctx, repoDir, "branch", "-D", issue.Branch)
 		if sc.IssueRepo.Changed {
 			runGit(ctx, repoDir, "push", "origin", "--delete", issue.Branch)
@@ -228,23 +217,15 @@ func (r *Runner) Discard(ctx context.Context, issue *store.Issue) error {
 		r.st.SetRepoChanged(ctx, issue.ID, sc.ID, false)
 		unlock()
 	}
-	os.RemoveAll(r.worktreeDir(issue.ID))
-	os.RemoveAll(r.issueDir(issue.ID))
 	return nil
 }
 
-// PurgeWorkspace stops the workspace's agents and frees its disk (clones, worktrees, issue
-// folders), right before the workspace is deleted.
+// PurgeWorkspace stops the workspace's agents and frees its disk (clones), right before the
+// workspace is deleted. The runs' temporary folders go away as each one ends.
 func (r *Runner) PurgeWorkspace(ctx context.Context, wsID string) {
 	if ids, err := r.st.ActiveRunIDs(ctx, wsID); err == nil {
 		for _, id := range ids {
 			r.Cancel(ctx, id)
-		}
-	}
-	if ids, err := r.st.WorkspaceIssueIDs(ctx, wsID); err == nil {
-		for _, id := range ids {
-			os.RemoveAll(r.worktreeDir(id))
-			os.RemoveAll(r.issueDir(id))
 		}
 	}
 	if repos, err := r.st.ListRepos(ctx, wsID); err == nil {
@@ -277,20 +258,21 @@ type RepoDiff struct {
 	Merged  string `json:"merged"`
 }
 
-// Diff per repository (only the ones with changes).
+// Diff per repository (only the ones with changes), from the issue's branch in the clone:
+// the local one (it has the commits even when the push failed) or else the remote one.
 func (r *Runner) Diff(ctx context.Context, issue *store.Issue) []RepoDiff {
 	scope, _ := r.st.IssueRepos(ctx, issue.ID)
-	names := slugs(scope)
 	out := []RepoDiff{}
-	for i, sc := range scope {
+	for _, sc := range scope {
 		base := sc.IssueRepo.BaseBranch
 		d := RepoDiff{RepoID: sc.ID, Name: sc.Name, Merged: sc.IssueRepo.MergedInto}
-		wt := filepath.Join(r.worktreeDir(issue.ID), names[i])
-		if fileExists(wt) {
-			wd := worktreeDiff(ctx, wt, base)
-			d.Stat, d.Patch, d.Pending = wd.Stat, wd.Patch, wd.Pending
-		} else if repoDir := r.repoDir(sc.ID); fileExists(repoDir) && refExists(ctx, repoDir, "refs/remotes/origin/"+issue.Branch) {
-			rng := "origin/" + base + "...origin/" + issue.Branch
+		repoDir := r.repoDir(sc.ID)
+		head := issue.Branch
+		if fileExists(repoDir) && !refExists(ctx, repoDir, "refs/heads/"+head) {
+			head = "origin/" + issue.Branch
+		}
+		if fileExists(repoDir) && refExists(ctx, repoDir, head) {
+			rng := "origin/" + base + "..." + head
 			d.Stat = runGit(ctx, repoDir, "diff", "--stat", rng).stdout
 			d.Patch = runGit(ctx, repoDir, "diff", rng).stdout
 			if len(d.Patch) > maxPatch {
@@ -322,21 +304,50 @@ func (r *Runner) Branches(ctx context.Context, repo *store.Repo) ([]string, erro
 	return list, nil
 }
 
-// CheckRemote confirms the URL is a git repository reachable with the server's
-// credentials (git ls-remote, without cloning).
-func (r *Runner) CheckRemote(ctx context.Context, url string) error {
+// RemoteBranches checks that the URL is a git repository reachable with the server's
+// credentials (git ls-remote, without cloning) and lists its branches, plus the remote's
+// default one (its HEAD).
+func (r *Runner) RemoteBranches(ctx context.Context, url string) (branches []string, def string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	res := runGit(ctx, os.TempDir(), "ls-remote", "--heads", "--", url)
+	res := runGit(ctx, os.TempDir(), "ls-remote", "--symref", "--", url)
 	if !res.ok {
 		msg := redact(firstNonEmpty(res.stderr, res.stdout))
 		if ctx.Err() != nil {
 			msg = "timed out (did the server ask for a password? set up SSH or a token)"
 		}
-		return errors.New(msg)
+		return nil, "", errors.New(msg)
+	}
+	for _, l := range lines(res.stdout) {
+		if rest, ok := strings.CutPrefix(l, "ref: refs/heads/"); ok {
+			def = strings.Fields(rest)[0]
+			continue
+		}
+		if f := strings.Fields(l); len(f) == 2 {
+			if b, ok := strings.CutPrefix(f[1], "refs/heads/"); ok {
+				branches = append(branches, b)
+			}
+		}
+	}
+	slices.Sort(branches)
+	return branches, def, nil
+}
+
+// CheckRemote confirms the URL is a git repository reachable with the server's
+// credentials. branch, when given, must exist there.
+func (r *Runner) CheckRemote(ctx context.Context, url, branch string) error {
+	branches, _, err := r.RemoteBranches(ctx, url)
+	if err != nil {
+		return err
+	}
+	if branch != "" && !slices.Contains(branches, branch) {
+		return ErrNoBranch
 	}
 	return nil
 }
+
+// ErrNoBranch: the repository's working branch doesn't exist on the remote.
+var ErrNoBranch = errors.New("that branch doesn't exist on the remote")
 
 var reGitHubUser = regexp.MustCompile(`Hi ([\w.-]+)! You've successfully authenticated`)
 

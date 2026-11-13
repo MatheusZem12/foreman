@@ -4,7 +4,7 @@ A self-hosted issue tracker whose issues are carried out by coding agents (Claud
 
 **To do → In progress → In review → merge**
 
-Each run works in an isolated worktree on the server, on its own branch `fm/<key>-<n>-<slug>`. The result is pushed to the remote. The merge lands on the branch you choose.
+Each run works in a temporary folder on the server (fresh worktrees of its own branch `fm/<key>-<n>-<slug>`), removed when the run ends. The result is pushed to the remote. The merge lands on the branch you choose.
 
 The idea is little configuration and more function. There are only three things to configure: **agents**, **skills** and each workspace's **repositories**. Who may configure them is set by role. Everything else is creating, ordering and following issues, in the browser, on a tablet or on a phone.
 
@@ -20,20 +20,20 @@ Open `http://localhost:8700`. The first time, the script builds the front end (n
 
 - `./run-local.sh --build`: forces a rebuild.
 - `./run-local.sh --stop`: stops Postgres.
-- Data lives in `./data` (clones, worktrees, summaries) and in the `foreman-local` Postgres volume.
+- Data lives in `./data` (clones, package cache, the runs' temporary folders) and in the `foreman-local` Postgres volume.
 
 ## How it works
 
 | | |
 |---|---|
 | **Agents as presets** | You create them once (runtime — Claude Code, Codex or Gemini CLI —, model, effort, a US$ cap, instructions and a bundle of indexed skills) and they apply to every workspace. You can have several on the same model with different jobs. On each issue or adjustment you pick (and switch) the agent. |
-| **Several repositories** | A workspace has as many repositories as you like. Each issue gets a worktree of each one (or only of the chosen ones) and the AI touches only the ones the request needs, guided by each repository's **description**. Only the changed ones get a branch, a push and a merge. |
-| **Clean chat + README** | Every request opens a fresh chat. Continuity comes from the **issue README**, which the agent rewrites when it finishes (goal, what was done per request, files, decisions, how to test, open items), from the **request history** Foreman records (when, agent, request, outcome, commits) and from the commit log. Both go as attachments to the next chat and stay in the issue's README tab. If the agent doesn't write the README, the server generates one. |
+| **Several repositories** | A workspace has as many repositories as you like. Each issue gets a worktree of each one (or only of the chosen ones) and the AI touches only the ones the request needs, guided by each repository's **description**. Only the changed ones get a branch, a push and a merge. Each repository has a **working branch** (e.g. `dev`), picked from the remote's branches after a connection test (never typed): its issues start from it and merge into it. |
+| **Clean chat + README** | Every request opens a fresh chat in a **new temporary folder** (`data/tmp/run-*`: fresh worktrees of the issue's branch + the issue's files), removed when the run ends; the work survives as commits on the branch. Continuity comes from the **issue README**, which the agent rewrites when it finishes (goal, what was done per request, files, decisions, how to test, open items), from the **request history** Foreman records (when, agent, request, outcome, commits) and from the commit log. Both go as attachments to the next chat and stay in the issue's README tab. If the agent doesn't write the README, the server generates one. |
 | **Declared outcome** | When it finishes, the AI writes to `$FOREMAN_STATUS` whether it is `done`, `waiting: <what it needs>` or `incomplete: <why>`. Done goes to *In review*; the others go to *Waiting for you*, with the question as a comment and a box to reply straight to the agent. |
 | **Stages and automations** | The core of Foreman; see [Workflow, roles and automations](#workflow-roles-and-automations). |
-| **Shared skills** | Markdown guides, with optional scripts, stored in the database. You index skills on agents (call the agent and its bundle comes along) or tie them to workspaces (every run of their issues gets them). Agents and issues store only the reference: edit it once and it applies everywhere. *Attach to all* includes the skill in every run. The prompt carries only the index (name, description and path); the agent reads the whole skill when it needs it. |
-| **Adjustment by comment** | A comment with *Send to the agent* becomes a new run (possibly by another agent) in the same worktree, receiving the summary and the request. |
-| **Safe merge** | `--no-ff` in a temporary worktree, then a push. The target is the remote's default branch, or the one you choose on the issue. With several repositories, every merge is done locally first: if one conflicts, **none** is published. The issue goes to *Blocked* and the **Resolve conflict with AI** button brings the target into the issue branch and asks the agent to resolve it. The merge is refused while any conflict marker remains. |
+| **Shared skills** | Markdown guides, with optional scripts, stored in the database. Each skill is linked to agents, workspaces and/or labels: it goes in every run that matches any of them (the issue's agent, its workspace or one of its labels). Agents and issues store only the reference: edit it once and it applies everywhere. A rule for every project (e.g. "work on `dev`, `main` only through a PR") is linked to every workspace. The prompt carries only the index (name, description and path); the agent reads the whole skill when it needs it. |
+| **Adjustment by comment** | A comment with *Send to the agent* becomes a new run (possibly by another agent) in a new temporary folder on the same branch, receiving the README and the request. |
+| **Safe merge** | `--no-ff` in a temporary worktree, then a push. The target is the repository's working branch, or the one you choose on the issue. With several repositories, every merge is done locally first: if one conflicts, **none** is published. The issue goes to *Blocked* and the **Resolve conflict with AI** button brings the target into the issue branch and asks the agent to resolve it. The merge is refused while any conflict marker remains. |
 | **Real time** | The agent log, the board and comments update live over SSE for everyone looking. |
 | **Analytics** | Cost, tokens (input, cache, output), time and runs per day and per agent. |
 
@@ -93,7 +93,7 @@ E.g. an Intern and a Junior can share **the same permission role**, but Triage o
 - **Overall** (*Overall Analytics*, `analytics.global`): every workspace you can access, added up; only your numbers. With `analytics.global_team`, everyone or one person.
 - The server checks every request: without the team permission, asking for someone else's numbers gives 403.
 
-**Skills** link to every issue, to chosen agents or to none; an agent shows the skills of its bundle.
+**Skills** link to agents, workspaces and labels; a run gets every skill that matches its agent, its workspace or one of its labels. An agent shows the skills linked to it.
 
 A workspace key (the issue prefix) doesn't change after it is created.
 
@@ -136,7 +136,7 @@ When someone creates an issue, everyone in the workspace gets an e-mail.
 - **Go**: HTTP server, a run queue in Postgres (`FOR UPDATE SKIP LOCKED`, survives restarts), agent processes in their own group (cancelling kills the whole tree), git through the system binary. Everything becomes a single binary, with the front end embedded.
 - **PostgreSQL**: users, access roles, settings (e-mail), workspaces, per-issue repositories, repositories, agents, skills, issues, runs, log events and comments.
 - **React + TypeScript + Vite + Tailwind**: a responsive, installable SPA (PWA). TanStack Query for the cache, dnd-kit for dragging with mouse and touch.
-- **Docker**: the image ships `git`, `claude`, `codex` and `gemini`. The agents run as a regular user.
+- **Docker**: the image ships `git`, `claude`, `codex` and `gemini` (build with `--build-arg AGENT_CLIS=none` to ship none and use the ones installed in the home of the user the server runs as). The agents run as a regular user.
 
 ```
 server/
@@ -217,7 +217,7 @@ Put a reverse proxy (Caddy, nginx, Traefik) in front of port 8700 and set `FOREM
 |---|---|---|
 | `DATABASE_URL` | `postgres://foreman:foreman@localhost:5432/foreman` | |
 | `FOREMAN_ADDR` | `127.0.0.1:8700` (`:8700` in Docker) | `0.0.0.0:8700` opens it to the network |
-| `FOREMAN_DATA` | `./data` (`/data` in Docker) | clones, worktrees, skills on disk |
+| `FOREMAN_DATA` | `./data` (`/data` in Docker) | clones, skills, package cache and the runs' temporary folders |
 | `FOREMAN_MAX_PARALLEL` | `3` | simultaneous runs; the rest wait in the queue |
 | `FOREMAN_RUN_TIMEOUT` | `4h` | a run that goes over it is stopped and fails (a hung agent can't hold a slot forever) |
 | `CLAUDE_BIN` / `CODEX_BIN` / `GEMINI_BIN` | `claude` / `codex` / `gemini` | |
@@ -251,4 +251,4 @@ cd web && npm install && npm run dev                      # front end on :5700, 
 - **Lean context:** with several repositories, the prompt carries only the map (name, description, base). Project instructions live in the repository itself (`CLAUDE.md`, `AGENTS.md`), which the agent already reads.
 - **Context sent:** "Context sent to the agent" on each run shows exactly the prompt and system prompt used.
 - **Isolation:** the agent runs without asking for confirmation, but inside its own CLI's sandbox (bubblewrap on Linux): it writes **only** to the issue folder, to Foreman's package cache (`data/cache`, for `npm`, `pip`, `go`…) and to the system's temporary folders; the rest of the disk is read-only. Read-only still means readable, and the network stays open to install dependencies: on your own machine, an agent can read your files, such as `~/.ssh`. For code or issues you don't trust, use the Docker deploy. Claude: `--permission-mode acceptEdits` + `sandbox` in the settings; Codex: `-s workspace-write` with network. Without `bwrap` on the server (e.g. in a container without user namespaces) the agent runs unsandboxed and the run log warns about it; in that case the isolation is the container's.
-- **Minimal configuration:** a repository is a URL and a name (plus an optional description). The issue starts from the remote's default branch and the merge lands there; for another one, change it on the issue or ask for it in the agent's instructions. Dependencies, `.env` and tests are up to the agent, inside the worktree.
+- **Minimal configuration:** a repository is a URL, a name, its working branch (picked from the remote's branches after the connection test) and an optional description. The issue starts from the working branch and the merge lands there; for another one, change it on the issue. Dependencies, `.env` and tests are up to the agent, inside the run's temporary folder.

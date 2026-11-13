@@ -25,7 +25,12 @@ RUN apt-get update \
 ARG CLAUDE_CODE_VERSION=latest
 ARG CODEX_VERSION=latest
 ARG GEMINI_CLI_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} @google/gemini-cli@${GEMINI_CLI_VERSION} && npm cache clean --force
+# AGENT_CLIS=none: the image ships no AI CLI; the server uses the ones installed in the
+# home of the user it runs as (mounted, with that user's PATH set in the compose file).
+ARG AGENT_CLIS=all
+RUN if [ "$AGENT_CLIS" != "none" ]; then \
+      npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} @openai/codex@${CODEX_VERSION} @google/gemini-cli@${GEMINI_CLI_VERSION} && npm cache clean --force; \
+    fi
 COPY --from=server /foreman /usr/local/bin/foreman
 RUN mkdir -p /data && chown node:node /data
 ENV FOREMAN_DATA=/data FOREMAN_ADDR=:8700 HOME=/home/node

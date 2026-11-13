@@ -506,10 +506,10 @@ func (e *Engine) apply(ctx context.Context, is *store.Issue, ev store.Event, act
 		if strings.TrimSpace(cfg.Script) == "" {
 			return "", errSkip
 		}
-		out, err := e.run.RunScript(ctx, is.ID, cfg.Script, []string{
+		out, err := e.run.RunScript(ctx, is, cfg.Script, []string{
 			"FOREMAN_ISSUE=" + ref, "FOREMAN_TITLE=" + is.Title, "FOREMAN_BRANCH=" + is.Branch,
 			"FOREMAN_STAGE=" + is.Status, "FOREMAN_FROM=" + ev.From, "FOREMAN_EVENT=" + ev.Kind,
-			"FOREMAN_README=" + e.run.ReadmePath(is.ID), "FOREMAN_WORKSPACE=" + ws.Key,
+			"FOREMAN_WORKSPACE=" + ws.Key,
 			fmt.Sprintf("FOREMAN_PRIORITY=%d", is.Priority),
 		})
 		block := ""

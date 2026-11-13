@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderCog, FolderGit2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FolderCog, FolderGit2, GitBranch, Pencil, Plus, PlugZap, Trash2 } from 'lucide-react';
 import { useWs } from '../components/Layout';
 import { Avatar, Button, Empty, Field, Modal, PageHeader, SectionHeader, useToast, useConfirm } from '../components/ui';
 import { api } from '../lib/api';
@@ -60,6 +60,7 @@ export function WorkspaceSettings() {
                   <div className="font-medium">{r.name}</div>
                   {r.description && <div className="text-xs text-dim">{r.description}</div>}
                   <div className="truncate font-mono text-xs text-mute">{r.url.replace(/\/\/[^@/]+@/, '//***@')}</div>
+                  <div className="mt-1 flex items-center gap-1 text-xs text-mute"><GitBranch className="size-3" /> {r.workBranch ? t('works on {0}', r.workBranch) : t('no working branch chosen: edit and pick one')}</div>
                 </div>
                 {canEditRepo && <button onClick={() => setEditing(r)} className="icon-btn"><Pencil className="size-4" /></button>}
                 {canDelRepo && <button
@@ -148,9 +149,37 @@ function MembersSection({ wsId }: { wsId: string }) {
 function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>; onClose: () => void }) {
   const [r, setR] = useState<Partial<Repo>>(repo);
   const [busy, setBusy] = useState(false);
+  // The branches of the URL that passed the connection test; the picker only opens for it.
+  const [remote, setRemote] = useState<{ url: string; branches: string[]; def: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState('');
   const qc = useQueryClient();
   const toast = useToast();
   const set = (p: Partial<Repo>) => setR((x) => ({ ...x, ...p }));
+  const url = r.url?.trim() ?? '';
+  const tested = !!remote && remote.url === url;
+
+  const test = async (u = url) => {
+    if (!u) return;
+    setTesting(true);
+    setTestError('');
+    try {
+      const res = await api.post<{ branches: string[]; default: string }>(`/workspaces/${wsId}/repos/check`, { url: u, id: r.id ?? '' });
+      setRemote({ url: u, branches: res.branches, def: res.default });
+      // Keeps the current branch if it still exists; otherwise the person picks one.
+      setR((x) => ({ ...x, workBranch: x.workBranch && res.branches.includes(x.workBranch) ? x.workBranch : '' }));
+    } catch (err) {
+      setRemote(null);
+      setTestError((err as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
+  // Editing: the saved URL is tested right away, so its branches are listed.
+  useEffect(() => {
+    if (repo.id && repo.url) test(repo.url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const save = async () => {
     setBusy(true);
@@ -174,12 +203,29 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
     }
   };
 
+  const ready = tested && !!r.workBranch && !!r.name?.trim();
   return (
-    <Modal open wide onClose={onClose} title={r.id ? t('Edit {0}', repo.name) : t('Add repository')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="primary" loading={busy} disabled={!r.url?.trim() || !r.name?.trim()} onClick={save}>{t('Save and test')}</Button></>}>
+    <Modal open wide onClose={onClose} title={r.id ? t('Edit {0}', repo.name) : t('Add repository')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="primary" loading={busy} disabled={!ready} onClick={save}>{t('Save')}</Button></>}>
       <div className="space-y-4">
-        <Field label={t('Git URL')} hint={t('SSH or HTTPS; the server clones with its own git credentials')}>
-          <input autoFocus className="field-input font-mono text-xs" value={r.url ?? ''} onChange={(e) => set({ url: e.target.value })} placeholder={t('git@github.com:org/project.git')} />
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
+          <Field label={t('Git URL')} hint={testError ? undefined : tested ? t('connection OK: {0} branch(es)', remote!.branches.length) : t('SSH or HTTPS; test the connection to list the branches')}>
+            <div className="flex gap-2">
+              <input autoFocus className="field-input min-w-0 flex-1 font-mono text-xs" value={r.url ?? ''}
+                onChange={(e) => { set({ url: e.target.value }); setTestError(''); }}
+                onBlur={() => { if (url && !tested && !testing) test(); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); test(); } }}
+                placeholder={t('git@github.com:org/project.git')} />
+              <Button onClick={() => test()} loading={testing} disabled={!url || tested}><PlugZap className="size-3.5" /> {t('Test')}</Button>
+            </div>
+            {testError && <p className="mt-1 text-xs text-red-400">{testError}</p>}
+          </Field>
+          <Field label={t('Working branch')} hint={tested ? t('new issues start from it and merge into it') : t('test the connection first')}>
+            <select className="field-input font-mono text-xs" disabled={!tested} value={tested ? r.workBranch ?? '' : ''} onChange={(e) => set({ workBranch: e.target.value })}>
+              <option value="" disabled>{tested ? t('Choose the branch…') : '—'}</option>
+              {tested && remote!.branches.map((b) => <option key={b} value={b}>{b}{b === remote!.def ? ` (${t('remote default')})` : ''}</option>)}
+            </select>
+          </Field>
+        </div>
         <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
           <Field label={t('Name')}><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('e.g. api')} /></Field>
           <Field label={t('Description')} hint={t('optional; helps the AI choose the repository')}>

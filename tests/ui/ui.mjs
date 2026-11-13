@@ -87,7 +87,7 @@ check(true, 'creating the workspace goes to its board');
 const call = api(owner);
 remote('shop');
 const ws = (await call('GET', '/workspaces'))[0];
-await call('POST', `/workspaces/${ws.id}/repos`, { url: 'file:///remote/shop.git', name: 'shop', description: 'the shop' });
+await call('POST', `/workspaces/${ws.id}/repos`, { url: 'file:///remote/shop.git', name: 'shop', description: 'the shop', workBranch: 'main' });
 const agent = await call('POST', '/agents', { name: 'Fake', runtime: 'claude' });
 const roles = await call('GET', '/roles');
 const member = roles.find((r) => r.name === 'Member');
