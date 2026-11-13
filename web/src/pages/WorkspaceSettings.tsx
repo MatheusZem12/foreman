@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { FolderCog, FolderGit2, GitBranch, Pencil, Plus, PlugZap, Trash2 } from 'lucide-react';
 import { useWs } from '../components/Layout';
@@ -146,6 +146,10 @@ function MembersSection({ wsId }: { wsId: string }) {
   );
 }
 
+function FieldHint({ children }: { children: ReactNode }) {
+  return <p className="text-xs text-mute">{children}</p>;
+}
+
 function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>; onClose: () => void }) {
   const [r, setR] = useState<Partial<Repo>>(repo);
   const [busy, setBusy] = useState(false);
@@ -206,32 +210,38 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
   const ready = tested && !!r.workBranch && !!r.name?.trim();
   return (
     <Modal open wide onClose={onClose} title={r.id ? t('Edit {0}', repo.name) : t('Add repository')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="primary" loading={busy} disabled={!ready} onClick={save}>{t('Save')}</Button></>}>
-      <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
-          <Field label={t('Git URL')} hint={testError ? undefined : tested ? t('connection OK: {0} branch(es)', remote!.branches.length) : t('SSH or HTTPS; test the connection to list the branches')}>
-            <div className="flex gap-2">
-              <input autoFocus className="field-input min-w-0 flex-1 font-mono text-xs" value={r.url ?? ''}
-                onChange={(e) => { set({ url: e.target.value }); setTestError(''); }}
-                onBlur={() => { if (url && !tested && !testing) test(); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); test(); } }}
-                placeholder={t('git@github.com:org/project.git')} />
-              <Button onClick={() => test()} loading={testing} disabled={!url || tested}><PlugZap className="size-3.5" /> {t('Test')}</Button>
-            </div>
-            {testError && <p className="mt-1 text-xs text-red-400">{testError}</p>}
-          </Field>
-          <Field label={t('Working branch')} hint={tested ? t('new issues start from it and merge into it') : t('test the connection first')}>
-            <select className="field-input font-mono text-xs" disabled={!tested} value={tested ? r.workBranch ?? '' : ''} onChange={(e) => set({ workBranch: e.target.value })}>
-              <option value="" disabled>{tested ? t('Choose the branch…') : '—'}</option>
-              {tested && remote!.branches.map((b) => <option key={b} value={b}>{b}{b === remote!.def ? ` (${t('remote default')})` : ''}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
-          <Field label={t('Name')}><input className="field-input" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('e.g. api')} /></Field>
-          <Field label={t('Description')} hint={t('optional; helps the AI choose the repository')}>
-            <input className="field-input" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('E.g. Go API (orders, payments)')} />
-          </Field>
-        </div>
+      {/* Hints sit under the fields (not beside the label), so a long hint doesn't push
+          its field down: the URL and the working branch share a row and stay aligned. */}
+      <div className="grid items-start gap-x-4 gap-y-5 sm:grid-cols-[2fr_1fr]">
+        <Field label={t('Git URL')}>
+          <div className="flex gap-2">
+            <input autoFocus className="field-input h-9 coarse:h-10 min-w-0 flex-1 font-mono text-xs" value={r.url ?? ''}
+              onChange={(e) => { set({ url: e.target.value }); setTestError(''); }}
+              onBlur={() => { if (url && !tested && !testing) test(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); test(); } }}
+              placeholder={t('git@github.com:org/project.git')} />
+            <Button className="!h-9 coarse:!h-10" onClick={() => test()} loading={testing} disabled={!url || tested}><PlugZap className="size-3.5" /> {t('Test')}</Button>
+          </div>
+          {testError
+            ? <p className="text-xs text-red-400">{testError}</p>
+            : <FieldHint>{tested ? t('connection OK: {0} branch(es)', remote!.branches.length) : t('SSH or HTTPS; test the connection to list the branches')}</FieldHint>}
+        </Field>
+        <Field label={t('Working branch')}>
+          <select className="field-input h-9 coarse:h-10 py-0 font-mono text-xs" disabled={!tested} value={tested ? r.workBranch ?? '' : ''} onChange={(e) => set({ workBranch: e.target.value })}>
+            <option value="" disabled>{tested ? t('Choose the branch…') : '—'}</option>
+            {tested && remote!.branches.map((b) => <option key={b} value={b}>{b}{b === remote!.def ? ` (${t('remote default')})` : ''}</option>)}
+          </select>
+          <FieldHint>{tested ? t('new issues start from it and merge into it') : t('test the connection first')}</FieldHint>
+        </Field>
+      </div>
+      <div className="mt-5 grid items-start gap-x-4 gap-y-5 sm:grid-cols-[1fr_2fr]">
+        <Field label={t('Name')}>
+          <input className="field-input h-9 coarse:h-10" value={r.name ?? ''} onChange={(e) => set({ name: e.target.value })} placeholder={t('e.g. api')} />
+        </Field>
+        <Field label={t('Description')}>
+          <input className="field-input h-9 coarse:h-10" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('E.g. Go API (orders, payments)')} />
+          <FieldHint>{t('optional; helps the AI choose the repository')}</FieldHint>
+        </Field>
       </div>
     </Modal>
   );
