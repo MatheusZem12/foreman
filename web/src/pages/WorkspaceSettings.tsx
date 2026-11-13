@@ -207,7 +207,7 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
     }
   };
 
-  const ready = tested && !!r.workBranch && !!r.name?.trim();
+  const ready = tested && !!r.workBranch && !!r.name?.trim() && !!r.description?.trim();
   return (
     <Modal open wide onClose={onClose} title={r.id ? t('Edit {0}', repo.name) : t('Add repository')} footer={<><Button variant="ghost" onClick={onClose}>{t('Cancel')}</Button><Button variant="primary" loading={busy} disabled={!ready} onClick={save}>{t('Save')}</Button></>}>
       {/* Hints sit under the fields (not beside the label), so a long hint doesn't push
@@ -240,7 +240,7 @@ function RepoModal({ wsId, repo, onClose }: { wsId: string; repo: Partial<Repo>;
         </Field>
         <Field label={t('Description')}>
           <input className="field-input h-9 coarse:h-10" value={r.description ?? ''} onChange={(e) => set({ description: e.target.value })} placeholder={t('E.g. Go API (orders, payments)')} />
-          <FieldHint>{t('optional; helps the AI choose the repository')}</FieldHint>
+          <FieldHint>{t('required; helps the AI choose the repository')}</FieldHint>
         </Field>
       </div>
     </Modal>

@@ -789,6 +789,11 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, bad("enter the repository name")
 	}
 	in.Name = strings.TrimSpace(in.Name)
+	// Required: it goes into the repository map the AI uses to decide where to work.
+	in.Description = strings.TrimSpace(in.Description)
+	if in.Description == "" {
+		return nil, bad("enter the repository description")
+	}
 	if in.ID != "" {
 		cur, err := a.st.Repo(r.Context(), in.ID)
 		if err != nil {

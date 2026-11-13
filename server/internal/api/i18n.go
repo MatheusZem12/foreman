@@ -286,6 +286,7 @@ var ptMsgs = map[string]string{
 	"please sign in":                                   "faça login",
 	"session expired":                                  "sessão expirada",
 	"enter the repository name":                        "informe o nome do repositório",
+	"enter the repository description":                 "informe a descrição do repositório",
 	"delete issues":                                    "excluir issues",
 	"run agents":                                       "executar agentes",
 	"cancel runs":                                      "cancelar execuções",
