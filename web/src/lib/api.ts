@@ -30,5 +30,12 @@ export const api = {
   post: <T>(url: string, body?: unknown) => request<T>('POST', url, body ?? {}),
   put: <T>(url: string, body: unknown) => request<T>('PUT', url, body),
   patch: <T>(url: string, body: unknown) => request<T>('PATCH', url, body),
-  del: <T>(url: string) => request<T>('DELETE', url)
+  del: <T>(url: string) => request<T>('DELETE', url),
+  // An image pasted or attached to a text; answers the address to put in the markdown.
+  upload: async (file: Blob) => {
+    const res = await fetch('/api/uploads', { method: 'POST', credentials: 'same-origin', headers: { 'X-Lang': lang }, body: file });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, data.error || res.statusText);
+    return data as { url: string };
+  }
 };

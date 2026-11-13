@@ -47,10 +47,10 @@ func tr(ctx context.Context, format string, args ...any) string {
 }
 
 var ptMsgs = map[string]string{
-	"label not found":     "label não encontrada",
-	"invalid branch name": "nome de branch inválido",
-	"the branch %q doesn't exist in this repository": "a branch %q não existe neste repositório",
+	"label not found":                                "label não encontrada",
 	"workspace not found":                            "workspace não encontrado",
+	"the image is larger than 10 MB":                 "a imagem passa de 10 MB",
+	"only PNG, JPEG, GIF or WebP images":             "só imagens PNG, JPEG, GIF ou WebP",
 	"enter the Gmail address that sends the e-mails": "informe o endereço do Gmail que envia os e-mails",
 	"enter the Gmail app password":                   "informe a senha de app do Gmail",
 	"Gmail didn't accept the address and app password: create an app password (not your normal password) with two-step verification on": "o Gmail não aceitou o endereço e a senha de app: crie uma senha de app (não a sua senha normal), com a verificação em duas etapas ligada",

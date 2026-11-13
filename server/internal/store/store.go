@@ -70,8 +70,6 @@ type Repo struct {
 	URL         string    `db:"url" json:"url"`
 	CreatedAt   time.Time `db:"created_at" json:"createdAt"`
 	Description string    `db:"description" json:"description"`
-	// Where its issues start and merge (empty = the remote's default branch).
-	WorkBranch string `db:"work_branch" json:"workBranch"`
 }
 
 type Skill struct {
@@ -354,13 +352,13 @@ func (s *Store) Repo(ctx context.Context, id string) (*Repo, error) {
 
 func (s *Store) SaveRepo(ctx context.Context, r Repo) (*Repo, error) {
 	if r.ID == "" {
-		return one[Repo](ctx, s, `insert into repos(workspace_id, name, url, description, work_branch)
-			values($1,$2,$3,$4,$5) returning *`,
-			r.WorkspaceID, r.Name, r.URL, r.Description, r.WorkBranch)
+		return one[Repo](ctx, s, `insert into repos(workspace_id, name, url, description)
+			values($1,$2,$3,$4) returning *`,
+			r.WorkspaceID, r.Name, r.URL, r.Description)
 	}
-	return one[Repo](ctx, s, `update repos set name=$2, url=$3, description=$4, work_branch=$5
+	return one[Repo](ctx, s, `update repos set name=$2, url=$3, description=$4
 		where id = $1 returning *`,
-		r.ID, r.Name, r.URL, r.Description, r.WorkBranch)
+		r.ID, r.Name, r.URL, r.Description)
 }
 
 func (s *Store) DeleteRepo(ctx context.Context, id string) error {

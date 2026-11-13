@@ -156,6 +156,9 @@ func Router(cfg config.Config, st *store.Store, h *hub.Hub, rn *runner.Runner, n
 			r.Get("/issues/{id}/diff", a.h(a.issueDiff))
 			r.Post("/issues/{id}/comments", a.h(a.addComment))
 			r.Get("/runs/{id}/events", a.h(a.runEvents))
+			// Images pasted or attached to descriptions, comments and requests.
+			r.Post("/uploads", a.h(a.upload))
+			r.Get("/uploads/{name}", a.serveUpload)
 
 			// E-mail: whoever has settings.manage configures it; the others only know whether it is on.
 			r.Get("/settings/email", a.h(a.getEmailSettings))
@@ -806,16 +809,9 @@ func (a *API) saveRepo(w http.ResponseWriter, r *http.Request) (any, error) {
 			return nil, bad("a repository named %q already exists in this workspace", o.Name)
 		}
 	}
-	in.WorkBranch = strings.TrimSpace(in.WorkBranch)
-	if strings.HasPrefix(in.WorkBranch, "-") || strings.ContainsAny(in.WorkBranch, " \t~^:?*[\\") {
-		return nil, bad("invalid branch name")
-	}
-	// Only accepts a git repository reachable with the server's credentials (and, when
-	// given, a working branch that exists there).
-	if err := a.run.CheckRemote(r.Context(), in.URL, in.WorkBranch); err != nil {
-		if errors.Is(err, runner.ErrNoBranch) {
-			return nil, bad("the branch %q doesn't exist in this repository", in.WorkBranch)
-		}
+	// Only accepts a git repository reachable with the server's credentials. Which branch
+	// an issue works on is up to the issue and its skills, not the repository.
+	if err := a.run.CheckRemote(r.Context(), in.URL); err != nil {
 		return nil, bad("not a git repository the server can reach: %v", err)
 	}
 	isNew := in.ID == ""

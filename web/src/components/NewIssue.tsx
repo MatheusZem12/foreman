@@ -13,6 +13,7 @@ import { LAST_AGENT, STATUSES } from '../lib/constants';
 import type { Issue, Status } from '../lib/types';
 import { t } from '../lib/i18n';
 import { upsertIssue } from '../lib/board';
+import { useImageAttach } from './ImageAttach';
 
 function readLastAgent() {
   try {
@@ -52,6 +53,8 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus?: Stat
     agentId: null as string | null, assigneeId: null as string | null, repoIds: [] as string[], labelIds: [] as string[]
   });
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+  const descRef = useRef<HTMLTextAreaElement>(null);
+  const img = useImageAttach(descRef, (fn) => setForm((f) => ({ ...f, description: fn(f.description) })));
 
   // Default: the last agent used.
   useEffect(() => {
@@ -90,6 +93,7 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus?: Stat
 
   const submit = async () => {
     if (!form.title.trim()) return titleRef.current?.focus();
+    if (img.uploading) return;
     setBusy(true);
     try {
       const res = await api.post<{ issue: Issue; warning?: string }>(`/workspaces/${ws.id}/issues`, form);
@@ -132,9 +136,11 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus?: Stat
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pt-2 sm:px-6">
           <input ref={titleRef} autoFocus value={form.title} onChange={(e) => set({ title: e.target.value })} placeholder={t('Issue title')} className="keep-size text-xl font-semibold tracking-tight placeholder:text-mute/70" />
           <textarea
+            ref={descRef}
             value={form.description}
             onChange={(e) => set({ description: e.target.value })}
-            placeholder={t('Description: what to do, acceptance criteria, links… (markdown)')}
+            {...img.textareaProps}
+            placeholder={t('Description: what to do, acceptance criteria, links, images (paste or drop them here)… (markdown)')}
             className={clsx('mt-2 flex-1 resize-none text-[14px] leading-relaxed text-dim placeholder:text-mute/70', big ? 'min-h-[40vh]' : 'min-h-[120px]')}
           />
         </div>
@@ -161,7 +167,8 @@ export function NewIssueModal({ initialStatus, onClose }: { initialStatus?: Stat
         </div>
         <div className="flex items-center gap-3 border-t border-line px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
           <Toggle checked={another} onChange={setAnother} label={t('Create another')} />
-          <Button variant="primary" type="submit" loading={busy} className="ml-auto">
+          {img.button}
+          <Button variant="primary" type="submit" loading={busy} disabled={img.uploading} className="ml-auto">
             {t('Create issue')} <kbd className="hidden rounded bg-snow/20 px-1 py-px font-sans text-[10px] font-medium sm:inline">{t('Ctrl ↵')}</kbd>
           </Button>
         </div>
